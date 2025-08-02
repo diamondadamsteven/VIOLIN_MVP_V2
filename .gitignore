@@ -37,3 +37,23 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# React Native / Expo
+node_modules/
+.expo/
+.expo-shared/
+dist/
+build/
+web-build/
+android/
+ios/
+*.log
+.env
+*.sqlite
+*.keystore
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
