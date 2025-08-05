@@ -1,3 +1,4 @@
+// App.js
 // app/_layout.tsx
 import { Slot } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -30,5 +31,3 @@ export default function Layout() {
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });
-
-

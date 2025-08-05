@@ -1,0 +1,3 @@
+// app/SCREEN_SONG_SEARCH.tsx
+import SCREEN_SONG_SEARCH from '../SCREEN_SONG_SEARCH';
+export default SCREEN_SONG_SEARCH;

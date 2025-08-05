@@ -1,6 +1,8 @@
+// CLIENT_STEP_1_REGISTER.js
 import * as Device from 'expo-device';
 import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
+import { DEBUG_CONSOLE_LOG } from './CLIENT_APP_FUNCTIONS';
 import CLIENT_APP_VARIABLES from './CLIENT_APP_VARIABLES';
 
 export async function CLIENT_STEP_1_REGISTER () {
@@ -43,9 +45,17 @@ export async function CLIENT_STEP_1_REGISTER () {
     });
 
     const P_CLIENT_VIOLINIST_INS_data = await P_CLIENT_VIOLINIST_INS_response.json();
+    console.log('P_CLIENT_VIOLINIST_INS_data:', JSON.stringify(P_CLIENT_VIOLINIST_INS_data, null, 2));
 
-    CLIENT_APP_VARIABLES.VIOLINIST_ID = P_CLIENT_VIOLINIST_INS_data?.RESULT?.[0]?.VIOLINIST_ID;
+    CLIENT_APP_VARIABLES.VIOLINIST_ID = P_CLIENT_VIOLINIST_INS_data?.RESULT?.VIOLINIST_ID;
+    CLIENT_APP_VARIABLES.YN_SYSADMIN = P_CLIENT_VIOLINIST_INS_data?.RESULT?.YN_SYSADMIN;
+    CLIENT_APP_VARIABLES.USER_DISPLAY_NAME = P_CLIENT_VIOLINIST_INS_data?.RESULT?.USER_DISPLAY_NAME;
+
     await SecureStore.setItemAsync('VIOLINIST_ID', String(CLIENT_APP_VARIABLES.VIOLINIST_ID));
   } catch {}
+
+  //console.log('>>> REGISTER FUNC IS RUNNING <<<');
+  console.log('CLIENT_APP_VARIABLES.VIOLINIST_ID:' + CLIENT_APP_VARIABLES.VIOLINIST_ID);
+  DEBUG_CONSOLE_LOG();
 
 }

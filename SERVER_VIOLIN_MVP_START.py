@@ -6,6 +6,9 @@
   -H "Content-Type: application/json" ^
   -d "{\"SP_NAME\":\"P_CLIENT_VIOLINIST_INS\",\"PARAMS\":{\"DEVICE_ID\":\"abc\",\"IP_ADDRESS\":\"127.0.0.1\",\"LATITUDE\":10.77,\"LONGITUDE\":106.69}}"
  """
+#### curl -X POST "http://192.168.1.131:8000'/CALL_SP" -H "Content-Type: application/json" -d "{\"SP_NAME\": \"P_CLIENT_DD_SONG\", \"PARAMS\": {\"VIOLINIST_ID\": 123, \"FILTER_TEXT\": \"bach\"}}"
+
+
 #### pip freeze > SERVER_VIOLIN_MVP_requirements.txt ####
 
 #### dos prompt #2: ipconfig...get IPv4 Address and paste into CLIENT_STEP_1_REGISTER.js #####
