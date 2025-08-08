@@ -112,7 +112,9 @@ const handleSelect = (item) => {
   CLIENT_APP_VARIABLES.AUDIO_STREAM_FILE_NAME = item.AUDIO_STREAM_FILE_NAME || null;
 
   CLIENT_APP_VARIABLES.COMPOSE_PLAY_OR_PRACTICE = 'Play'; // ensure correct mode
-  
+  CLIENT_APP_VARIABLES.BREAKDOWN_NAME = "OVERALL"; // reset to default)",
+
+
   DEBUG_CONSOLE_LOG();
 
   router.push('/SCREEN_MAIN');
@@ -255,7 +257,7 @@ const handleSelect = (item) => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.radioGroup}>
+      <View style={[styles.radioGroup, { marginTop: 20 }]}>
         {['Song', 'Recording'].map((opt) => (
           <TouchableOpacity key={opt} style={styles.radioBtn} onPress={() => setMode(opt)}>
             <Text style={mode === opt ? styles.radioSelected : styles.radioUnselected}>O</Text>

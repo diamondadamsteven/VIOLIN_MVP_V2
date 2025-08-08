@@ -1,11 +1,12 @@
-// SCREEN_MAIN_1_RECORDING_PARAMETERS.js
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
+  Dimensions,
   FlatList,
   Modal,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -20,6 +21,9 @@ export default function SCREEN_MAIN_1_RECORDING_PARAMETERS() {
   const [dynamicParams, setDynamicParams] = useState([]);
   const [dropdownOptions, setDropdownOptions] = useState({});
   const [activeDropdown, setActiveDropdown] = useState(null);
+
+  const screenWidth = Dimensions.get('window').width;
+  const fontSize = screenWidth * 0.035;
 
   useEffect(() => {
     const mode = CLIENT_APP_VARIABLES.COMPOSE_PLAY_OR_PRACTICE;
@@ -95,14 +99,20 @@ export default function SCREEN_MAIN_1_RECORDING_PARAMETERS() {
   const renderDropdown = (param, index) => {
     const options = dropdownOptions[param.PARAMETER_NAME] || [];
     const selectedLabel = options.find(opt => opt.PARAMETER_VALUE === param.PARAMETER_VALUE)?.PARAMETER_DISPLAY_VALUE;
+    const isMultiLine = param.PARAMETER_NAME === 'SONG_NAME' || param.PARAMETER_NAME === 'RECORDING_NAME';
 
     return (
       <>
         <TouchableOpacity
-          style={styles.dropdownCompact}
+          style={[styles.dropdownCompact, isMultiLine && styles.multiLineDropdown]}
           onPress={() => setActiveDropdown(index)}
         >
-          <Text>{selectedLabel || 'Select'}</Text>
+          <View style={styles.dropdownRow}>
+            <Text style={styles.dropdownText} numberOfLines={isMultiLine ? 0 : 1}>
+              {selectedLabel || 'Select'}
+            </Text>
+            <Text style={styles.dropdownIcon}>▼</Text>
+          </View>
         </TouchableOpacity>
 
         {activeDropdown === index && (
@@ -138,37 +148,43 @@ export default function SCREEN_MAIN_1_RECORDING_PARAMETERS() {
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.modeBanner}>Mode: {CLIENT_APP_VARIABLES.COMPOSE_PLAY_OR_PRACTICE}</Text>
-
-      <View style={styles.topSection}>
-        <Text style={styles.label}>Song Name:</Text>
-        {CLIENT_APP_VARIABLES.COMPOSE_PLAY_OR_PRACTICE === 'COMPOSE' ? (
-          <TextInput
-            style={styles.input}
-            defaultValue={CLIENT_APP_VARIABLES.SONG_NAME || ''}
-            onChangeText={(text) => (CLIENT_APP_VARIABLES.SONG_NAME = text)}
-            placeholder="Enter song name"
-          />
-        ) : (
-          <TouchableOpacity
-            style={styles.dropdownCompact}
-            onPress={() => router.push('/SCREEN_SONG_SEARCH')}
-          >
-            <Text>{CLIENT_APP_VARIABLES.SONG_NAME || 'Select a Song'}</Text>
-          </TouchableOpacity>
-        )}
-        {CLIENT_APP_VARIABLES.COMPOSE_PLAY_OR_PRACTICE === 'PLAY' &&
-          CLIENT_APP_VARIABLES.RECORDING_ID && (
-            <Text style={styles.label}>Recording Name: {recordingName}</Text>
-        )}
+    <ScrollView style={[styles.container, { paddingTop: (StatusBar.currentHeight || 30) + 4 }]}>
+      <View style={styles.paramBlock}>
+        <Text style={[styles.label, { fontSize }]}>Song:</Text>
+        <TouchableOpacity
+          style={[styles.dropdownCompact, styles.multiLineDropdown]}
+          onPress={() => router.push('/SCREEN_SONG_SEARCH')}
+        >
+          <View style={styles.dropdownRow}>
+            <Text style={styles.dropdownText} numberOfLines={0}>
+              {CLIENT_APP_VARIABLES.SONG_NAME || 'Select a Song'}
+            </Text>
+            <Text style={styles.dropdownIcon}>▼</Text>
+          </View>
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Session Settings:</Text>
+      {CLIENT_APP_VARIABLES.COMPOSE_PLAY_OR_PRACTICE === 'PLAY' &&
+        CLIENT_APP_VARIABLES.RECORDING_ID && (
+          <View style={styles.paramBlock}>
+            <Text style={[styles.label, { fontSize }]}>Recording:</Text>
+            <View style={[styles.dropdownCompact, styles.multiLineDropdown]}>
+              <View style={styles.dropdownRow}>
+                <Text style={styles.dropdownText} numberOfLines={0}>
+                  {recordingName}
+                </Text>
+                <Text style={styles.dropdownIcon}>▼</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+      <View style={styles.paramGrid}>
         {dynamicParams.map((param, index) => (
-          <View key={index} style={styles.paramRow}>
-            <Text style={styles.label}>{param.PARAMETER_DISPLAY_NAME}:</Text>
+          <View key={index} style={styles.gridItem}>
+            <Text style={[styles.gridLabel, { fontSize: fontSize * 0.9 }]}>
+              {param.PARAMETER_DISPLAY_NAME}
+            </Text>
             {param.PARAMETER_SELECTION_TYPE === 'drop-down'
               ? renderDropdown(param, index)
               : (
@@ -195,25 +211,60 @@ export default function SCREEN_MAIN_1_RECORDING_PARAMETERS() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16 },
-  modeBanner: { fontWeight: 'bold', fontSize: 16, marginBottom: 10 },
-  topSection: { marginBottom: 20 },
-  label: { fontSize: 14, flex: 1 },
-  input: { borderWidth: 1, padding: 8, borderRadius: 4, flex: 2 },
+  container: {
+    paddingHorizontal: 10,
+    paddingBottom: 4,
+  },
+  paramBlock: {
+    marginBottom: 6,
+  },
+  label: {
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
   dropdownCompact: {
     borderWidth: 1,
-    padding: 10,
+    padding: 8,
     borderRadius: 4,
     backgroundColor: '#f0f0f0',
-    flex: 2,
+    justifyContent: 'center',
   },
-  section: { marginBottom: 20 },
-  sectionTitle: { fontWeight: 'bold', fontSize: 15, marginBottom: 6 },
-  paramRow: {
+  multiLineDropdown: {
+    minHeight: 40,
+  },
+  dropdownRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+  },
+  dropdownText: {
+    flex: 1,
+    textAlign: 'left',
+    flexWrap: 'wrap',
+  },
+  dropdownIcon: {
+    marginLeft: 4,
+  },
+  input: {
+    borderWidth: 1,
+    padding: 8,
+    borderRadius: 4,
+    backgroundColor: '#fff',
+  },
+  paramGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  gridItem: {
+    width: '47%',
+    marginBottom: 8,
+  },
+  gridLabel: {
+    fontWeight: 'bold',
+    marginBottom: 2,
   },
   modalBackdrop: {
     position: 'absolute',
