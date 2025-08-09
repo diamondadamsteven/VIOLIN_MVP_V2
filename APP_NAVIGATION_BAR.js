@@ -1,11 +1,13 @@
 // APP_NAVIGATION_BAR.js
+import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useRef } from 'react';
-import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import CLIENT_APP_VARIABLES from './CLIENT_APP_VARIABLES';
 
 export default function APP_NAVIGATION_BAR() {
-  // simple guard to prevent rapid double navigations
+  // prevent rapid double navigations
   const busyRef = useRef(false);
   const go = (fn) => {
     if (busyRef.current) return;
@@ -21,7 +23,6 @@ export default function APP_NAVIGATION_BAR() {
   const goCompose = () =>
     go(() => {
       CLIENT_APP_VARIABLES.COMPOSE_PLAY_OR_PRACTICE = 'COMPOSE';
-      // optional: clear song/recording so compose starts clean
       CLIENT_APP_VARIABLES.SONG_ID = null;
       CLIENT_APP_VARIABLES.RECORDING_ID = null;
       router.replace('/SCREEN_MAIN');
@@ -38,16 +39,16 @@ export default function APP_NAVIGATION_BAR() {
   return (
     <SafeAreaView edges={['bottom']} style={styles.safe}>
       <View style={styles.bar}>
-        <NavItem label="Home" icon="🏠" onPress={goHome} />
-        <NavItem label="Compose" icon="🎵➕" onPress={goCompose} />
-        <NavItem label="Play" icon="❓" onPress={goPlay} />
-        <NavItem label="Network" icon="👤" onPress={goNetwork} />
+        <NavItem name="home-variant"            label="Home"                   onPress={goHome} />
+        <NavItem name="music-note-plus"         label="Compose"                onPress={goCompose} />
+        <NavItem name="play-circle-outline"     label="Play or Practice"       onPress={goPlay} />
+        <NavItem name="account-music-outline"   label="Connect with Musicians" onPress={goNetwork} />
       </View>
     </SafeAreaView>
   );
 }
 
-function NavItem({ icon, label, onPress }) {
+function NavItem({ name, label, onPress }) {
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -57,15 +58,13 @@ function NavItem({ icon, label, onPress }) {
       style={styles.item}
       activeOpacity={0.7}
     >
-      <Text style={styles.icon}>{icon}</Text>
+      <Icon name={name} size={26} color="#E8E8E8" />
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    backgroundColor: 'transparent',
-  },
+  safe: { backgroundColor: 'transparent' },
   bar: {
     height: 64,
     backgroundColor: '#111',
@@ -75,8 +74,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingBottom: 6, // room for the iOS home indicator curve
+    paddingBottom: 6, // room for iOS home indicator curve
   },
   item: { padding: 8 },
-  icon: { fontSize: 20, color: '#fff' },
 });

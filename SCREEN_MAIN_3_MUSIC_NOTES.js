@@ -28,7 +28,7 @@ const SCREEN_MAIN_3_MUSIC_NOTES = forwardRef((props, ref) => {
     CLIENT_APP_VARIABLES.SCREEN_WIDTH_IN_PIXELS = pixelWidth;
     CLIENT_APP_VARIABLES.DEVICE_PIXEL_RATIO = devicePixelRatio;
 
-    if (!SONG_ID && !RECORDING_ID) return;
+    // if (!SONG_ID && !RECORDING_ID) return;
 
     // Ensure a valid breakdown for hashing/fetch
     if (!CLIENT_APP_VARIABLES.BREAKDOWN_NAME) {

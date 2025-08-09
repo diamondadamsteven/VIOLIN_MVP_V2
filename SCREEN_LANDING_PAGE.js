@@ -1,36 +1,33 @@
 // SCREEN_LANDING_PAGE.js
-
 import { FontAwesome5, MaterialIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { DEBUG_CONSOLE_LOG } from './CLIENT_APP_FUNCTIONS';
 import CLIENT_APP_VARIABLES from './CLIENT_APP_VARIABLES';
 
 export default function SCREEN_LANDING_PAGE() {
-  const navigation = useNavigation();
   const [displayName, setDisplayName] = useState(CLIENT_APP_VARIABLES.USER_DISPLAY_NAME || '');
   const [isEditing, setIsEditing] = useState(false);
 
   const updateDisplayName = async () => {
-    if (displayName !== CLIENT_APP_VARIABLES.USER_DISPLAY_NAME) {
-      CLIENT_APP_VARIABLES.USER_DISPLAY_NAME = displayName;
-      try {
-        await fetch(`${CLIENT_APP_VARIABLES.BACKEND_URL}/CALL_SP`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            SP_NAME: 'P_CLIENT_VIOLINIST_UPD',
-            PARAMS: {
-              VIOLINIST_ID: CLIENT_APP_VARIABLES.VIOLINIST_ID,
-              USER_DISPLAY_NAME: displayName,
-            },
-          }),
-        });
-      } catch (error) {
-        console.error('Failed to update USER_DISPLAY_NAME:', error);
-      }
+    setIsEditing(false);
+    if (displayName === CLIENT_APP_VARIABLES.USER_DISPLAY_NAME) return;
+    CLIENT_APP_VARIABLES.USER_DISPLAY_NAME = displayName;
+    try {
+      await fetch(`${CLIENT_APP_VARIABLES.BACKEND_URL}/CALL_SP`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          SP_NAME: 'P_CLIENT_VIOLINIST_UPD',
+          PARAMS: {
+            VIOLINIST_ID: CLIENT_APP_VARIABLES.VIOLINIST_ID,
+            USER_DISPLAY_NAME: displayName,
+          },
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to update USER_DISPLAY_NAME:', error);
     }
   };
 
@@ -58,24 +55,45 @@ export default function SCREEN_LANDING_PAGE() {
     }
   };
 
+  // Auto-size based on length
+  const screenW = Dimensions.get('window').width;
+  const greetingFontSize = useMemo(() => {
+    const max = 34;
+    const min = 20;
+    const usable = screenW - 40;
+    const textLength = (`Welcome ${displayName || ''}!`).length;
+    const est = Math.floor(usable / (textLength * 0.55));
+    return Math.max(min, Math.min(max, est));
+  }, [displayName, screenW]);
+
   return (
     <View style={styles.container}>
-      {displayName ? (
-        <Text style={styles.heading}>
-          Welcome{' '}
+      {/* Entire greeting in one baseline */}
+      <View style={styles.headingRow}>
+        {isEditing ? (
           <TextInput
-            style={styles.editableName}
+            style={[styles.headingText, { fontSize: greetingFontSize }]}
             value={displayName}
             onChangeText={setDisplayName}
             onBlur={updateDisplayName}
             onSubmitEditing={updateDisplayName}
             returnKeyType="done"
+            autoFocus
           />
-          !
-        </Text>
-      ) : (
-        <Text style={styles.heading}>Welcome!</Text>
-      )}
+        ) : (
+          <TouchableOpacity onPress={() => setIsEditing(true)} activeOpacity={0.7}>
+            <Text
+              style={[styles.headingText, { fontSize: greetingFontSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+              ellipsizeMode="tail"
+            >
+              {`Welcome ${displayName || 'Friend'}!`}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
       <Text style={styles.subheading}>What would you like to do?</Text>
 
@@ -116,28 +134,13 @@ export default function SCREEN_LANDING_PAGE() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: '#fff',
-  },
-  heading: {
-    fontSize: 28,
+  container: { flex: 1, padding: 20, backgroundColor: '#fff' },
+  headingRow: { marginTop: 40 },
+  headingText: {
     fontWeight: 'bold',
-    marginTop: 40,
+    color: '#111',
   },
-  editableName: {
-    borderBottomWidth: 1,
-    borderColor: '#ccc',
-    fontSize: 28,
-    fontWeight: 'bold',
-    padding: 0,
-    margin: 0,
-  },
-  subheading: {
-    fontSize: 20,
-    marginBottom: 20,
-  },
+  subheading: { fontSize: 20, marginBottom: 20, marginTop: 8 },
   card: {
     flexDirection: 'row',
     backgroundColor: '#f8f8f8',
@@ -150,20 +153,8 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 3,
   },
-  icon: {
-    marginRight: 15,
-    marginTop: 5,
-  },
-  textContainer: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  description: {
-    marginTop: 4,
-    fontSize: 14,
-    color: '#444',
-  },
+  icon: { marginRight: 15, marginTop: 5 },
+  textContainer: { flex: 1 },
+  title: { fontSize: 18, fontWeight: 'bold' },
+  description: { marginTop: 4, fontSize: 14, color: '#444' },
 });
