@@ -5,10 +5,25 @@ import CLIENT_APP_VARIABLES from './CLIENT_APP_VARIABLES';
 
 const TAG = '🟦 SCREEN_MAIN_6_COMMAND_BUTTONS';
 
+import { CB_COMPOSE_DISCARD } from './CB_COMPOSE_DISCARD';
+import { CB_MUSIC_NOTES_EXPORT_TO_MUSICXML } from './CB_MUSIC_NOTES_EXPORT_TO_MUSICXML';
+import { CB_MUSIC_NOTES_SHOW_ADVANCED } from './CB_MUSIC_NOTES_SHOW_ADVANCED';
+import { CB_PRACTICE_GO_TO_NEXT_SECTION } from './CB_PRACTICE_GO_TO_NEXT_SECTION';
+import { CB_PRACTICE_MODE_EXIT } from './CB_PRACTICE_MODE_EXIT';
+import { CB_PRACTICE_MODE_OPEN } from './CB_PRACTICE_MODE_OPEN';
+
+const COMMAND_REGISTRY = {
+  CB_PRACTICE_MODE_EXIT,
+  CB_PRACTICE_GO_TO_NEXT_SECTION,
+  CB_COMPOSE_DISCARD,
+  CB_MUSIC_NOTES_EXPORT_TO_MUSICXML,
+  CB_PRACTICE_MODE_OPEN,
+  CB_MUSIC_NOTES_SHOW_ADVANCED,
+};
+
 const SCREEN_MAIN_6_COMMAND_BUTTONS = forwardRef((props, ref) => {
   const [RESULT_SET_P_CLIENT_DD_COMMAND_BUTTONS, SET_RESULT_SET_P_CLIENT_DD_COMMAND_BUTTONS] = useState([]);
 
-  // --- REFRESH (exposed) -----------------------------------------------------
   const REFRESH = async () => {
     try {
       const URL = `${CLIENT_APP_VARIABLES.BACKEND_URL}/CALL_SP`;
@@ -42,31 +57,28 @@ const SCREEN_MAIN_6_COMMAND_BUTTONS = forwardRef((props, ref) => {
 
   useImperativeHandle(ref, () => ({ REFRESH }), []);
 
-  // --- DYNAMIC COMMAND BUTTON EXECUTION --------------------------------------
-  const USER_TAPPED_COMMAND_BUTTON = async (btn) => {
-    try {
-      const fileName = `./${btn.COMMAND_BUTTON_NAME}.js`;
-      console.log(`${TAG} → Importing ${fileName}...`);
+  const USER_TAPPED_COMMAND_BUTTON = (btn) => {
+    const name = btn?.COMMAND_BUTTON_NAME;
+    const fn = name ? COMMAND_REGISTRY[name] : null;
 
-      const module = await import(`${fileName}`);
-      if (module && typeof module[btn.COMMAND_BUTTON_NAME] === 'function') {
-        console.log(`${TAG} → Executing ${btn.COMMAND_BUTTON_NAME}()`);
-        module[btn.COMMAND_BUTTON_NAME]();
-      } else {
-        console.warn(`${TAG} ⚠ No function "${btn.COMMAND_BUTTON_NAME}" found in ${fileName}`);
+    if (typeof fn === 'function') {
+      console.log(`${TAG} → Executing ${name}()`);
+      try {
+        fn();
+      } catch (err) {
+        console.error(`${TAG} ❌ Command "${name}" threw:`, err);
       }
-    } catch (err) {
-      console.error(`${TAG} ❌ Failed to execute ${btn.COMMAND_BUTTON_NAME}:`, err);
+    } else {
+      console.warn(`${TAG} ⚠ No handler for COMMAND_BUTTON_NAME="${name}". Add it to COMMAND_REGISTRY.`);
     }
   };
 
-  // --- RENDER ----------------------------------------------------------------
   return (
     <View style={styles.wrapper}>
       <ScrollView
         horizontal
-        contentContainerStyle={styles.row}
         showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.row, styles.centerContent]}
       >
         {RESULT_SET_P_CLIENT_DD_COMMAND_BUTTONS.map((btn, idx) => (
           <TouchableOpacity
@@ -92,6 +104,8 @@ export default SCREEN_MAIN_6_COMMAND_BUTTONS;
 
 const styles = StyleSheet.create({
   wrapper: {
+    width: '100%',          // ensure full width so centering works
+    alignItems: 'center',   // center the ScrollView if it sizes to content
     paddingHorizontal: 12,
     paddingTop: 4,
     paddingBottom: 0,
@@ -101,6 +115,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingVertical: 4,
+  },
+  centerContent: {
+    justifyContent: 'center', // <-- center the pills horizontally
+    alignItems: 'center',
   },
   pill: {
     paddingVertical: 8,

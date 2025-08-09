@@ -182,7 +182,7 @@ function DISPLAY_MUSIC_NOTES() {
             }
           }
 
-          const height = div.getBoundingClientRect().height;
+          const height = div.getBoundingClientRect().height / 2; // DIVIDE BY 2 ADDED BY ADAM
           window.ReactNativeWebView?.postMessage("🎻 WEBVIEW_HEIGHT:" + height);
           rnLog("✅ Notes rendered (with guards). height=" + height);
         } catch (err) {
