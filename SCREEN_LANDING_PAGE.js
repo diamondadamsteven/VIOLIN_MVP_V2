@@ -119,7 +119,7 @@ export default function SCREEN_LANDING_PAGE() {
         </View>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.card} onPress={() => alert('Coming soon: Connect with Musicians')}>
+      <TouchableOpacity style={styles.card} onPress={() => router.push('/SCREEN_NETWORKING')}>
         <FontAwesome5 name="user-friends" size={24} style={styles.icon} />
         <View style={styles.textContainer}>
           <Text style={styles.title}>Connect with Musicians</Text>

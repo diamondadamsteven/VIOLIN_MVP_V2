@@ -1,0 +1,3 @@
+// app/SCREEN_NETWORKING.tsx
+import SCREEN_NETWORKING from '../SCREEN_NETWORKING';
+export default SCREEN_NETWORKING;

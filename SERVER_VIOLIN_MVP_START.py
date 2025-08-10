@@ -1,3 +1,4 @@
+#### .\.venv\Scripts\activate #####
 #### .\venv\Scripts\activate #####
 #### uvicorn SERVER_VIOLIN_MVP_START:app --host 0.0.0.0 --port 8000 --reload #####
 #### to verify: http://localhost:8000 #####

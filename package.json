@@ -8,7 +8,11 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+
+    // --- Audio Engine (Python/FastAPI) ---
+    "SERVER_ENGINE_AUDIO_STREAM_LISTENER": ".\\.venv\\Scripts\\python.exe SERVER_ENGINE_AUDIO_STREAM_LISTENER.py",
+    "SERVER_ENGINE_AUDIO_STREAM_LISTENER:py": "python SERVER_ENGINE_AUDIO_STREAM_LISTENER.py"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
