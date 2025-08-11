@@ -18,6 +18,7 @@
 #### Step 2: App loads app/_layout.tsx (or app/_layout.jsx) #####
 #### Step 3: Initial screen loads from app/(tabs)/index.tsx #####
 #### github token: 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 #####
+#### Server listener writes each frame to tmp/recordings/<RECORDING_ID>/<FRAME_NO>.m4a. ####
 
 from fastapi import FastAPI, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
