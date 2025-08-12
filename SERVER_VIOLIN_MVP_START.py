@@ -19,11 +19,18 @@
 #### Step 3: Initial screen loads from app/(tabs)/index.tsx #####
 #### github token: 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 #####
 #### Server listener writes each frame to tmp/recordings/<RECORDING_ID>/<FRAME_NO>.m4a. ####
+# One-time: open PowerShell as Administrator, cd to your project, then:
+
+# Copy
+# Edit
+# powershell -ExecutionPolicy Bypass -File .\setup_server.ps1
 
 from fastapi import FastAPI, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import pyodbc
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
 
 # === Global Metadata Cache ===
 SP_RESULT_SET_TYPE = {}  # Example: { 'P_CLIENT_SONG_INS': 'SINGLE_RECORD' }

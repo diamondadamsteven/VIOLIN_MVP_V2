@@ -1,0 +1,21 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\diamo\\VIOLIN_MVP']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [17208] using StatReload
+INFO:     Started server process [22952]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+✅ Loaded metadata for 59 stored procedures.
+INFO:     192.168.1.15:61924 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61925 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61926 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61930 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61932 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61934 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61931 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61933 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61932 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61934 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61930 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61935 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61930 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.15:61937 - "POST /CALL_SP HTTP/1.1" 200 OK

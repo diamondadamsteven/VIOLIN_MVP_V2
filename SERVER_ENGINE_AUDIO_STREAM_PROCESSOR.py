@@ -27,8 +27,8 @@ def LOG(msg, obj=None):
 # =========================
 DB_CONN_STR = os.getenv(
     "DB_CONN_STR",
-    "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost;"
-    "DATABASE=VIOLIN;UID=sa;PWD=your_password;TrustServerCertificate=yes",
+    "DRIVER={ODBC Driver 17 for SQL Server};SERVER=104.40.11.248,3341;"
+    "DATABASE=VIOLIN;UID=violin;PWD=Test123!;TrustServerCertificate=yes",
 )
 
 def _GET_CONN():

@@ -57,3 +57,13 @@ ios/
 # OS
 .DS_Store
 Thumbs.db
+
+# large & generated
+onsets-frames/train/**
+__pycache__/
+*.log
+VIOLIN_MVP_*_output.txt
+*.cmd
+*.zip
+*.wav
+tmp/**

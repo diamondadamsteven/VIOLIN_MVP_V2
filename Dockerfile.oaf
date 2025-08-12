@@ -1,0 +1,27 @@
+# Dockerfile.oaf (minimal, works with older Python in tensorflow/magenta)
+FROM tensorflow/magenta:latest
+
+# tools for audio + checkpoint download
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget unzip ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
+# only lightweight web deps; avoid conflicting ML pins
+RUN pip install --no-cache-dir \
+    flask \
+    flask-cors \
+    pydub \
+    pretty_midi
+
+# copy the microservice
+WORKDIR /srv
+COPY DOCKER_ONSETS_AND_FRAMES_SERVER.py /srv/DOCKER_ONSETS_AND_FRAMES_SERVER.py
+
+# fetch O&F checkpoint once into the image
+RUN mkdir -p /models/onsets_frames && \
+    wget -q https://storage.googleapis.com/magentadata/models/onsets_frames_transcription/maestro_checkpoint.zip -O /tmp/oaf_ckpt.zip && \
+    unzip -q /tmp/oaf_ckpt.zip -d /models/onsets_frames && \
+    rm /tmp/oaf_ckpt.zip
+
+EXPOSE 9077
+CMD ["python", "/srv/DOCKER_ONSETS_AND_FRAMES_SERVER.py"]
