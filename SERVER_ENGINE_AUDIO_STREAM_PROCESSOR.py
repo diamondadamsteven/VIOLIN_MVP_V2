@@ -6,6 +6,7 @@
 
 import os
 import json
+import math
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List, Iterable
@@ -14,6 +15,21 @@ import numpy as np
 import pyodbc
 import requests
 import pretty_midi
+
+# Optional deps for pitch / DSP
+try:
+    import librosa
+except Exception:
+    librosa = None
+
+# torchcrepe (recommended CREPE implementation)
+try:
+    import torch
+    import torchcrepe
+except Exception:
+    torch = None
+    torchcrepe = None
+
 
 def LOG(msg, obj=None):
     prefix = "SERVER_ENGINE_AUDIO_STREAM_PROCESSOR"
@@ -53,10 +69,6 @@ FRAMES: Dict[str, Dict[int, Dict[str, Any]]] = {}
 # CONTEXT[RID] = {
 #   "VIOLINIST_ID": int,
 #   "COMPOSE_PLAY_OR_PRACTICE": str,
-#   "YN_RUN_FFT": 'Y'|'N',
-#   "YN_RUN_ONS": 'Y'|'N',
-#   "YN_RUN_PYIN": 'Y'|'N',
-#   "YN_RUN_CREPE": 'Y'|'N',
 #   "AUDIO_STREAM_FILE_NAME": Optional[str],
 # }
 CONTEXT: Dict[str, Dict[str, Any]] = {}
@@ -88,6 +100,49 @@ TMP_CHUNKS_DIR = PROJECT_ROOT / "tmp" / "chunks"
 TMP_CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 
 # =========================
+# ffmpeg helpers (decode/resample)
+# =========================
+def _read_wav_as_float_mono(in_wav: Path, target_sr: int) -> np.ndarray:
+    """
+    Decode to mono float32 via ffmpeg pipe at target_sr.
+    """
+    cmd = [
+        "ffmpeg", "-nostdin", "-v", "error",
+        "-i", str(in_wav),
+        "-ac", "1",
+        "-ar", str(target_sr),
+        "-f", "f32le",
+        "pipe:1",
+    ]
+    try:
+        raw = subprocess.check_output(cmd)
+        audio = np.frombuffer(raw, dtype=np.float32)
+        return audio.copy()  # ensure writable
+    except subprocess.CalledProcessError as e:
+        LOG("ffmpeg decode failed", {"path": str(in_wav), "err": str(e)})
+        return np.zeros(0, dtype=np.float32)
+
+def _export_resampled_wav(in_wav: Path, out_wav: Path, target_sr: int) -> bool:
+    """
+    Create a resampled mono PCM16 WAV file at target_sr.
+    """
+    out_wav.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "ffmpeg", "-nostdin", "-y", "-v", "error",
+        "-i", str(in_wav),
+        "-ac", "1",
+        "-ar", str(target_sr),
+        "-c:a", "pcm_s16le",
+        str(out_wav),
+    ]
+    try:
+        subprocess.check_call(cmd)
+        return out_wav.exists() and out_wav.stat().st_size > 44
+    except subprocess.CalledProcessError as e:
+        LOG("ffmpeg resample failed", {"in": str(in_wav), "out": str(out_wav), "err": str(e)})
+        return False
+
+# =========================
 # Context hint from listener
 # =========================
 def REGISTER_RECORDING_CONTEXT_HINT(RECORDING_ID: str, **kwargs):
@@ -114,25 +169,6 @@ def REGISTER_RECORDING_CONTEXT_HINT(RECORDING_ID: str, **kwargs):
 # =========================
 # DB Context & Plans
 # =========================
-# def STEP_1_GET_RECORDING_CONTEXT(CONN, RECORDING_ID: str) -> Dict[str, Any]:
-#     LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR.STEP_1_GET_RECORDING_CONTEXT",
-#         {"RECORDING_ID": RECORDING_ID})
-#     if RECORDING_ID in CONTEXT:
-#         return CONTEXT[RECORDING_ID]
-
-#     # Replace this block with your real proc P_ENGINE_ALL_RECORDING_PARAMETERS_GET
-#     CUR = CONN.cursor()
-#     CUR.execute("EXEC P_ENGINE_ALL_RECORDING_PARAMETERS_GET @RECORDING_ID = ?", (int(RECORDING_ID),))
-#     ROW = CUR.fetchone()
-#     ctx = {
-#       "VIOLINIST_ID": ROW.VIOLINIST_ID,
-#       "COMPOSE_PLAY_OR_PRACTICE": ROW.COMPOSE_PLAY_OR_PRACTICE,
-#       "AUDIO_STREAM_FILE_NAME": ROW.AUDIO_STREAM_FILE_NAME
-#     }
-
-#     CONTEXT[RECORDING_ID] = ctx
-#     return ctx
-
 def STEP_2_LOAD_COMPOSE_PARAMS(CONN, RECORDING_ID: str):
     """
     P_ENGINE_SONG_AUDIO_CHUNK_FOR_COMPOSE_GET @RECORDING_ID
@@ -313,24 +349,38 @@ def _LOAD_NOTE(CONN, RECORDING_ID: int, AUDIO_CHUNK_NO: int,
     )
     _BULK_INSERT(CONN, SQL, PACK)
 
-def _LOAD_HZ(CONN, RECORDING_ID: int, AUDIO_CHUNK_NO: int, START_MS: int, END_MS: int,
-             SOURCE_METHOD: str, HZ_ROWS: Iterable[Tuple[float, float]]):
+def _LOAD_HZ(CONN, RECORDING_ID: int, AUDIO_CHUNK_NO: int,
+             SOURCE_METHOD: str,
+             HZ_SERIES: Iterable[Tuple[int, int, float, float]]):
+    """
+    Insert many per-10ms rows:
+      HZ_SERIES = [(start_ms, end_ms, hz, confidence), ...]
+      start_ms/end_ms are absolute within the recording timeline.
+    """
     LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._LOAD_HZ",
         {"RECORDING_ID": RECORDING_ID, "CHUNK": AUDIO_CHUNK_NO, "SRC": SOURCE_METHOD})
+    rows = list(HZ_SERIES)
+    if not rows:
+        return
     SQL = """
       INSERT INTO ENGINE_LOAD_HZ
       (RECORDING_ID, AUDIO_CHUNK_NO, START_MS, END_MS, SOURCE_METHOD, HZ, CONFIDENCE)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     """
     PACK = (
-        (RECORDING_ID, AUDIO_CHUNK_NO, START_MS, END_MS, SOURCE_METHOD, hz, conf)
-        for (hz, conf) in HZ_ROWS
+        (RECORDING_ID, AUDIO_CHUNK_NO, s, e, SOURCE_METHOD, float(hz), float(conf))
+        for (s, e, hz, conf) in rows
     )
     _BULK_INSERT(CONN, SQL, PACK)
 
-def _LOAD_FFT(CONN, RECORDING_ID: int, AUDIO_CHUNK_NO: int, START_MS: int, END_MS: int,
-              FFT_ROWS: Iterable[Tuple[int, float, float, float, float]]):
-    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._LOAD_FFT",
+def _LOAD_FFT_FRAMES(CONN, RECORDING_ID: int, AUDIO_CHUNK_NO: int,
+                     FFT_ROWS: Iterable[Tuple[int, int, int, float, float, float, float]]):
+    """
+    Insert per-100ms FFT rows. Each row is:
+      (FRAME_START_MS, FRAME_END_MS, FFT_BUCKET_NO, HZ_START, HZ_END,
+       FFT_BUCKET_SIZE_IN_HZ, FFT_VALUE)
+    """
+    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._LOAD_FFT_FRAMES",
         {"RECORDING_ID": RECORDING_ID, "CHUNK": AUDIO_CHUNK_NO})
     SQL = """
       INSERT INTO ENGINE_LOAD_FFT
@@ -339,8 +389,8 @@ def _LOAD_FFT(CONN, RECORDING_ID: int, AUDIO_CHUNK_NO: int, START_MS: int, END_M
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     PACK = (
-        (RECORDING_ID, AUDIO_CHUNK_NO, START_MS, END_MS, bno, hz0, hz1, bsz, val)
-        for (bno, hz0, hz1, bsz, val) in FFT_ROWS
+        (RECORDING_ID, AUDIO_CHUNK_NO, s, e, bno, hz0, hz1, bsz, val)
+        for (s, e, bno, hz0, hz1, bsz, val) in FFT_ROWS
     )
     _BULK_INSERT(CONN, SQL, PACK)
 
@@ -372,7 +422,7 @@ def _LOAD_VOLUME_10MS(CONN, RECORDING_ID: int, AUDIO_CHUNK_NO: int,
     _BULK_INSERT(CONN, SQL, PACK)
 
 # =========================
-# Feature implementations (placeholders where needed)
+# Feature implementations
 # =========================
 def _RUN_ONSETS_AND_FRAMES_MICROSERVICE(absolute_wav_path: Path) -> Optional[Path]:
     """
@@ -383,7 +433,7 @@ def _RUN_ONSETS_AND_FRAMES_MICROSERVICE(absolute_wav_path: Path) -> Optional[Pat
         resp = requests.post(
             f"{OAF_URL}/transcribe",
             json={"audio_path": str(absolute_wav_path)},
-            timeout=120,  # large enough for O&F on small chunks
+            timeout=120,
         )
         if resp.ok:
             data = resp.json()
@@ -411,27 +461,204 @@ def _PARSE_MIDI_TO_NOTES(midi_path: Path) -> List[Tuple[int, int, int, int, str]
             rows.append((s, e, int(n.pitch), int(n.velocity), "ONS"))
     return rows
 
-def _COMPUTE_ONS_VIA_MICROSERVICE(CHUNK_WAV: Path) -> List[Tuple[int, int, int, int, str]]:
-    midi = _RUN_ONSETS_AND_FRAMES_MICROSERVICE(CHUNK_WAV)
-    if not midi:
+def _COMPUTE_FFT(audio_22k: np.ndarray, sr: int, base_start_ms: int) -> List[Tuple[int, int, int, float, float, float, float]]:
+    """
+    100 ms window / 100 ms hop @ 22,050 Hz.
+    Returns rows:
+      (FRAME_START_MS, FRAME_END_MS, FFT_BUCKET_NO, HZ_START, HZ_END, BUCKET_SIZE_HZ, VALUE)
+    VALUE is per-frame max-normalized magnitude.
+    """
+    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_FFT",
+        {"sr": sr, "len": int(audio_22k.shape[0])})
+    if sr <= 0 or audio_22k.size == 0:
         return []
-    return _PARSE_MIDI_TO_NOTES(midi)
 
-def _COMPUTE_FFT(AUDIO: np.ndarray, SR: int):
-    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_FFT")
-    return []
+    window_ms = 100
+    hop_ms = 100
+    win = int(round(sr * (window_ms / 1000.0)))
+    hop = int(round(sr * (hop_ms / 1000.0)))
+    if win <= 0 or hop <= 0 or audio_22k.size < win:
+        return []
 
-def _COMPUTE_PYIN(AUDIO: np.ndarray, SR: int):
-    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_PYIN")
-    return []
+    # Frequency bucket size in Hz
+    bucket_hz = sr / float(win)
 
-def _COMPUTE_CREPE(AUDIO: np.ndarray, SR: int):
-    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_CREPE")
-    return []
+    rows: List[Tuple[int, int, int, float, float, float, float]] = []
+    n_frames = 1 + (audio_22k.size - win) // hop
+    for i in range(n_frames):
+        start = i * hop
+        end = start + win
+        seg = audio_22k[start:end]
 
-def _COMPUTE_VOLUME(AUDIO: np.ndarray, SR: int):
-    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_VOLUME")
-    return None, []
+        # Hann to reduce leakage
+        seg = seg * np.hanning(seg.shape[0])
+        # rfft: real FFT -> N/2+1 bins
+        spec = np.fft.rfft(seg)
+        mag = np.abs(spec)
+
+        # Per-frame max normalization (avoid div-by-zero)
+        m = float(mag.max()) if mag.size else 0.0
+        if m > 0:
+            mag = mag / m
+
+        # Frame timing in ms (relative to chunk, then offset by base_start_ms)
+        frame_start_ms = base_start_ms + int(round((start / sr) * 1000.0))
+        frame_end_ms   = base_start_ms + int(round((end   / sr) * 1000.0))
+
+        # Bin 0..N/2; map bin → [hz_start, hz_end)
+        for bno in range(mag.shape[0]):
+            hz0 = bno * bucket_hz
+            hz1 = (bno + 1) * bucket_hz
+            rows.append((
+                frame_start_ms, frame_end_ms,
+                bno, float(hz0), float(hz1), float(bucket_hz), float(mag[bno])
+            ))
+
+    return rows
+
+def _COMPUTE_PYIN_SERIES(audio_22k: np.ndarray, sr: int) -> List[Tuple[int, int, float, float]]:
+    """
+    pYIN at 22.05 kHz → per-10ms series relative to the chunk:
+      returns [(start_ms, end_ms, hz, confidence), ...]
+    """
+    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_PYIN_SERIES",
+        {"sr": sr, "len": int(audio_22k.shape[0])})
+
+    if librosa is None or sr != 22050 or audio_22k.size == 0:
+        if librosa is None:
+            LOG("pYIN unavailable: librosa not installed")
+        else:
+            LOG("pYIN expects 22050 Hz non-empty input", {"sr": sr, "size": int(audio_22k.size)})
+        return []
+
+    hop_length = max(1, int(round(sr * 0.010)))  # ~10 ms
+    frame_length = max(hop_length * 4, 2048)
+
+    try:
+        fmin = librosa.note_to_hz("G3")   # ~196 Hz
+        fmax = librosa.note_to_hz("C8")   # ~4186 Hz
+    except Exception:
+        fmin, fmax = 196.0, 4186.0
+
+    try:
+        f0, voiced_flag, voiced_prob = librosa.pyin(
+            y=audio_22k, sr=sr, fmin=fmin, fmax=fmax,
+            frame_length=frame_length, hop_length=hop_length, center=True
+        )
+    except Exception as e:
+        LOG("pYIN failed", str(e))
+        return []
+
+    rows: List[Tuple[int, int, float, float]] = []
+    for i, (hz, vflag, vprob) in enumerate(zip(f0, voiced_flag, voiced_prob)):
+        if vflag and hz is not None and np.isfinite(hz) and hz > 0.0:
+            start_ms = int(round((i * hop_length) * 1000.0 / sr))
+            end_ms   = start_ms + 9
+            rows.append((start_ms, end_ms, float(hz), float(vprob)))
+    return rows
+
+def _COMPUTE_CREPE_SERIES(audio_16k: np.ndarray, sr: int) -> List[Tuple[int, int, float, float]]:
+    """
+    torchcrepe at 16 kHz → per-10ms series relative to the chunk:
+      returns [(start_ms, end_ms, hz, confidence), ...]
+    """
+    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_CREPE_SERIES",
+        {"sr": sr, "len": int(audio_16k.shape[0])})
+
+    if torchcrepe is None or torch is None or sr != 16000 or audio_16k.size == 0:
+        if torchcrepe is None or torch is None:
+            LOG("CREPE unavailable: torchcrepe/torch not installed")
+        else:
+            LOG("CREPE expects 16000 Hz non-empty input", {"sr": sr, "size": int(audio_16k.size)})
+        return []
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    x = torch.tensor(audio_16k, dtype=torch.float32, device=device).unsqueeze(0)  # (1, T)
+
+    hop_length = 160  # 10 ms @ 16k
+
+    # Violin-safe range
+    try:
+        fmin = float(librosa.note_to_hz("G3")) if librosa else 196.0
+        fmax = float(librosa.note_to_hz("C8")) if librosa else 4186.0
+    except Exception:
+        fmin, fmax = 196.0, 4186.0
+
+    with torch.no_grad():
+        # Ask for periodicity as confidence
+        f0, periodicity = torchcrepe.predict(
+            x,
+            sample_rate=sr,
+            hop_length=hop_length,
+            fmin=fmin, fmax=fmax,
+            model="full",
+            decoder="viterbi",
+            batch_size=2048,
+            device=device,
+            return_periodicity=True
+        )
+
+    f0 = f0.squeeze(0).detach().cpu().numpy()
+    pr = periodicity.squeeze(0).detach().cpu().numpy()
+
+    rows: List[Tuple[int, int, float, float]] = []
+    for i, (hz, conf) in enumerate(zip(f0, pr)):
+        if np.isfinite(hz) and hz > 0.0:
+            start_ms = int(round(i * hop_length * 1000.0 / sr))
+            end_ms   = start_ms + 9
+            rows.append((start_ms, end_ms, float(hz), float(conf)))
+    return rows
+
+def _COMPUTE_VOLUME(audio: np.ndarray, sr: int, base_start_ms: int) -> Tuple[Optional[Tuple[float, float]], List[Tuple[int, int, float, float]]]:
+    """
+    Aggregate RMS & dB for the chunk, and a 1 ms series:
+      returns ( (avg_rms, avg_db), [ (start_ms, end_ms, rms, db), ... ] )
+    """
+    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_VOLUME", {"sr": sr, "len": int(audio.shape[0])})
+    if sr <= 0 or audio.size == 0:
+        return None, []
+
+    hop_ms = 1
+    hop = max(1, int(round(sr * (hop_ms / 1000.0))))
+
+    series: List[Tuple[int, int, float, float]] = []
+
+    if librosa is not None:
+        # Use librosa at 1 ms hop; small ~2 ms window to match your example
+        frame_length = max(hop * 2, hop)
+        try:
+            rms = librosa.feature.rms(y=audio, frame_length=frame_length, hop_length=hop, center=True)[0]
+            # frame times in seconds from chunk start
+            times = librosa.frames_to_time(np.arange(len(rms)), sr=sr, hop_length=hop, n_fft=frame_length)
+            for r, t in zip(rms, times):
+                s_ms = base_start_ms + int(round(t * 1000.0))
+                e_ms = s_ms + (hop_ms - 1)
+                v = float(r)
+                vdb = float(20.0 * math.log10(max(v, 1e-12)))
+                series.append((s_ms, e_ms, v, vdb))
+        except Exception as e:
+            LOG("librosa RMS failed, falling back to numpy", str(e))
+            # fall through to numpy implementation below
+
+    if not series:
+        # Numpy fallback with 1 ms hop and 2 ms window
+        win = max(hop * 2, hop)
+        i = 0
+        while i + win <= audio.size:
+            seg = audio[i:i+win]
+            v = float(np.sqrt(np.mean(seg * seg))) if seg.size else 0.0
+            vdb = float(20.0 * math.log10(max(v, 1e-12)))
+            s_ms = base_start_ms + int(round((i / sr) * 1000.0))
+            e_ms = s_ms + (hop_ms - 1)
+            series.append((s_ms, e_ms, v, vdb))
+            i += hop
+
+    if not series:
+        return None, []
+
+    avg_rms = float(np.mean([v for (_, _, v, _) in series]))
+    avg_db  = float(np.mean([vdb for (_, _, _, vdb) in series]))
+    return (avg_rms, avg_db), series
 
 # =========================
 # Main entry – per frame
@@ -450,16 +677,10 @@ async def PROCESS_AUDIO_STREAM(
     RID = str(RECORDING_ID)
     CONN = _GET_CONN()
     try:
-        # CTX = STEP_1_GET_RECORDING_CONTEXT(CONN, RID)
-        # MODE = str(CTX["COMPOSE_PLAY_OR_PRACTICE"]).upper()
         if RID not in CONTEXT:
-            REGISTER_RECORDING_CONTEXT_HINT (RID)
+            REGISTER_RECORDING_CONTEXT_HINT(RID)
         CTX = CONTEXT[RID]
         MODE = str(CTX["COMPOSE_PLAY_OR_PRACTICE"]).upper()
-
-        # if RID not in DID_BEFORE:
-        #     _EXEC_PROC(CONN, "P_ENGINE_ALL_BEFORE", {"RECORDING_ID": int(RID)})
-        #     DID_BEFORE.add(RID)
 
         # Register frame
         FRAMES.setdefault(RID, {})[int(FRAME_NO)] = {
@@ -479,25 +700,29 @@ async def PROCESS_AUDIO_STREAM(
             # Emit as many complete CHUNK_MS windows as we can
             while True:
                 AUDIO_CHUNK_NO = params["NEXT_CHUNK_NO"]
-                # chunk 1 starts at 0..CHUNK_MS-1
                 start_ms = (AUDIO_CHUNK_NO - 1) * CHUNK_MS
                 end_ms = start_ms + CHUNK_MS - 1
 
                 if not _WINDOW_COVERED(RID, start_ms, end_ms):
                     break
 
-                # Export exact chunk window to WAV (for O&F microservice)
-                chunk_wav = TMP_CHUNKS_DIR / f"{RID}_compose_{AUDIO_CHUNK_NO:06d}.wav"
-                ok = _EXPORT_CHUNK_WAV_FROM_FRAMES(RID, start_ms, end_ms, chunk_wav)
-                if not ok:
-                    # Should not happen if coverage was true, but guard anyway
+                # Export 48k WAV for the exact window
+                chunk_wav_48k = TMP_CHUNKS_DIR / f"{RID}_compose_{AUDIO_CHUNK_NO:06d}_48k.wav"
+                if not _EXPORT_CHUNK_WAV_FROM_FRAMES(RID, start_ms, end_ms, chunk_wav_48k):
                     break
 
-                # FFT
+                # Prepare 22.05k and 16k versions (decode or file)
+                audio_22k = _read_wav_as_float_mono(chunk_wav_48k, 22050)
+                audio_16k = _read_wav_as_float_mono(chunk_wav_48k, 16000)
+
+                # For O&F microservice, create a 16k file path
+                chunk_wav_16k = TMP_CHUNKS_DIR / f"{RID}_compose_{AUDIO_CHUNK_NO:06d}_16k.wav"
+                _export_resampled_wav(chunk_wav_48k, chunk_wav_16k, 16000)
+
+                # FFT (per 100 ms, 22.05k)
                 if (YN_FFT or "N").upper() == "Y":
-                    # If/when FFT computes bucket rows, load via _LOAD_FFT and call method:
-                    FFT_ROWS = _COMPUTE_FFT(np.zeros(1, dtype=np.float32), 48000)
-                    _LOAD_FFT(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, end_ms, FFT_ROWS)
+                    fft_rows = _COMPUTE_FFT(audio_22k, 22050, start_ms)
+                    _LOAD_FFT_FRAMES(CONN, int(RID), AUDIO_CHUNK_NO, fft_rows)
                     _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_FFT", {
                         "RECORDING_ID": int(RID),
                         "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
@@ -513,31 +738,25 @@ async def PROCESS_AUDIO_STREAM(
                 flags = STEP_3_NEXT_COMPOSE_FLAGS(CONN, RID, AUDIO_CHUNK_NO)
 
                 if flags.get("YN_RUN_ONS", "N") == "Y":
-                    NOTE_ROWS = _COMPUTE_ONS_VIA_MICROSERVICE(chunk_wav)
-                    _LOAD_NOTE(CONN, int(RID), AUDIO_CHUNK_NO, NOTE_ROWS)
-                    # _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_ONS", {
-                    #     "RECORDING_ID": int(RID),
-                    #     "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                    # })
+                    note_rows = _COMPUTE_ONS_VIA_MICROSERVICE(chunk_wav_16k)
+                    _LOAD_NOTE(CONN, int(RID), AUDIO_CHUNK_NO, note_rows)
 
                 if flags.get("YN_RUN_PYIN", "N") == "Y":
-                    HZ_ROWS = _COMPUTE_PYIN(np.zeros(1, dtype=np.float32), 48000)
-                    _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, end_ms, "PYIN", HZ_ROWS)
+                    py_series_rel = _COMPUTE_PYIN_SERIES(audio_22k, 22050)
+                    py_series_abs = [(start_ms + rs, start_ms + re, hz, conf)
+                                     for (rs, re, hz, conf) in py_series_rel]
+                    _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, "PYIN", py_series_abs)
 
                 if flags.get("YN_RUN_CREPE", "N") == "Y":
-                    HZ_ROWS = _COMPUTE_CREPE(np.zeros(1, dtype=np.float32), 48000)
-                    _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, end_ms, "CREPE", HZ_ROWS)
+                    cr_series_rel = _COMPUTE_CREPE_SERIES(audio_16k, 16000)
+                    cr_series_abs = [(start_ms + rs, start_ms + re, hz, conf)
+                                     for (rs, re, hz, conf) in cr_series_rel]
+                    _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, "CREPE", cr_series_abs)
 
-                # if flags.get("YN_RUN_PYIN", "N") == "Y" or flags.get("YN_RUN_CREPE", "N") == "Y":
-                #     _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_CREPE_AND_PYIN", {
-                #         "RECORDING_ID": int(RID),
-                #         "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                #     })
-
-                # Volume (placeholder)
-                VOL_AGG, VOL_SERIES = _COMPUTE_VOLUME(np.zeros(1, dtype=np.float32), 48000)
-                _LOAD_VOLUME(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, VOL_AGG)
-                _LOAD_VOLUME_10MS(CONN, int(RID), AUDIO_CHUNK_NO, VOL_SERIES)
+                # Volume (computed at 22.05k, per 1 ms)
+                vol_agg, vol_series = _COMPUTE_VOLUME(audio_22k, 22050, start_ms)
+                _LOAD_VOLUME(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, vol_agg)
+                _LOAD_VOLUME_10MS(CONN, int(RID), AUDIO_CHUNK_NO, vol_series)
 
                 # Master
                 _EXEC_PROC(CONN, "P_ENGINE_ALL_MASTER", {
@@ -566,46 +785,43 @@ async def PROCESS_AUDIO_STREAM(
                 if not _WINDOW_COVERED(RID, start_ms, end_ms):
                     break
 
-                # Export exact window to WAV for O&F
-                chunk_wav = TMP_CHUNKS_DIR / f"{RID}_{MODE.lower()}_{AUDIO_CHUNK_NO:06d}.wav"
-                ok = _EXPORT_CHUNK_WAV_FROM_FRAMES(RID, start_ms, end_ms, chunk_wav)
-                if not ok:
+                # Export exact window to 48k WAV
+                chunk_wav_48k = TMP_CHUNKS_DIR / f"{RID}_{MODE.lower()}_{AUDIO_CHUNK_NO:06d}_48k.wav"
+                if not _EXPORT_CHUNK_WAV_FROM_FRAMES(RID, start_ms, end_ms, chunk_wav_48k):
                     break
+
+                # Prepare 22.05k & 16k
+                audio_22k = _read_wav_as_float_mono(chunk_wav_48k, 22050)
+                audio_16k = _read_wav_as_float_mono(chunk_wav_48k, 16000)
+                chunk_wav_16k = TMP_CHUNKS_DIR / f"{RID}_{MODE.lower()}_{AUDIO_CHUNK_NO:06d}_16k.wav"
+                _export_resampled_wav(chunk_wav_48k, chunk_wav_16k, 16000)
 
                 # FFT
                 if row.get("YN_RUN_FFT", "N") == "Y":
-                    FFT_ROWS = _COMPUTE_FFT(np.zeros(1, dtype=np.float32), 48000)
-                    _LOAD_FFT(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, end_ms, FFT_ROWS)
+                    fft_rows = _COMPUTE_FFT(audio_22k, 22050, start_ms)
+                    _LOAD_FFT_FRAMES(CONN, int(RID), AUDIO_CHUNK_NO, fft_rows)
 
                 # ONS
                 if row.get("YN_RUN_ONS", "N") == "Y":
-                    NOTE_ROWS = _COMPUTE_ONS_VIA_MICROSERVICE(chunk_wav)
-                    _LOAD_NOTE(CONN, int(RID), AUDIO_CHUNK_NO, NOTE_ROWS)
-                    # _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_ONS", {
-                    #     "RECORDING_ID": int(RID),
-                    #     "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                    # })
+                    note_rows = _COMPUTE_ONS_VIA_MICROSERVICE(chunk_wav_16k)
+                    _LOAD_NOTE(CONN, int(RID), AUDIO_CHUNK_NO, note_rows)
 
                 # PYIN / CREPE
-                did_pitch = False
                 if row.get("YN_RUN_PYIN", "N") == "Y":
-                    HZ_ROWS = _COMPUTE_PYIN(np.zeros(1, dtype=np.float32), 48000)
-                    _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, end_ms, "PYIN", HZ_ROWS)
-                    did_pitch = True
+                    py_series_rel = _COMPUTE_PYIN_SERIES(audio_22k, 22050)
+                    py_series_abs = [(start_ms + rs, start_ms + re, hz, conf)
+                                     for (rs, re, hz, conf) in py_series_rel]
+                    _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, "PYIN", py_series_abs)
                 if row.get("YN_RUN_CREPE", "N") == "Y":
-                    HZ_ROWS = _COMPUTE_CREPE(np.zeros(1, dtype=np.float32), 48000)
-                    _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, end_ms, "CREPE", HZ_ROWS)
-                    did_pitch = True
-                # if did_pitch:
-                #     _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_CREPE_AND_PYIN", {
-                #         "RECORDING_ID": int(RID),
-                #         "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                #     })
+                    cr_series_rel = _COMPUTE_CREPE_SERIES(audio_16k, 16000)
+                    cr_series_abs = [(start_ms + rs, start_ms + re, hz, conf)
+                                     for (rs, re, hz, conf) in cr_series_rel]
+                    _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, "CREPE", cr_series_abs)
 
-                # Volume (placeholder)
-                VOL_AGG, VOL_SERIES = _COMPUTE_VOLUME(np.zeros(1, dtype=np.float32), 48000)
-                _LOAD_VOLUME(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, VOL_AGG)
-                _LOAD_VOLUME_10MS(CONN, int(RID), AUDIO_CHUNK_NO, VOL_SERIES)
+                # Volume
+                vol_agg, vol_series = _COMPUTE_VOLUME(audio_22k, 22050, start_ms)
+                _LOAD_VOLUME(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, vol_agg)
+                _LOAD_VOLUME_10MS(CONN, int(RID), AUDIO_CHUNK_NO, vol_series)
 
                 # Master
                 _EXEC_PROC(CONN, "P_ENGINE_ALL_MASTER", {
@@ -685,10 +901,8 @@ async def PROCESS_STOP_RECORDING(RECORDING_ID: str):
     RID = str(RECORDING_ID)
     CONN = _GET_CONN()
     try:
-#         CTX = STEP_1_GET_RECORDING_CONTEXT(CONN, RID)
-#         MODE = str(CTX["COMPOSE_PLAY_OR_PRACTICE"]).upper()
         if RID not in CONTEXT:
-            REGISTER_RECORDING_CONTEXT_HINT (RID)
+            REGISTER_RECORDING_CONTEXT_HINT(RID)
         CTX = CONTEXT[RID]
 
         final_path = FINALIZE_RECORDING_EXPORT(RID, CTX.get("AUDIO_STREAM_FILE_NAME"))
@@ -697,14 +911,6 @@ async def PROCESS_STOP_RECORDING(RECORDING_ID: str):
         _EXEC_PROC(CONN, "P_ENGINE_RECORD_END", {
             "RECORDING_ID": int(RID)
         })
-
-#         _EXEC_PROC(CONN, "P_ENGINE_ALL_MASTER", {
-#             "VIOLINIST_ID": int(CTX["VIOLINIST_ID"]),
-#             "RECORDING_ID": int(RID),
-#             "COMPOSE_PLAY_OR_PRACTICE": MODE,
-#             "AUDIO_CHUNK_NO": None,
-#             "YN_RECORDING_STOPPED": "Y",
-#         })
 
     finally:
         CONN.close()
