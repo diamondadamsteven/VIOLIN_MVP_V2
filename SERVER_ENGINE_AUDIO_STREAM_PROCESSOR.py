@@ -93,53 +93,45 @@ TMP_CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 def REGISTER_RECORDING_CONTEXT_HINT(RECORDING_ID: str, **kwargs):
     LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR.REGISTER_RECORDING_CONTEXT_HINT",
         {"RECORDING_ID": RECORDING_ID, **kwargs})
-    ctx = CONTEXT.get(RECORDING_ID)
-    if not ctx:
-        ctx = {
-            "VIOLINIST_ID": 1,
-            "COMPOSE_PLAY_OR_PRACTICE": "PLAY",
-            "YN_RUN_FFT": "Y",
-            "YN_RUN_ONS": "Y",
-            "YN_RUN_PYIN": "Y",
-            "YN_RUN_CREPE": "Y",
-            "AUDIO_STREAM_FILE_NAME": None,
-        }
-        CONTEXT[RECORDING_ID] = ctx
+    CONN = _GET_CONN()
+    CUR = CONN.cursor()
+
+    CUR.execute("EXEC P_ENGINE_ALL_RECORDING_PARAMETERS_GET @RECORDING_ID = ?", (int(RECORDING_ID),))
+    ROW = CUR.fetchone()
+    ctx = {
+      "VIOLINIST_ID": ROW.VIOLINIST_ID,
+      "COMPOSE_PLAY_OR_PRACTICE": ROW.COMPOSE_PLAY_OR_PRACTICE,
+      "AUDIO_STREAM_FILE_NAME": ROW.AUDIO_STREAM_FILE_NAME
+    }
+
+    CONTEXT[RECORDING_ID] = ctx
     for k, v in kwargs.items():
         ctx[k] = v
+
+    CUR.close()
+    CONN.close()
 
 # =========================
 # DB Context & Plans
 # =========================
-def STEP_1_GET_RECORDING_CONTEXT(CONN, RECORDING_ID: str) -> Dict[str, Any]:
-    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR.STEP_1_GET_RECORDING_CONTEXT",
-        {"RECORDING_ID": RECORDING_ID})
-    if RECORDING_ID in CONTEXT:
-        return CONTEXT[RECORDING_ID]
+# def STEP_1_GET_RECORDING_CONTEXT(CONN, RECORDING_ID: str) -> Dict[str, Any]:
+#     LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR.STEP_1_GET_RECORDING_CONTEXT",
+#         {"RECORDING_ID": RECORDING_ID})
+#     if RECORDING_ID in CONTEXT:
+#         return CONTEXT[RECORDING_ID]
 
-    # Replace this block with your real proc P_ENGINE_ALL_RECORDING_PARAMTERS_GET
-    # CUR = CONN.cursor()
-    # CUR.execute("EXEC P_ENGINE_ALL_RECORDING_PARAMTERS_GET @RECORDING_ID = ?", (int(RECORDING_ID),))
-    # ROW = CUR.fetchone()
-    # ctx = {
-    #   "VIOLINIST_ID": ROW.VIOLINIST_ID,
-    #   "COMPOSE_PLAY_OR_PRACTICE": ROW.COMPOSE_PLAY_OR_PRACTICE,
-    #   "AUDIO_STREAM_FILE_NAME": ROW.AUDIO_STREAM_FILE_NAME,
-    #   "YN_RUN_FFT": "Y", "YN_RUN_ONS":"Y","YN_RUN_PYIN":"Y","YN_RUN_CREPE":"Y"
-    # }
+#     # Replace this block with your real proc P_ENGINE_ALL_RECORDING_PARAMETERS_GET
+#     CUR = CONN.cursor()
+#     CUR.execute("EXEC P_ENGINE_ALL_RECORDING_PARAMETERS_GET @RECORDING_ID = ?", (int(RECORDING_ID),))
+#     ROW = CUR.fetchone()
+#     ctx = {
+#       "VIOLINIST_ID": ROW.VIOLINIST_ID,
+#       "COMPOSE_PLAY_OR_PRACTICE": ROW.COMPOSE_PLAY_OR_PRACTICE,
+#       "AUDIO_STREAM_FILE_NAME": ROW.AUDIO_STREAM_FILE_NAME
+#     }
 
-    # Temp defaults until wired:
-    ctx = {
-        "VIOLINIST_ID": 1,
-        "COMPOSE_PLAY_OR_PRACTICE": "PLAY",
-        "AUDIO_STREAM_FILE_NAME": None,
-        "YN_RUN_FFT": "Y",
-        "YN_RUN_ONS": "Y",
-        "YN_RUN_PYIN": "Y",
-        "YN_RUN_CREPE": "Y",
-    }
-    CONTEXT[RECORDING_ID] = ctx
-    return ctx
+#     CONTEXT[RECORDING_ID] = ctx
+#     return ctx
 
 def STEP_2_LOAD_COMPOSE_PARAMS(CONN, RECORDING_ID: str):
     """
@@ -326,7 +318,7 @@ def _LOAD_HZ(CONN, RECORDING_ID: int, AUDIO_CHUNK_NO: int, START_MS: int, END_MS
     LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._LOAD_HZ",
         {"RECORDING_ID": RECORDING_ID, "CHUNK": AUDIO_CHUNK_NO, "SRC": SOURCE_METHOD})
     SQL = """
-      INSERT INTO ENGINE_LOAD_Hz
+      INSERT INTO ENGINE_LOAD_HZ
       (RECORDING_ID, AUDIO_CHUNK_NO, START_MS, END_MS, SOURCE_METHOD, HZ, CONFIDENCE)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     """
@@ -458,12 +450,16 @@ async def PROCESS_AUDIO_STREAM(
     RID = str(RECORDING_ID)
     CONN = _GET_CONN()
     try:
-        CTX = STEP_1_GET_RECORDING_CONTEXT(CONN, RID)
+        # CTX = STEP_1_GET_RECORDING_CONTEXT(CONN, RID)
+        # MODE = str(CTX["COMPOSE_PLAY_OR_PRACTICE"]).upper()
+        if RID not in CONTEXT:
+            REGISTER_RECORDING_CONTEXT_HINT (RID)
+        CTX = CONTEXT[RID]
         MODE = str(CTX["COMPOSE_PLAY_OR_PRACTICE"]).upper()
 
-        if RID not in DID_BEFORE:
-            _EXEC_PROC(CONN, "P_ENGINE_ALL_BEFORE", {"RECORDING_ID": int(RID)})
-            DID_BEFORE.add(RID)
+        # if RID not in DID_BEFORE:
+        #     _EXEC_PROC(CONN, "P_ENGINE_ALL_BEFORE", {"RECORDING_ID": int(RID)})
+        #     DID_BEFORE.add(RID)
 
         # Register frame
         FRAMES.setdefault(RID, {})[int(FRAME_NO)] = {
@@ -519,10 +515,10 @@ async def PROCESS_AUDIO_STREAM(
                 if flags.get("YN_RUN_ONS", "N") == "Y":
                     NOTE_ROWS = _COMPUTE_ONS_VIA_MICROSERVICE(chunk_wav)
                     _LOAD_NOTE(CONN, int(RID), AUDIO_CHUNK_NO, NOTE_ROWS)
-                    _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_ONS", {
-                        "RECORDING_ID": int(RID),
-                        "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                    })
+                    # _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_ONS", {
+                    #     "RECORDING_ID": int(RID),
+                    #     "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
+                    # })
 
                 if flags.get("YN_RUN_PYIN", "N") == "Y":
                     HZ_ROWS = _COMPUTE_PYIN(np.zeros(1, dtype=np.float32), 48000)
@@ -532,11 +528,11 @@ async def PROCESS_AUDIO_STREAM(
                     HZ_ROWS = _COMPUTE_CREPE(np.zeros(1, dtype=np.float32), 48000)
                     _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, end_ms, "CREPE", HZ_ROWS)
 
-                if flags.get("YN_RUN_PYIN", "N") == "Y" or flags.get("YN_RUN_CREPE", "N") == "Y":
-                    _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_CREPE_AND_PYIN", {
-                        "RECORDING_ID": int(RID),
-                        "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                    })
+                # if flags.get("YN_RUN_PYIN", "N") == "Y" or flags.get("YN_RUN_CREPE", "N") == "Y":
+                #     _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_CREPE_AND_PYIN", {
+                #         "RECORDING_ID": int(RID),
+                #         "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
+                #     })
 
                 # Volume (placeholder)
                 VOL_AGG, VOL_SERIES = _COMPUTE_VOLUME(np.zeros(1, dtype=np.float32), 48000)
@@ -585,10 +581,10 @@ async def PROCESS_AUDIO_STREAM(
                 if row.get("YN_RUN_ONS", "N") == "Y":
                     NOTE_ROWS = _COMPUTE_ONS_VIA_MICROSERVICE(chunk_wav)
                     _LOAD_NOTE(CONN, int(RID), AUDIO_CHUNK_NO, NOTE_ROWS)
-                    _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_ONS", {
-                        "RECORDING_ID": int(RID),
-                        "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                    })
+                    # _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_ONS", {
+                    #     "RECORDING_ID": int(RID),
+                    #     "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
+                    # })
 
                 # PYIN / CREPE
                 did_pitch = False
@@ -600,11 +596,11 @@ async def PROCESS_AUDIO_STREAM(
                     HZ_ROWS = _COMPUTE_CREPE(np.zeros(1, dtype=np.float32), 48000)
                     _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, end_ms, "CREPE", HZ_ROWS)
                     did_pitch = True
-                if did_pitch:
-                    _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_CREPE_AND_PYIN", {
-                        "RECORDING_ID": int(RID),
-                        "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                    })
+                # if did_pitch:
+                #     _EXEC_PROC(CONN, "P_ENGINE_ALL_METHOD_CREPE_AND_PYIN", {
+                #         "RECORDING_ID": int(RID),
+                #         "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
+                #     })
 
                 # Volume (placeholder)
                 VOL_AGG, VOL_SERIES = _COMPUTE_VOLUME(np.zeros(1, dtype=np.float32), 48000)
@@ -689,19 +685,26 @@ async def PROCESS_STOP_RECORDING(RECORDING_ID: str):
     RID = str(RECORDING_ID)
     CONN = _GET_CONN()
     try:
-        CTX = STEP_1_GET_RECORDING_CONTEXT(CONN, RID)
-        MODE = str(CTX["COMPOSE_PLAY_OR_PRACTICE"]).upper()
+#         CTX = STEP_1_GET_RECORDING_CONTEXT(CONN, RID)
+#         MODE = str(CTX["COMPOSE_PLAY_OR_PRACTICE"]).upper()
+        if RID not in CONTEXT:
+            REGISTER_RECORDING_CONTEXT_HINT (RID)
+        CTX = CONTEXT[RID]
 
         final_path = FINALIZE_RECORDING_EXPORT(RID, CTX.get("AUDIO_STREAM_FILE_NAME"))
         LOG("Final WAV path", {"path": final_path})
 
-        _EXEC_PROC(CONN, "P_ENGINE_ALL_MASTER", {
-            "VIOLINIST_ID": int(CTX["VIOLINIST_ID"]),
-            "RECORDING_ID": int(RID),
-            "COMPOSE_PLAY_OR_PRACTICE": MODE,
-            "AUDIO_CHUNK_NO": None,
-            "YN_RECORDING_STOPPED": "Y",
+        _EXEC_PROC(CONN, "P_ENGINE_RECORD_END", {
+            "RECORDING_ID": int(RID)
         })
+
+#         _EXEC_PROC(CONN, "P_ENGINE_ALL_MASTER", {
+#             "VIOLINIST_ID": int(CTX["VIOLINIST_ID"]),
+#             "RECORDING_ID": int(RID),
+#             "COMPOSE_PLAY_OR_PRACTICE": MODE,
+#             "AUDIO_CHUNK_NO": None,
+#             "YN_RECORDING_STOPPED": "Y",
+#         })
 
     finally:
         CONN.close()

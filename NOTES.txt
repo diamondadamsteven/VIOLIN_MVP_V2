@@ -1,0 +1,45 @@
+#### .\.venv\Scripts\activate #####
+#### .\venv\Scripts\activate #####
+#### uvicorn SERVER_VIOLIN_MVP_START:app --host 0.0.0.0 --port 8000 --reload #####
+#### to verify: http://localhost:8000 #####
+#### to verify: 
+""" curl -X POST "http://localhost:8000/CALL_SP" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"SP_NAME\":\"P_CLIENT_VIOLINIST_INS\",\"PARAMS\":{\"DEVICE_ID\":\"abc\",\"IP_ADDRESS\":\"127.0.0.1\",\"LATITUDE\":10.77,\"LONGITUDE\":106.69}}"
+ """
+#### curl -X POST "http://192.168.1.131:8000'/CALL_SP" -H "Content-Type: application/json" -d "{\"SP_NAME\": \"P_CLIENT_DD_SONG\", \"PARAMS\": {\"VIOLINIST_ID\": 123, \"FILTER_TEXT\": \"bach\"}}"
+
+
+#### pip freeze > SERVER_VIOLIN_MVP_requirements.txt ####
+
+#### dos prompt #2: ipconfig...get IPv4 Address and paste into CLIENT_STEP_1_REGISTER.js #####
+#### npx expo start --clear ##### 
+#### Step 1: Expo starts the app from index.js (or index.ts) #####
+#### Step 2: App loads app/_layout.tsx (or app/_layout.jsx) #####
+#### Step 3: Initial screen loads from app/(tabs)/index.tsx #####
+#### github token: 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 #####
+#### Server listener writes each frame to tmp/recordings/<RECORDING_ID>/<FRAME_NO>.m4a. ####
+# One-time: open PowerShell as Administrator, cd to your project, then:
+
+# Copy
+# Edit
+# powershell -ExecutionPolicy Bypass -File .\setup_server.ps1
+
+20250812:
+
+def _COMPUTE_FFT(AUDIO: np.ndarray, SR: int):
+    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_FFT")
+    return []
+
+def _COMPUTE_PYIN(AUDIO: np.ndarray, SR: int):
+    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_PYIN")
+    return []
+
+def _COMPUTE_CREPE(AUDIO: np.ndarray, SR: int):
+    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_CREPE")
+    return []
+
+def _COMPUTE_VOLUME(AUDIO: np.ndarray, SR: int):
+    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_VOLUME")
+    return None, []
+

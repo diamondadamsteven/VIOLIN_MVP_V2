@@ -7,6 +7,7 @@
 # ------------------------------------------------------------
 
 import os
+import sys
 import json
 import subprocess
 from pathlib import Path
@@ -22,15 +23,31 @@ from SERVER_ENGINE_AUDIO_STREAM_PROCESSOR import (
     REGISTER_RECORDING_CONTEXT_HINT,
 )
 
+# --- Force UTF-8 console on Windows; also handle any stray unencodables gracefully
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 # ─────────────────────────────────────────────────────────────
-# Logging
+# Logging (ASCII-safe)
 # ─────────────────────────────────────────────────────────────
 def LOG_TO_CONSOLE(msg, obj=None):
     prefix = "SERVER_ENGINE_AUDIO_STREAM_LISTENER"
-    if obj is None:
-        print(f"{prefix} - {msg}", flush=True)
-    else:
-        print(f"{prefix} - {msg} {obj}", flush=True)
+    try:
+        if obj is None:
+            print(f"{prefix} - {msg}", flush=True)
+        else:
+            print(f"{prefix} - {msg} {obj}", flush=True)
+    except UnicodeEncodeError:
+        # Fallback: strip/replace anything not encodable
+        try:
+            s = f"{prefix} - {msg} {obj}".encode("utf-8", "replace").decode("ascii", "ignore")
+            print(s, flush=True)
+        except Exception:
+            # Last resort: print without obj
+            print(f"{prefix} - {msg}", flush=True)
 
 # ─────────────────────────────────────────────────────────────
 # App + CORS
@@ -43,6 +60,16 @@ APP.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@APP.on_event("startup")
+async def _log_routes_on_startup():
+    print("=== ROUTES REGISTERED ===", flush=True)
+    for r in APP.router.routes:
+        try:
+            print(f"  {r.path}  ->  {getattr(r, 'methods', ['WS'])}", flush=True)
+        except Exception:
+            print(f"  {r.path}", flush=True)
+    print("=========================", flush=True)
 
 # ─────────────────────────────────────────────────────────────
 # Paths / runtime state
@@ -70,7 +97,6 @@ def STEP_1_ENSURE_OAF_CONTAINER_RUNNING():
     """
     LOG_TO_CONSOLE("Start function SERVER_ENGINE_AUDIO_STREAM_LISTENER.STEP_1_ENSURE_OAF_CONTAINER_RUNNING")
     try:
-        # Is it already running?
         res = subprocess.run(
             ["docker", "inspect", "-f", "{{.State.Running}}", OAF_CONTAINER],
             capture_output=True, text=True
@@ -81,8 +107,7 @@ def STEP_1_ENSURE_OAF_CONTAINER_RUNNING():
     except Exception as e:
         LOG_TO_CONSOLE("docker inspect failed (will try to run container)", str(e))
 
-    # (Re)start container
-    LOG_TO_CONSOLE("Starting OAF container…", {"image": OAF_IMAGE, "name": OAF_CONTAINER})
+    LOG_TO_CONSOLE("Starting OAF container...", {"image": OAF_IMAGE, "name": OAF_CONTAINER})
     cmd = [
         "docker", "run", "-d", "--rm",
         "--name", OAF_CONTAINER,
@@ -125,28 +150,34 @@ async def WEBSOCKET_SEND_JSON(ws: WebSocket, payload: Dict[str, Any]):
 
 @APP.websocket("/ws/stream")
 async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
-    LOG_TO_CONSOLE("Start function SERVER_ENGINE_AUDIO_STREAM_LISTENER.WEBSOCKET_RECEIVE_INCOMING_DATA")
+    peer = getattr(ws.client, "__dict__", None)
+    LOG_TO_CONSOLE("WS CONNECT -> /ws/stream", {"peer": peer})
     await ws.accept()
+    LOG_TO_CONSOLE("WS ACCEPTED", {"subprotocol": getattr(ws, "subprotocol", None)})
     PENDING_META[ws] = {}
 
     try:
         while True:
             msg = await ws.receive()
+
+            # ── TEXT FRAMES ─────────────────────────────────────
             if "text" in msg and msg["text"] is not None:
+                raw_text = msg["text"]
+                LOG_TO_CONSOLE("WS TEXT <-", raw_text)
                 try:
-                    meta = json.loads(msg["text"])
+                    meta = json.loads(raw_text)
                 except Exception as exc:
                     await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": f"Bad JSON: {exc}"})
+                    LOG_TO_CONSOLE("WS TEXT PARSE ERROR", str(exc))
                     continue
 
                 mtype = meta.get("type")
-                LOG_TO_CONSOLE("WS text received", meta)
-
                 if mtype == "START":
                     rec_id = str(meta.get("RECORDING_ID") or "").strip()
                     audio_name = meta.get("AUDIO_STREAM_FILE_NAME") or None
                     if not rec_id:
                         await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "Missing RECORDING_ID in START"})
+                        LOG_TO_CONSOLE("START missing RECORDING_ID", meta)
                         continue
 
                     rec_dir = CREATE_TEMP_AUDIO_DIR(rec_id)
@@ -155,10 +186,9 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                         "FIRST_FRAME_RECEIVED": False,
                     }
                     NEXT_EXPECTED.setdefault(rec_id, 0)
-
-                    # Hint processor with filename chosen by DB at record-start
                     REGISTER_RECORDING_CONTEXT_HINT(rec_id, AUDIO_STREAM_FILE_NAME=audio_name)
 
+                    LOG_TO_CONSOLE("START ACK ->", {"RECORDING_ID": rec_id, "dir": str(rec_dir), "audio_file": audio_name})
                     await WEBSOCKET_SEND_JSON(ws, {"type": "START_ACK", "RECORDING_ID": rec_id})
 
                 elif mtype == "FRAME":
@@ -167,8 +197,10 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                     frame_dur = meta.get("FRAME_DURATION_IN_MS")
                     overlap = meta.get("COUNTDOWN_OVERLAP_MS", 0)
                     bytes_len = meta.get("BYTES_LEN")
+
                     if any(v is None for v in (rec_id, frame_no, frame_dur, bytes_len)):
                         await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "FRAME meta missing required fields"})
+                        LOG_TO_CONSOLE("FRAME meta missing fields", meta)
                         continue
 
                     if rec_id not in ACTIVE_RECORDINGS:
@@ -186,22 +218,29 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                         "COUNTDOWN_OVERLAP_MS": int(overlap or 0),
                         "BYTES_LEN": int(bytes_len),
                     }
+                    LOG_TO_CONSOLE("FRAME META QUEUED", {
+                        "RECORDING_ID": rec_id, "FRAME_NO": int(frame_no), "BYTES_LEN": int(bytes_len)
+                    })
 
                 elif mtype == "STOP":
                     rec_id = str(meta.get("RECORDING_ID") or "").strip()
                     if not rec_id:
                         await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "Missing RECORDING_ID in STOP"})
+                        LOG_TO_CONSOLE("STOP missing RECORDING_ID", meta)
                         continue
 
-                    LOG_TO_CONSOLE("STOP received", {"RECORDING_ID": rec_id})
+                    LOG_TO_CONSOLE("STOP received <-", {"RECORDING_ID": rec_id})
                     await PROCESS_STOP_RECORDING(rec_id)
                     ACTIVE_RECORDINGS.pop(rec_id, None)
                     NEXT_EXPECTED.pop(rec_id, None)
                     await WEBSOCKET_SEND_JSON(ws, {"type": "STOP_ACK", "RECORDING_ID": rec_id})
+                    LOG_TO_CONSOLE("STOP ACK ->", {"RECORDING_ID": rec_id})
 
                 else:
                     await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": f"Unknown message type: {mtype}"})
+                    LOG_TO_CONSOLE("UNKNOWN WS TEXT TYPE", meta)
 
+            # ── BINARY FRAMES ──────────────────────────────────
             elif "bytes" in msg and msg["bytes"] is not None:
                 data: bytes = msg["bytes"]
                 meta_map = PENDING_META.get(ws, {})
@@ -215,6 +254,7 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
 
                 if not meta:
                     await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "Binary payload without matching FRAME meta"})
+                    LOG_TO_CONSOLE("BINARY WITHOUT META", {"len": len(data)})
                     continue
 
                 del meta_map[match_key]
@@ -227,10 +267,11 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                 rec_dir = Path(ACTIVE_RECORDINGS[rec_id]["TEMP_AUDIO_STREAM_DIRECTORY"])
                 out_path = rec_dir / f"{int(frame_no):08d}.m4a"
                 out_path.write_bytes(data)
-                LOG_TO_CONSOLE("Saved frame", {"RECORDING_ID": rec_id, "FRAME_NO": frame_no, "path": str(out_path)})
+                LOG_TO_CONSOLE("BINARY SAVED", {"RECORDING_ID": rec_id, "FRAME_NO": frame_no, "path": str(out_path), "len": len(data)})
 
                 if not ACTIVE_RECORDINGS[rec_id]["FIRST_FRAME_RECEIVED"]:
                     ACTIVE_RECORDINGS[rec_id]["FIRST_FRAME_RECEIVED"] = True
+                    LOG_TO_CONSOLE("FIRST FRAME RECEIVED", {"RECORDING_ID": rec_id})
 
                 frame_start_ms = int(frame_no) * int(frame_dur)
                 frame_end_ms = frame_start_ms + int(frame_dur) - 1
@@ -249,30 +290,49 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                 if frame_no == next_expected:
                     NEXT_EXPECTED[rec_id] = next_expected + 1
 
-                await WEBSOCKET_SEND_JSON(ws, {
+                ack = {
                     "type": "ACK",
                     "RECORDING_ID": rec_id,
                     "FRAME_NO": frame_no,
                     "NEXT_EXPECTED_FRAME_NO": NEXT_EXPECTED.get(rec_id, 0),
                     "MISSING_FRAMES": [],
-                })
+                }
+                await WEBSOCKET_SEND_JSON(ws, ack)
+                LOG_TO_CONSOLE("ACK ->", ack)
 
             else:
-                # ping/empty
-                pass
+                # pings / keepalives (no-op)
+                LOG_TO_CONSOLE("WS KEEPALIVE/EMPTY")
 
     except WebSocketDisconnect:
-        LOG_TO_CONSOLE("WebSocketDisconnect")
+        LOG_TO_CONSOLE("WS DISCONNECT")
     except Exception as exc:
         LOG_TO_CONSOLE("Listener exception", str(exc))
-        await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": str(exc)})
+        try:
+            await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": str(exc)})
+        except Exception:
+            pass
     finally:
         PENDING_META.pop(ws, None)
         LOG_TO_CONSOLE("WEBSOCKET_RECEIVE_INCOMING_DATA finalized for this socket")
+
+# ─────────────────────────────────────────────────────────────
+# Echo test endpoint (bound directly on APP)
+# ─────────────────────────────────────────────────────────────
+@APP.websocket("/ws/echo")
+async def ws_echo(ws: WebSocket):
+    await ws.accept()
+    await ws.send_text("echo-server: connected")
+    try:
+        while True:
+            msg = await ws.receive_text()
+            await ws.send_text(f"echo:{msg}")
+    except WebSocketDisconnect:
+        return
 
 # Dev run:
 # uvicorn SERVER_ENGINE_AUDIO_STREAM_LISTENER:APP --host 0.0.0.0 --port 7070 --reload
 if __name__ == "__main__":
     import uvicorn
-    LOG_TO_CONSOLE("Start function __main__ → uvicorn.run")
+    LOG_TO_CONSOLE("Start function __main__ -> uvicorn.run")
     uvicorn.run("SERVER_ENGINE_AUDIO_STREAM_LISTENER:APP", host="0.0.0.0", port=7070, reload=True)

@@ -6,6 +6,7 @@ import SCREEN_MAIN_1_RECORDING_PARAMETERS from './SCREEN_MAIN_1_RECORDING_PARAME
 import SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS, {
   EVT_CONDUCTOR_UPDATED,
   EVT_NOTES_UPDATED,
+  EVT_PANELS_REFRESH_REQUESTED,
   EVT_SCORES_UPDATED,
 } from './SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS';
 import SCREEN_MAIN_2b_CONDUCTOR from './SCREEN_MAIN_2b_CONDUCTOR';
@@ -50,10 +51,18 @@ export default function SCREEN_MAIN() {
       if (a.YN_STOP_BATONS === 'Y') REF_SCREEN_MAIN_2b_CONDUCTOR.current?.STOP_BATONS?.();
     });
 
+    // NEW: “refresh all panels” request from 2a
+    const REFRESH_DURING_RECORDING = DeviceEventEmitter.addListener(EVT_PANELS_REFRESH_REQUESTED, () => {
+      REF_SCREEN_MAIN_3_MUSIC_NOTES.current?.REFRESH?.();
+      REF_SCREEN_MAIN_4_COLOR_CHART.current?.REFRESH?.();
+      REF_SCREEN_MAIN_5_SCORES.current?.REFRESH?.();
+    });
+
     return () => {
       subNotes.remove();
       subScores.remove();
       subCond.remove();
+      REFRESH_DURING_RECORDING.remove();
     };
   }, []);
 

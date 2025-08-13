@@ -1,41 +1,12 @@
-#### .\.venv\Scripts\activate #####
-#### .\venv\Scripts\activate #####
-#### uvicorn SERVER_VIOLIN_MVP_START:app --host 0.0.0.0 --port 8000 --reload #####
-#### to verify: http://localhost:8000 #####
-#### to verify: 
-""" curl -X POST "http://localhost:8000/CALL_SP" ^
-  -H "Content-Type: application/json" ^
-  -d "{\"SP_NAME\":\"P_CLIENT_VIOLINIST_INS\",\"PARAMS\":{\"DEVICE_ID\":\"abc\",\"IP_ADDRESS\":\"127.0.0.1\",\"LATITUDE\":10.77,\"LONGITUDE\":106.69}}"
- """
-#### curl -X POST "http://192.168.1.131:8000'/CALL_SP" -H "Content-Type: application/json" -d "{\"SP_NAME\": \"P_CLIENT_DD_SONG\", \"PARAMS\": {\"VIOLINIST_ID\": 123, \"FILTER_TEXT\": \"bach\"}}"
-
-
-#### pip freeze > SERVER_VIOLIN_MVP_requirements.txt ####
-
-#### dos prompt #2: ipconfig...get IPv4 Address and paste into CLIENT_STEP_1_REGISTER.js #####
-#### npx expo start --clear ##### 
-#### Step 1: Expo starts the app from index.js (or index.ts) #####
-#### Step 2: App loads app/_layout.tsx (or app/_layout.jsx) #####
-#### Step 3: Initial screen loads from app/(tabs)/index.tsx #####
-#### github token: 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 #####
-#### Server listener writes each frame to tmp/recordings/<RECORDING_ID>/<FRAME_NO>.m4a. ####
-# One-time: open PowerShell as Administrator, cd to your project, then:
-
-# Copy
-# Edit
-# powershell -ExecutionPolicy Bypass -File .\setup_server.ps1
-
-from fastapi import FastAPI, APIRouter, Request
+from fastapi import FastAPI, APIRouter, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import pyodbc
 import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
-# === Global Metadata Cache ===
-SP_RESULT_SET_TYPE = {}  # Example: { 'P_CLIENT_SONG_INS': 'SINGLE_RECORD' }
+SP_RESULT_SET_TYPE = {}
 
-# === DB Connection ===
 def SERVER_DB_CONNECTION_GET():
     CONNECTION_STRING = (
         "DRIVER={ODBC Driver 17 for SQL Server};"
@@ -46,7 +17,6 @@ def SERVER_DB_CONNECTION_GET():
     )
     return pyodbc.connect(CONNECTION_STRING, autocommit=True)
 
-# === Lifespan Startup/Shutdown Handler ===
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -71,23 +41,18 @@ async def lifespan(app: FastAPI):
         print(f"❌ Error loading stored procedure metadata: {str(e)}")
 
     yield
-
-    # Optional cleanup logic here
     print("🛑 Shutting down backend app...")
 
-# === Initialize FastAPI App ===
 app = FastAPI(lifespan=lifespan)
 
-# === CORS (Allow All Origins) ===
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace with exact domain in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# === Dynamic Stored Procedure Router ===
 router = APIRouter()
 
 @router.post("/CALL_SP")
@@ -125,10 +90,17 @@ async def CALL_SP_HANDLER(request: Request):
     except Exception as e:
         return {"error": str(e)}
 
-# === Root Endpoint ===
+@router.post("/CLIENT_LOG")
+async def CLIENT_LOG(entries: dict = Body(...)):
+    try:
+        for e in entries.get("entries", []):
+            print(f"[PHONE] {e.get('t')} {e.get('level')} {e.get('tag')} :: {e.get('msg')} {e.get('extra')}")
+    except Exception as ex:
+        print(f"[PHONE] log parse error: {ex}")
+    return {"ok": True}
+
 @app.get("/")
 async def root():
     return {"message": "🎻 VIOLIN_MVP backend server is running."}
 
-# === Register API Routes ===
 app.include_router(router)

@@ -8,12 +8,16 @@ import { START_STREAMING_WS, STOP_STREAMING_WS } from './CLIENT_AUDIO_STREAM_MAS
 export const EVT_NOTES_UPDATED = 'EVT_NOTES_UPDATED';
 export const EVT_SCORES_UPDATED = 'EVT_SCORES_UPDATED';
 export const EVT_CONDUCTOR_UPDATED = 'EVT_CONDUCTOR_UPDATED';
+// Parent (SCREEN_MAIN.js) listens to this to refresh panels during recording
+export const EVT_PANELS_REFRESH_REQUESTED = 'EVT_PANELS_REFRESH_REQUESTED';
 
 // ─────────────────────────────────────────────────────────────
 // Simple procedural flags in app vars (no useState)
 CLIENT_APP_VARIABLES._IS_PLAYING = false;
 CLIENT_APP_VARIABLES._IS_RECORDING = false;
 CLIENT_APP_VARIABLES._IS_PAUSED = false;
+// Track last chunk we reacted to
+let L_START_AUDIO_CHUNK_NO = 0;
 // ─────────────────────────────────────────────────────────────
 
 function LOG(msg, obj) {
@@ -24,8 +28,7 @@ function LOG(msg, obj) {
 
 // Generic SP caller
 async function CALL_SP(SP_NAME, PARAMS) {
-  console.log(`Start function SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS.CALL_SP`);
-  console.log(`Calling sp ${SP_NAME} ${JSON.stringify(PARAMS)}`);
+  LOG('CALL_SP', { SP_NAME, PARAMS });
   const url = `${CLIENT_APP_VARIABLES.BACKEND_URL}/CALL_SP`;
   const body = { SP_NAME, PARAMS };
   const resp = await fetch(url, {
@@ -37,200 +40,177 @@ async function CALL_SP(SP_NAME, PARAMS) {
     const text = await resp.text().catch(() => '');
     throw new Error(`SP ${SP_NAME} failed: ${resp.status} ${text}`);
   }
-  const json = await resp.json().catch(() => ({}));
-  return json;
+  return resp.json().catch(() => ({}));
 }
 
 // Record start → call P_CLIENT_RECORD_START, populate app vars, kick countdown & WS
 async function RECORD_BUTTON_TAPPED_HANDLER() {
-  console.log(`Start function SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS.RECORD_BUTTON_TAPPED_HANDLER`);
-  LOG('Record button tapped');
+  LOG('RECORD_BUTTON_TAPPED_HANDLER');
 
   CLIENT_APP_VARIABLES._IS_RECORDING = true;
   CLIENT_APP_VARIABLES._IS_PLAYING = false;
   CLIENT_APP_VARIABLES._IS_PAUSED = false;
+  L_START_AUDIO_CHUNK_NO = 0;
 
-  // 1) Call P_CLIENT_RECORD_START
-  const params = {
-    VIOLINIST_ID: CLIENT_APP_VARIABLES.VIOLINIST_ID,
-    SONG_ID: CLIENT_APP_VARIABLES.SONG_ID,
+  const request = {
+    SP_NAME: 'P_CLIENT_RECORD_START',
+    PARAMS: {
+      VIOLINIST_ID: CLIENT_APP_VARIABLES.VIOLINIST_ID,
+      SONG_ID: CLIENT_APP_VARIABLES.SONG_ID,
+      COMPOSE_SONG_NAME: CLIENT_APP_VARIABLES.SONG_NAME,
+      COMPOSE_TIME_SIGNATURE: CLIENT_APP_VARIABLES.TIME_SIGNATURE,
+      COMPOSE_PARAMETER_VALUE_FASTEST_NOTE_IN_BEATS: CLIENT_APP_VARIABLES.FASTEST_NOTE_IN_BEATS,
+      COMPOSE_PARAMETER_VALUE_DOUBLE_STOPS: CLIENT_APP_VARIABLES.YN_HAS_DOUBLE_STOPS,
+      COMPOSE_PARAMETER_VALUE_HIGH_NOTES: CLIENT_APP_VARIABLES.YN_HAS_HIGH_NOTES,
+      PARAMETER_VALUE_BPM: CLIENT_APP_VARIABLES.BPM,
+      PARAMETER_VALUE_TUNING: CLIENT_APP_VARIABLES.TUNING,
+      PLAY_PARAMETER_VALUE_GOAL_TARGET: CLIENT_APP_VARIABLES.GOAL_TARGET,
+      PLAY_GOAL_TARGET_RECORDING_ID: CLIENT_APP_VARIABLES.GOAL_TARGET_RECORDING_ID,
+      COMPOSE_PLAY_OR_PRACTICE: CLIENT_APP_VARIABLES.COMPOSE_PLAY_OR_PRACTICE,
+    },
   };
-  const rs = await CALL_SP('P_CLIENT_RECORD_START', params);
 
-  // Expect a single-record result with fields per spec:
-  const row =
-    rs?.result?.[0] ||
-    rs?.rows?.[0] ||
-    rs?.[0] ||
-    null;
+  const startResp = await fetch(`${CLIENT_APP_VARIABLES.BACKEND_URL}/CALL_SP`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
 
-  if (!row) {
-    throw new Error('P_CLIENT_RECORD_START returned no rows.');
-  }
+  const startData = await startResp.json();
+  LOG('P_CLIENT_RECORD_START response', startData);
 
   // Assign to app variables
-  CLIENT_APP_VARIABLES.SONG_ID = row.SONG_ID ?? CLIENT_APP_VARIABLES.SONG_ID;
-  CLIENT_APP_VARIABLES.RECORDING_ID = row.RECORDING_ID;
-  CLIENT_APP_VARIABLES.COMPOSE_CHUNK_MINIMUM_DURATION_IN_MS = row.COMPOSE_CHUNK_MINIMUM_DURATION_IN_MS;
-  CLIENT_APP_VARIABLES.COUNTDOWN_BEATS = row.COUNTDOWN_BEATS;
-  CLIENT_APP_VARIABLES.CONDUCTOR_MESSAGE_TEXT = row.CONDUCTOR_MESSAGE_TEXT;
-  CLIENT_APP_VARIABLES.CONDUCTOR_MESSAGE_DISPLAY_FOR_DURATION_IN_MS = row.CONDUCTOR_MESSAGE_DISPLAY_FOR_DURATION_IN_MS;
-  CLIENT_APP_VARIABLES.CONDUCTOR_MOOD_GOOD_BAD_OR_NEUTRAL = row.CONDUCTOR_MOOD_GOOD_BAD_OR_NEUTRAL;
-  CLIENT_APP_VARIABLES.AUDIO_STREAM_FILE_NAME = row.AUDIO_STREAM_FILE_NAME;
+  CLIENT_APP_VARIABLES.SONG_ID = startData?.RESULT?.SONG_ID;
+  CLIENT_APP_VARIABLES.RECORDING_ID = startData?.RESULT?.RECORDING_ID;
+  CLIENT_APP_VARIABLES.COMPOSE_CHUNK_MINIMUM_DURATION_IN_MS =
+    startData?.RESULT?.COMPOSE_CHUNK_MINIMUM_DURATION_IN_MS;
+  CLIENT_APP_VARIABLES.COUNTDOWN_BEATS = startData?.RESULT?.COUNTDOWN_BEATS;
+  CLIENT_APP_VARIABLES.CONDUCTOR_MESSAGE_TEXT = startData?.RESULT?.CONDUCTOR_MESSAGE_TEXT;
+  CLIENT_APP_VARIABLES.CONDUCTOR_MESSAGE_DISPLAY_FOR_DURATION_IN_MS =
+    startData?.RESULT?.CONDUCTOR_MESSAGE_DISPLAY_FOR_DURATION_IN_MS;
+  CLIENT_APP_VARIABLES.CONDUCTOR_MOOD_GOOD_BAD_OR_NEUTRAL =
+    startData?.RESULT?.CONDUCTOR_MOOD_GOOD_BAD_OR_NEUTRAL;
+  CLIENT_APP_VARIABLES.AUDIO_STREAM_FILE_NAME = startData?.RESULT?.AUDIO_STREAM_FILE_NAME;
 
-  LOG('P_CLIENT_RECORD_START → app vars updated', {
-    RECORDING_ID: CLIENT_APP_VARIABLES.RECORDING_ID,
-    COUNTDOWN_BEATS: CLIENT_APP_VARIABLES.COUNTDOWN_BEATS,
-    AUDIO_STREAM_FILE_NAME: CLIENT_APP_VARIABLES.AUDIO_STREAM_FILE_NAME,
-  });
+  // Start WebSocket streaming (countdown + frames)
+  const bpm = CLIENT_APP_VARIABLES.BPM;
+  await START_STREAMING_WS({ countdownBeats: CLIENT_APP_VARIABLES.COUNTDOWN_BEATS || 0, bpm });
 
-  // 2) Start WebSocket streaming (countdown + frames)
-  const bpm = CLIENT_APP_VARIABLES.BPM || 60;
-  await START_STREAMING_WS({
-    countdownBeats: CLIENT_APP_VARIABLES.COUNTDOWN_BEATS || 0,
-    bpm,
-  });
-
-  // 3) Kick the “while-recording” refresh loop (notes/colors/scores/etc.)
+  // Kick the while-recording refresh loop
   REFRESH_LOOP_WHILE_RECORDING();
 }
 
 // Stop → call P_CLIENT_RECORD_END, stop WS
 async function STOP_BUTTON_TAPPED_HANDLER() {
-  console.log(`Start function SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS.STOP_BUTTON_TAPPED_HANDLER`);
-  LOG('Stop button tapped');
+  LOG('STOP_BUTTON_TAPPED_HANDLER');
 
   CLIENT_APP_VARIABLES._IS_PAUSED = false;
   CLIENT_APP_VARIABLES._IS_PLAYING = false;
   CLIENT_APP_VARIABLES._IS_RECORDING = false;
 
-  // Stop streaming first (flush/STOP to server)
   try {
     await STOP_STREAMING_WS();
   } catch (e) {
     LOG('STOP_STREAMING_WS error', e?.message || e);
   }
 
-  // Tell backend recording ended
-  const params = {
-    RECORDING_ID: CLIENT_APP_VARIABLES.RECORDING_ID,
-  };
-  await CALL_SP('P_CLIENT_RECORD_END', params);
+  await CALL_SP('P_CLIENT_RECORD_END', { RECORDING_ID: CLIENT_APP_VARIABLES.RECORDING_ID });
 
-  // Clear any chunk bounds in app vars (as per spec)
   CLIENT_APP_VARIABLES.START_AUDIO_CHUNK_NO = null;
   CLIENT_APP_VARIABLES.END_AUDIO_CHUNK_NO = null;
 
   LOG('Recording stopped and P_CLIENT_RECORD_END called');
 }
 
-// Play tapped → (not implementing playback here; just log and allow parent to handle)
+// Play tapped (transport-only; UI handled by parent)
 function PLAY_BUTTON_TAPPED_HANDLER() {
-  console.log(`Start function SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS.PLAY_BUTTON_TAPPED_HANDLER`);
-  LOG('Play button tapped');
+  L_START_AUDIO_CHUNK_NO = 0;
+  LOG('PLAY_BUTTON_TAPPED_HANDLER');
   CLIENT_APP_VARIABLES._IS_PLAYING = true;
   CLIENT_APP_VARIABLES._IS_RECORDING = false;
   CLIENT_APP_VARIABLES._IS_PAUSED = false;
-
-  // Let the parent screen do its UI things (batons, face, etc.) via props callback
-  // This component stays transport-only.
 }
 
-// Pause tapped (optional state flag only)
+// Pause tapped
 function PAUSE_BUTTON_TAPPED_HANDLER() {
-  console.log(`Start function SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS.PAUSE_BUTTON_TAPPED_HANDLER`);
-  LOG('Pause button tapped');
+  LOG('PAUSE_BUTTON_TAPPED_HANDLER');
   CLIENT_APP_VARIABLES._IS_PAUSED = true;
 }
 
 // ─────────────────────────────────────────────────────────────
-// While-recording refresh loop per spec:
-// Repeatedly:
-//  - P_CLIENT_SONG_AUDIO_CHUNK_PROCESSED_GET
-//      If YN_STOP_RECORDING = 'Y' → trigger stop
-//      Then set YN_REFRESH_NEXT_AUDIO_CHUNK = null (via SP below)
-//  - P_CLIENT_SONG_NOTES_GET → emit EVT_NOTES_UPDATED
-//  - (If YN_SHOW_ADVANCED = 'Y') P_CLIENT_RPT_AUDIO_DETAIL_GET
-//  - P_CLIENT_SONG_SCORE_GET → emit EVT_SCORES_UPDATED
-//  - P_CLIENT_SONG_ANIMATION_GET → emit EVT_CONDUCTOR_UPDATED
-//  - Set YN_REFRESH_NEXT_AUDIO_CHUNK = 'Y'
-// Notes:
-//  - This is a light v1 loop. You can tune cadence (e.g., 200–300ms).
+// While-recording refresh loop
 // ─────────────────────────────────────────────────────────────
 let _refreshTimer = null;
 const REFRESH_CADENCE_MS = 300;
 
 async function REFRESH_LOOP_ITERATION() {
-  console.log(`Start function SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS.REFRESH_LOOP_ITERATION`);
   if (!CLIENT_APP_VARIABLES._IS_RECORDING) return;
 
-  const RECORDING_ID = CLIENT_APP_VARIABLES.RECORDING_ID;
-
   try {
-    // A) Which chunk/state changed?
-    const a = await CALL_SP('P_CLIENT_SONG_AUDIO_CHUNK_PROCESSED_GET', {
-      RECORDING_ID,
+    const payload = {
+      SP_NAME: 'P_CLIENT_SONG_AUDIO_CHUNK_PROCESSED_GET',
+      PARAMS: {
+        VIOLINIST_ID: CLIENT_APP_VARIABLES.VIOLINIST_ID,
+        RECORDING_ID: CLIENT_APP_VARIABLES.RECORDING_ID,
+      },
+    };
+
+    const resp = await fetch(`${CLIENT_APP_VARIABLES.BACKEND_URL}/CALL_SP`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     });
 
-    const rowA = a?.result?.[0] || a?.rows?.[0] || a?.[0] || {};
-    if (rowA.YN_STOP_RECORDING === 'Y') {
-      // Trigger stop
-      await STOP_BUTTON_TAPPED_HANDLER();
+    const data = await resp.json();
+    LOG('P_CLIENT_SONG_AUDIO_CHUNK_PROCESSED_GET', data);
+
+    CLIENT_APP_VARIABLES.START_AUDIO_CHUNK_NO = data?.RESULT?.START_AUDIO_CHUNK_NO;
+    CLIENT_APP_VARIABLES.END_AUDIO_CHUNK_NO = data?.RESULT?.END_AUDIO_CHUNK_NO;
+    CLIENT_APP_VARIABLES.YN_STOP_RECORDING = data?.RESULT?.YN_STOP_RECORDING;
+    CLIENT_APP_VARIABLES.YN_STOP_CLIENT_REFRESH_LOOP = data?.RESULT?.YN_STOP_CLIENT_REFRESH_LOOP;
+
+    // New chunk processed? Ask panels to refresh via event.
+    if (
+      typeof CLIENT_APP_VARIABLES.START_AUDIO_CHUNK_NO === 'number' &&
+      CLIENT_APP_VARIABLES.START_AUDIO_CHUNK_NO > L_START_AUDIO_CHUNK_NO
+    ) {
+      DeviceEventEmitter.emit(EVT_PANELS_REFRESH_REQUESTED);
+      L_START_AUDIO_CHUNK_NO = CLIENT_APP_VARIABLES.START_AUDIO_CHUNK_NO;
       return;
     }
-
-    // Clear YN_REFRESH_NEXT_AUDIO_CHUNK
-    await CALL_SP('P_CLIENT_SONG_REFRESH_FLAG_UPD', {
-      RECORDING_ID,
-      YN_REFRESH_NEXT_AUDIO_CHUNK: null,
-    });
-
-    // B) Notes
-    const notesRs = await CALL_SP('P_CLIENT_SONG_NOTES_GET', {
-      RECORDING_ID,
-      BREAKDOWN_NAME: CLIENT_APP_VARIABLES.BREAKDOWN_NAME || 'OVERALL',
-    });
-    const notes = notesRs?.result || notesRs?.rows || [];
-    CLIENT_APP_VARIABLES._LAST_NOTES = notes;
-    DeviceEventEmitter.emit(EVT_NOTES_UPDATED, { notes });
-
-    // C) Advanced (optional)
-    if (CLIENT_APP_VARIABLES.YN_SHOW_ADVANCED === 'Y') {
-      await CALL_SP('P_CLIENT_RPT_AUDIO_DETAIL_GET', { RECORDING_ID });
-    }
-
-    // D) Scores
-    const scoresRs = await CALL_SP('P_CLIENT_SONG_SCORE_GET', { RECORDING_ID });
-    const scores = scoresRs?.result || scoresRs?.rows || [];
-    CLIENT_APP_VARIABLES._LAST_SCORES = scores;
-    DeviceEventEmitter.emit(EVT_SCORES_UPDATED, { scores });
-
-    // E) Conductor animation
-    const animRs = await CALL_SP('P_CLIENT_SONG_ANIMATION_GET', { RECORDING_ID });
-    const animation = animRs?.result?.[0] || animRs?.rows?.[0] || null;
-    CLIENT_APP_VARIABLES._LAST_CONDUCTOR = animation;
-    DeviceEventEmitter.emit(EVT_CONDUCTOR_UPDATED, { animation });
-
-    // F) Set refresh flag back to 'Y'
-    await CALL_SP('P_CLIENT_SONG_REFRESH_FLAG_UPD', {
-      RECORDING_ID,
-      YN_REFRESH_NEXT_AUDIO_CHUNK: 'Y',
-    });
   } catch (err) {
     LOG('REFRESH_LOOP_ITERATION error', err?.message || err);
   }
 }
 
 export function REFRESH_LOOP_WHILE_RECORDING() {
-  console.log(`Start function SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS.REFRESH_LOOP_WHILE_RECORDING`);
+  LOG('REFRESH_LOOP_WHILE_RECORDING');
   if (_refreshTimer) clearInterval(_refreshTimer);
-  _refreshTimer = setInterval(() => {
+
+  _refreshTimer = setInterval(async () => {
+    // Stop the loop if recording has ended
     if (!CLIENT_APP_VARIABLES._IS_RECORDING) {
       clearInterval(_refreshTimer);
       _refreshTimer = null;
       return;
     }
-    REFRESH_LOOP_ITERATION();
+
+    await REFRESH_LOOP_ITERATION();
+
+    // Auto-stop if backend says to stop
+    if (
+      CLIENT_APP_VARIABLES.YN_STOP_RECORDING === 'Y'  &&
+      (CLIENT_APP_VARIABLES._IS_RECORDING || CLIENT_APP_VARIABLES._IS_PLAYING)
+    ) {
+      await STOP_BUTTON_TAPPED_HANDLER();
+    }
+
+    // Or stop just the client loop if asked
+    if (CLIENT_APP_VARIABLES.YN_STOP_CLIENT_REFRESH_LOOP === 'Y') {
+      clearInterval(_refreshTimer);
+      _refreshTimer = null;
+      return;
+    }
   }, REFRESH_CADENCE_MS);
 }
 

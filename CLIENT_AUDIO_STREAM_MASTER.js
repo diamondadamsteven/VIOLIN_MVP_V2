@@ -7,35 +7,131 @@ import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import CLIENT_APP_VARIABLES from './CLIENT_APP_VARIABLES';
 
+// ─────────────────────────────────────────────────────────────
+// Phone → Backend console mirror
+// ─────────────────────────────────────────────────────────────
+const MIRROR_ENABLED = true;
+const MIRROR_BATCH_MAX = 20;
+const MIRROR_FLUSH_MS = 500;
+
+let _mirrorQueue = [];
+let _mirrorTimer = null;
+
+function MIRROR_FLUSH_NOW() {
+  try {
+    if (!MIRROR_ENABLED || _mirrorQueue.length === 0) return;
+    const base = String(CLIENT_APP_VARIABLES.BACKEND_URL || '').replace(/\/+$/, '');
+    if (!base) return;
+    const url = `${base}/CLIENT_LOG`;
+    const batch = _mirrorQueue.splice(0, MIRROR_BATCH_MAX);
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({ entries: batch }),
+    }).catch(() => {});
+  } catch {}
+}
+
+function PHONELOG(level, tag, msg, extra) {
+  try {
+    const entry = {
+      t: new Date().toISOString(),
+      level,
+      tag,
+      msg: String(msg ?? ''),
+      extra: extra ?? null,
+    };
+    _mirrorQueue.push(entry);
+    if (_mirrorQueue.length >= MIRROR_BATCH_MAX) MIRROR_FLUSH_NOW();
+    if (!_mirrorTimer) {
+      _mirrorTimer = setInterval(() => {
+        if (_mirrorQueue.length === 0) return;
+        MIRROR_FLUSH_NOW();
+      }, MIRROR_FLUSH_MS);
+    }
+  } catch {}
+}
+
 function LOG(msg, obj) {
   const prefix = 'CLIENT_AUDIO_STREAM_MASTER';
-  if (obj !== undefined) console.log(`${prefix} - ${msg}`, obj);
-  else console.log(`${prefix} - ${msg}`);
+  if (obj !== undefined) {
+    console.log(`${prefix} - ${msg}`, obj);
+    PHONELOG('INFO', prefix, msg, obj);
+  } else {
+    console.log(`${prefix} - ${msg}`);
+    PHONELOG('INFO', prefix, msg, null);
+  }
+}
+function WARN(msg, obj) {
+  const prefix = 'CLIENT_AUDIO_STREAM_MASTER';
+  if (obj !== undefined) {
+    console.warn(`${prefix} - ${msg}`, obj);
+    PHONELOG('WARN', prefix, msg, obj);
+  } else {
+    console.warn(`${prefix} - ${msg}`);
+    PHONELOG('WARN', prefix, msg, null);
+  }
+}
+function ERR(msg, obj) {
+  const prefix = 'CLIENT_AUDIO_STREAM_MASTER';
+  if (obj !== undefined) {
+    console.error(`${prefix} - ${msg}`, obj);
+    PHONELOG('ERROR', prefix, msg, obj);
+  } else {
+    console.error(`${prefix} - ${msg}`);
+    PHONELOG('ERROR', prefix, msg, null);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
-// WS URL derived from BACKEND_URL (same host, port 7070, /ws/stream)
+// URL helpers
+// ─────────────────────────────────────────────────────────────
+function _baseHost() {
+  const base = String(CLIENT_APP_VARIABLES.BACKEND_URL || '').replace(/\/+$/, '');
+  if (!base) return null;
+  const u = new URL(base);
+  return { proto: u.protocol, host: u.hostname };
+}
 function GET_WS_URL() {
-  console.log(`Start function CLIENT_AUDIO_STREAM_MASTER.GET_WS_URL`);
+  LOG('Start function CLIENT_AUDIO_STREAM_MASTER.GET_WS_URL');
   try {
-    const base = String(CLIENT_APP_VARIABLES.BACKEND_URL || '').replace(/\/+$/, '');
-    if (!base) {
-      console.warn('BACKEND_URL is not set in CLIENT_APP_VARIABLES.');
-      return null;
-    }
-    const u = new URL(base); // e.g., http://192.168.1.50:8000
-    const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = u.hostname;
-    const port = 7070; // engine listener port
-    return `${wsProto}//${host}:${port}/ws/stream`;
+    const h = _baseHost();
+    if (!h) { WARN('BACKEND_URL not set'); return null; }
+    const wsProto = h.proto === 'https:' ? 'wss:' : 'ws:';
+    const url = `${wsProto}//${h.host}:7070/ws/stream`;
+    LOG('WS URL', { url });
+    return url;
   } catch (e) {
-    console.warn('Invalid BACKEND_URL:', CLIENT_APP_VARIABLES.BACKEND_URL);
+    WARN('Invalid BACKEND_URL', { BACKEND_URL: CLIENT_APP_VARIABLES.BACKEND_URL, error: String(e) });
     return null;
   }
 }
-// ─────────────────────────────────────────────────────────────
+function GET_WS_ECHO_URL() {
+  try {
+    const h = _baseHost();
+    if (!h) return null;
+    const wsProto = h.proto === 'https:' ? 'wss:' : 'ws:';
+    const url = `${wsProto}//${h.host}:7070/ws/echo`;
+    LOG('WS ECHO URL', { url });
+    return url;
+  } catch {
+    return null;
+  }
+}
+function GET_HEALTH_URL() {
+  try {
+    const h = _baseHost();
+    if (!h) return null;
+    const httpProto = h.proto === 'https:' ? 'https:' : 'http:';
+    return `${httpProto}//${h.host}:7070/health`;
+  } catch {
+    return null;
+  }
+}
 
-const FRAME_MS = 250;                 // v1 target
+// ─────────────────────────────────────────────────────────────
+const FRAME_MS = 250;
 const RESEND_BUFFER_SIZE = 128;
 const SEND_SLACK_MS = 15;
 
@@ -62,14 +158,14 @@ function RESEND_BUFFER_GET(frameNo) {
 
 // Base64 → bytes
 function BASE64_TO_BYTES(b64) {
-  console.log(`Start function CLIENT_AUDIO_STREAM_MASTER.BASE64_TO_BYTES`);
+  LOG('Start function CLIENT_AUDIO_STREAM_MASTER.BASE64_TO_BYTES');
   const lookup = new Uint8Array(256);
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   for (let i = 0; i < alphabet.length; i++) lookup[alphabet.charCodeAt(i)] = i;
 
   let bufferLength = Math.floor(b64.length * 0.75);
-  if (b64[b64.length - 1] === '=') bufferLength--;
-  if (b64[b64.length - 2] === '=') bufferLength--;
+  if (b64.endsWith('==')) bufferLength -= 2;
+  else if (b64.endsWith('=')) bufferLength -= 1;
 
   const bytes = new Uint8Array(bufferLength);
   let p = 0;
@@ -90,7 +186,7 @@ function BASE64_TO_BYTES(b64) {
 
 // Record micro-chunk
 async function RECORD_MICRO_CHUNK(ms) {
-  console.log(`Start function CLIENT_AUDIO_STREAM_MASTER.RECORD_MICRO_CHUNK`);
+  LOG('Start function CLIENT_AUDIO_STREAM_MASTER.RECORD_MICRO_CHUNK');
   const rec = new Audio.Recording();
   await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
   await rec.startAsync();
@@ -102,70 +198,148 @@ async function RECORD_MICRO_CHUNK(ms) {
 }
 
 async function READ_FILE_AS_UINT8(uri) {
-  console.log(`Start function CLIENT_AUDIO_STREAM_MASTER.READ_FILE_AS_UINT8`);
+  LOG('Start function CLIENT_AUDIO_STREAM_MASTER.READ_FILE_AS_UINT8');
   const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
   const bytes = BASE64_TO_BYTES(base64);
   return bytes;
 }
 
 function WS_SEND_JSON(obj) {
-  console.log(`Start function CLIENT_AUDIO_STREAM_MASTER.WS_SEND_JSON`);
+  LOG('Start function CLIENT_AUDIO_STREAM_MASTER.WS_SEND_JSON');
   if (WS && WS.readyState === 1) {
     WS.send(JSON.stringify(obj));
   }
 }
 
 async function SEND_FRAME_PAIR({ recordingId, frameNo, frameMs, overlapMs, bytes }) {
-  console.log(`Start function CLIENT_AUDIO_STREAM_MASTER.SEND_FRAME_PAIR`);
+  LOG('Start function CLIENT_AUDIO_STREAM_MASTER.SEND_FRAME_PAIR');
   if (!WS || WS.readyState !== 1) return;
 
-  WS_SEND_JSON({
+  const header = {
     type: 'FRAME',
     RECORDING_ID: String(recordingId),
     FRAME_NO: frameNo,
     FRAME_DURATION_IN_MS: frameMs,
     COUNTDOWN_OVERLAP_MS: overlapMs || 0,
     BYTES_LEN: bytes.byteLength,
-  });
+  };
 
+  WS_SEND_JSON(header);
   WS.send(bytes);
 }
 
+async function WS_OPEN_WITH_TIMEOUT(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let opened = false;
+    let ws;
+    try {
+      ws = new WebSocket(url);
+      ws.binaryType = 'arraybuffer';
+    } catch (e) {
+      return reject(e);
+    }
+
+    const timer = setTimeout(() => {
+      if (!opened) {
+        try { ws.close(); } catch {}
+        reject(new Error(`WS open timeout: ${url}`));
+      }
+    }, timeoutMs);
+
+    ws.onopen = () => {
+      opened = true;
+      clearTimeout(timer);
+      resolve(ws);
+    };
+    ws.onerror = (evt) => {
+      ERR('WS error during open', { url, evt });
+    };
+    ws.onclose = (evt) => {
+      if (!opened) ERR('WS closed before open', { url, code: evt.code, reason: evt.reason });
+    };
+  });
+}
+
 export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
-  console.log(`Start function CLIENT_AUDIO_STREAM_MASTER.START_STREAMING_WS`);
+  LOG('Start function CLIENT_AUDIO_STREAM_MASTER.START_STREAMING_WS');
   if (STREAMING) return;
   STREAMING = true;
 
   const WS_URL = GET_WS_URL();
-  if (!WS_URL) {
+  const ECHO_URL = GET_WS_ECHO_URL();
+  if (!WS_URL || !ECHO_URL) {
     STREAMING = false;
     return;
   }
 
-  await Audio.requestPermissionsAsync();
-  await Audio.setAudioModeAsync({
-    allowsRecordingIOS: true,
-    playsInSilentModeIOS: true,
-    interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
-    shouldDuckAndroid: true,
-    interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
-  });
+  // Probe /health first
+  try {
+    const health = GET_HEALTH_URL();
+    if (health) {
+      const r = await fetch(health, { method: 'GET' });
+      const text = await r.text();
+      LOG('Listener /health', { status: r.status, text });
+    }
+  } catch (e) {
+    WARN('Listener /health probe failed (still trying WS)', { error: String(e) });
+  }
+
+  // Mic perms + audio mode (safe subset: omit interruption modes)
+  try {
+    const perm = await Audio.requestPermissionsAsync();
+    LOG('Mic permission result', perm);
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+      // staysActiveInBackground can be added if needed:
+      // staysActiveInBackground: false,
+      // (Omit interruption modes to avoid SDK/version mismatches)
+      // shouldDuckAndroid omitted as well for maximum compatibility
+    });
+  } catch (e) {
+    ERR('Audio permission/mode error', String(e));
+    STREAMING = false;
+    return;
+  }
 
   const RECORDING_ID = String(CLIENT_APP_VARIABLES.RECORDING_ID || '');
   if (!RECORDING_ID) {
-    console.warn('No RECORDING_ID set in CLIENT_APP_VARIABLES.');
+    WARN('No RECORDING_ID set in CLIENT_APP_VARIABLES.');
+    STREAMING = false;
+    return;
+  }
+  const AUDIO_STREAM_FILE_NAME = String(CLIENT_APP_VARIABLES.AUDIO_STREAM_FILE_NAME || '');
+  LOG('Preflight echo connect', { ECHO_URL });
+
+  // 1) Echo preflight (4s)
+  let echoWS = null;
+  try {
+    echoWS = await WS_OPEN_WITH_TIMEOUT(ECHO_URL, 4000);
+    LOG('Echo WS open ✓');
+  } catch (e) {
+    ERR('Echo WS failed to open', String(e));
+    STREAMING = false;
+    return;
+  }
+  try { echoWS.close(); } catch {}
+  echoWS = null;
+
+  // 2) Real streaming WS (6s)
+  LOG('WS → connecting (stream)', { WS_URL, RECORDING_ID, AUDIO_STREAM_FILE_NAME });
+  try {
+    WS = await WS_OPEN_WITH_TIMEOUT(WS_URL, 6000);
+  } catch (e) {
+    ERR('Stream WS failed to open', String(e));
     STREAMING = false;
     return;
   }
 
-  const AUDIO_STREAM_FILE_NAME = String(CLIENT_APP_VARIABLES.AUDIO_STREAM_FILE_NAME || '');
-  LOG('Opening WS', { WS_URL, RECORDING_ID, AUDIO_STREAM_FILE_NAME });
-
-  WS = new WebSocket(WS_URL);
-  WS.binaryType = 'arraybuffer';
-
   WS.onmessage = (evt) => {
-    console.log(`CLIENT_AUDIO_STREAM_MASTER - WS onmessage`);
+    try {
+      const isText = typeof evt.data === 'string';
+      const payload = isText ? evt.data : '<binary>';
+      LOG('WS onmessage', { preview: String(payload).slice(0, 200) });
+    } catch {}
     try {
       const msg = typeof evt.data === 'string'
         ? JSON.parse(evt.data)
@@ -186,19 +360,18 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
           }
         }
       } else {
-        LOG('WS message', msg);
+        LOG('WS message (parsed)', msg);
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
+  };
+  WS.onclose = (evt) => {
+    WARN('WS close', { code: evt.code, reason: evt.reason });
+  };
+  WS.onerror = (evt) => {
+    ERR('WS error (after open)', { evt });
   };
 
-  await new Promise((res) => {
-    if (WS.readyState === 1) return res();
-    const onOpen = () => { WS.removeEventListener('open', onOpen); res(); };
-    WS.addEventListener('open', onOpen);
-  });
-
+  // Send START
   WS_SEND_JSON({ type: 'START', RECORDING_ID, AUDIO_STREAM_FILE_NAME });
 
   const MS_PER_BEAT = 60000 / Math.max(1, bpm);
@@ -206,9 +379,9 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   FRAME_NO = -Math.ceil(COUNTDOWN_REMAINING_MS / FRAME_MS);
   BOUNDARY_SENT = COUNTDOWN_REMAINING_MS === 0;
 
-  // Renamed: REFRESH_LOOP_WHILE_RECORDING (the streaming loop here is the sender loop)
+  // Streaming sender loop
   async function REFRESH_LOOP_WHILE_RECORDING() {
-    console.log(`Start function CLIENT_AUDIO_STREAM_MASTER.REFRESH_LOOP_WHILE_RECORDING`);
+    LOG('Start function CLIENT_AUDIO_STREAM_MASTER.REFRESH_LOOP_WHILE_RECORDING');
     if (!STREAMING || !WS || WS.readyState !== 1) return;
 
     try {
@@ -242,7 +415,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
       if (FRAME_NO < 0 && BOUNDARY_SENT) FRAME_NO = 0;
       else FRAME_NO += 1;
     } catch (e) {
-      LOG('Streaming loop error', e?.message || e);
+      ERR('Streaming loop error', String(e));
     }
   }
 
@@ -251,7 +424,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
 }
 
 export async function STOP_STREAMING_WS() {
-  console.log(`Start function CLIENT_AUDIO_STREAM_MASTER.STOP_STREAMING_WS`);
+  LOG('Start function CLIENT_AUDIO_STREAM_MASTER.STOP_STREAMING_WS');
   if (!STREAMING) return;
   STREAMING = false;
 
@@ -270,4 +443,5 @@ export async function STOP_STREAMING_WS() {
 
   RESEND_BUFFER.clear();
   LOG('Streaming stopped');
+  try { MIRROR_FLUSH_NOW(); } catch {}
 }
