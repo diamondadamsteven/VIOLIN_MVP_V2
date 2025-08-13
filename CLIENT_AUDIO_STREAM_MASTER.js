@@ -5,6 +5,7 @@
 
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
+import { DeviceEventEmitter } from 'react-native';
 import CLIENT_APP_VARIABLES from './CLIENT_APP_VARIABLES';
 
 // ─────────────────────────────────────────────────────────────
@@ -84,6 +85,11 @@ function ERR(msg, obj) {
   }
 }
 
+// Let UI know to re-render when we flip flags
+function MARK_UI_DIRTY() {
+  try { DeviceEventEmitter.emit('EVT_UI_DIRTY'); } catch {}
+}
+
 // ─────────────────────────────────────────────────────────────
 // URL helpers
 // ─────────────────────────────────────────────────────────────
@@ -138,7 +144,7 @@ const SEND_SLACK_MS = 15;
 let WS = null;
 let STREAMING = false;
 
-let FRAME_NO = 0;
+let FRAME_NO = 1;                 // frames start at 1; no 0/negatives sent
 let COUNTDOWN_REMAINING_MS = 0;
 let BOUNDARY_SENT = false;
 
@@ -146,6 +152,9 @@ let BOUNDARY_SENT = false;
 let _rec = null;                 // Audio.Recording
 let _isChunking = false;         // guard against overlap
 let _nextTimeout = null;         // handle for setTimeout chain
+
+// ── Conductor UI countdown timer (non-blocking)
+let _countdownTimer = null;
 
 // Resend buffer
 const RESEND_BUFFER = new Map();
@@ -285,15 +294,49 @@ async function WS_OPEN_WITH_TIMEOUT(url, timeoutMs) {
   });
 }
 
+// Conductor countdown — non-blocking & visible even while frames stream
+function START_CONDUCTOR_COUNTDOWN(beats, bpm) {
+  try { if (_countdownTimer) clearInterval(_countdownTimer); } catch {}
+  const perBeat = 60000 / Math.max(1, Number(bpm) || 60);
+  let i = Math.max(0, Number(beats) || 0);
+  if (i === 0) return;
+  // Initial tick immediately
+  DeviceEventEmitter.emit('EVT_CONDUCTOR_UPDATED', {
+    CONDUCTOR_MESSAGE_TEXT: `Start in ${i}…`,
+    CONDUCTOR_MOOD_GOOD_BAD_OR_NEUTRAL: 'NEUTRAL',
+    CONDUCTOR_MESSAGE_DISPLAY_FOR_DURATION_IN_MS: Math.min(1000, perBeat),
+  });
+  _countdownTimer = setInterval(() => {
+    i -= 1;
+    if (i > 0) {
+      DeviceEventEmitter.emit('EVT_CONDUCTOR_UPDATED', {
+        CONDUCTOR_MESSAGE_TEXT: `Start in ${i}…`,
+        CONDUCTOR_MOOD_GOOD_BAD_OR_NEUTRAL: 'NEUTRAL',
+        CONDUCTOR_MESSAGE_DISPLAY_FOR_DURATION_IN_MS: Math.min(1000, perBeat),
+      });
+    } else {
+      clearInterval(_countdownTimer);
+      _countdownTimer = null;
+      DeviceEventEmitter.emit('EVT_CONDUCTOR_UPDATED', {
+        CONDUCTOR_MESSAGE_TEXT: 'Recording...',
+        CONDUCTOR_MOOD_GOOD_BAD_OR_NEUTRAL: 'NEUTRAL',
+        CONDUCTOR_MESSAGE_DISPLAY_FOR_DURATION_IN_MS: 2000,
+      });
+    }
+  }, perBeat);
+}
+
 export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   LOG('Start function CLIENT_AUDIO_STREAM_MASTER.START_STREAMING_WS');
   if (STREAMING) return;
   STREAMING = true;
+  MARK_UI_DIRTY(); // force buttons to update immediately (Stop only)
 
   const WS_URL = GET_WS_URL();
   const ECHO_URL = GET_WS_ECHO_URL();
   if (!WS_URL || !ECHO_URL) {
     STREAMING = false;
+    MARK_UI_DIRTY();
     return;
   }
 
@@ -320,6 +363,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   } catch (e) {
     ERR('Audio permission/mode error', String(e));
     STREAMING = false;
+    MARK_UI_DIRTY();
     return;
   }
 
@@ -327,6 +371,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   if (!RECORDING_ID) {
     WARN('No RECORDING_ID set in CLIENT_APP_VARIABLES.');
     STREAMING = false;
+    MARK_UI_DIRTY();
     return;
   }
   const AUDIO_STREAM_FILE_NAME = String(CLIENT_APP_VARIABLES.AUDIO_STREAM_FILE_NAME || '');
@@ -340,6 +385,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   } catch (e) {
     ERR('Echo WS failed to open', String(e));
     STREAMING = false;
+    MARK_UI_DIRTY();
     return;
   }
   try { echoWS.close(); } catch {}
@@ -352,6 +398,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   } catch (e) {
     ERR('Stream WS failed to open', String(e));
     STREAMING = false;
+    MARK_UI_DIRTY();
     return;
   }
 
@@ -397,8 +444,11 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
 
   const MS_PER_BEAT = 60000 / Math.max(1, bpm);
   COUNTDOWN_REMAINING_MS = Math.max(0, Math.round(countdownBeats * MS_PER_BEAT));
-  FRAME_NO = -Math.ceil(COUNTDOWN_REMAINING_MS / FRAME_MS);
+  FRAME_NO = 1;
   BOUNDARY_SENT = COUNTDOWN_REMAINING_MS === 0;
+
+  // Kick the visible conductor countdown (non-blocking)
+  START_CONDUCTOR_COUNTDOWN(countdownBeats, bpm);
 
   // Prime the first recording slice so the first tick can stop/unload it
   _rec = new Audio.Recording();
@@ -419,32 +469,48 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
 
       const audioBytes = await READ_FILE_AS_UINT8(uri);
 
+      // Decide whether to send this chunk, and with what frame number / overlap
+      let shouldSend = false;
+      let frameNoToSend = FRAME_NO;
       let overlapMs = 0;
-      if (!BOUNDARY_SENT && COUNTDOWN_REMAINING_MS > 0) {
-        if (COUNTDOWN_REMAINING_MS <= FRAME_MS) {
+
+      if (!BOUNDARY_SENT) {
+        if (COUNTDOWN_REMAINING_MS > FRAME_MS) {
+          COUNTDOWN_REMAINING_MS -= FRAME_MS;
+          shouldSend = false; // discard countdown chunk
+          LOG('Countdown chunk discarded', { COUNTDOWN_REMAINING_MS });
+        } else {
+          // boundary chunk: send as frame 1 with overlap
           overlapMs = FRAME_MS - COUNTDOWN_REMAINING_MS;
+          COUNTDOWN_REMAINING_MS = 0;
           BOUNDARY_SENT = true;
+          frameNoToSend = 1;
+          shouldSend = true;
+          FRAME_NO = 2; // next tick continues with 2
+          LOG('Boundary reached', { overlapMs });
         }
-        COUNTDOWN_REMAINING_MS = Math.max(0, COUNTDOWN_REMAINING_MS - FRAME_MS);
+      } else {
+        shouldSend = true;
+        frameNoToSend = FRAME_NO;
+        FRAME_NO += 1;
       }
 
-      RESEND_BUFFER_PUT(FRAME_NO, {
-        header: { FRAME_DURATION_IN_MS: FRAME_MS, COUNTDOWN_OVERLAP_MS: overlapMs },
-        bytes: audioBytes,
-      });
+      if (shouldSend) {
+        RESEND_BUFFER_PUT(frameNoToSend, {
+          header: { FRAME_DURATION_IN_MS: FRAME_MS, COUNTDOWN_OVERLAP_MS: overlapMs },
+          bytes: audioBytes,
+        });
 
-      await SEND_FRAME_PAIR({
-        recordingId: RECORDING_ID,
-        frameNo: FRAME_NO,
-        frameMs: FRAME_MS,
-        overlapMs,
-        bytes: audioBytes,
-      });
+        await SEND_FRAME_PAIR({
+          recordingId: RECORDING_ID,
+          frameNo: frameNoToSend,
+          frameMs: FRAME_MS,
+          overlapMs,
+          bytes: audioBytes,
+        });
+      }
 
       try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
-
-      if (FRAME_NO < 0 && BOUNDARY_SENT) FRAME_NO = 0;
-      else FRAME_NO += 1;
     } catch (e) {
       ERR('Streaming loop error', String(e));
     } finally {
@@ -462,6 +528,7 @@ export async function STOP_STREAMING_WS() {
   STREAMING = false;
 
   if (_nextTimeout) { clearTimeout(_nextTimeout); _nextTimeout = null; }
+  if (_countdownTimer) { try { clearInterval(_countdownTimer); } catch {} _countdownTimer = null; }
 
   try {
     if (_rec) {
@@ -484,4 +551,5 @@ export async function STOP_STREAMING_WS() {
   RESEND_BUFFER.clear();
   LOG('Streaming stopped');
   try { MIRROR_FLUSH_NOW(); } catch {}
+  MARK_UI_DIRTY();
 }

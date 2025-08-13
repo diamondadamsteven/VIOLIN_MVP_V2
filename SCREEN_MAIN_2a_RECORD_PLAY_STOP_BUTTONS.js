@@ -1,5 +1,5 @@
-// SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS.js
 import { FontAwesome } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
 import { DeviceEventEmitter, StyleSheet, TouchableOpacity, View } from 'react-native';
 import CLIENT_APP_VARIABLES from './CLIENT_APP_VARIABLES';
 import { START_STREAMING_WS, STOP_STREAMING_WS } from './CLIENT_AUDIO_STREAM_MASTER';
@@ -26,9 +26,6 @@ function LOG(msg, obj) {
   else console.log(`${prefix} - ${msg}`);
 }
 
-// ─────────────────────────────────────────────────────────────
-// Helpers: Conductor text & countdown
-// ─────────────────────────────────────────────────────────────
 function setConductor(text, mood = 'NEUTRAL', ms = 1000) {
   DeviceEventEmitter.emit(EVT_CONDUCTOR_UPDATED, {
     CONDUCTOR_MESSAGE_TEXT: text,
@@ -36,49 +33,18 @@ function setConductor(text, mood = 'NEUTRAL', ms = 1000) {
     CONDUCTOR_MESSAGE_DISPLAY_FOR_DURATION_IN_MS: ms,
   });
 }
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
 function msPerBeat(bpm) { return 60000 / Math.max(1, Number(bpm) || 60); }
-
-async function runBeatCountdown(beats, bpm) {
-  const dur = msPerBeat(bpm);
-  // Show beat-by-beat countdown
-  for (let i = Number(beats || 0); i > 0; i--) {
-    // If recording was cancelled mid-countdown, bail out
-    if (!CLIENT_APP_VARIABLES._IS_RECORDING) return;
-    setConductor(`Start in ${i}…`, 'NEUTRAL', Math.min(1000, dur));
-    await sleep(dur);
-  }
-  // Now we're past the boundary → show "Recording…"
-  if (CLIENT_APP_VARIABLES._IS_RECORDING) {
-    setConductor('Recording...', 'NEUTRAL', 2000);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-// Generic SP caller
-// ─────────────────────────────────────────────────────────────
-async function CALL_SP(SP_NAME, PARAMS) {
-  LOG('CALL_SP', { SP_NAME, PARAMS });
-  const url = `${CLIENT_APP_VARIABLES.BACKEND_URL}/CALL_SP`;
-  const body = { SP_NAME, PARAMS };
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
-    throw new Error(`SP ${SP_NAME} failed: ${resp.status} ${text}`);
-  }
-  return resp.json().catch(() => ({}));
-}
-
 function isComposeMode() {
-  // Uses the app’s existing mode flag
   return (
     CLIENT_APP_VARIABLES.COMPOSE_PLAY_OR_PRACTICE === 'COMPOSE' ||
     CLIENT_APP_VARIABLES.YN_COMPOSE_MODE === 'Y'
   );
+}
+
+// Make React update when we flip plain JS flags
+function MARK_UI_DIRTY() {
+  try { DeviceEventEmitter.emit('EVT_UI_DIRTY'); } catch {}
 }
 
 // Record start → call P_CLIENT_RECORD_START, populate app vars, kick countdown & WS
@@ -91,9 +57,11 @@ async function RECORD_BUTTON_TAPPED_HANDLER() {
   CLIENT_APP_VARIABLES._IS_RECORDING = true;
   CLIENT_APP_VARIABLES._IS_PLAYING = false;
   CLIENT_APP_VARIABLES._IS_PAUSED = false;
+  MARK_UI_DIRTY(); // <- re-render immediately
+
   L_START_AUDIO_CHUNK_NO = 0;
 
-  // Optional: show initial “get ready” message immediately
+  // Immediate “get ready” message
   setConductor('Get ready…', 'NEUTRAL', 1200);
 
   const request = {
@@ -139,13 +107,15 @@ async function RECORD_BUTTON_TAPPED_HANDLER() {
   // Start WebSocket streaming (countdown + frames)
   const beats = Number(CLIENT_APP_VARIABLES.COUNTDOWN_BEATS || 0);
   const bpm = Number(CLIENT_APP_VARIABLES.BPM || 60);
+
+  // Show per-beat countdown text immediately; START_STREAMING_WS also discards pre-boundary audio
+  DeviceEventEmitter.emit(EVT_CONDUCTOR_UPDATED, {
+    CONDUCTOR_MESSAGE_TEXT: `Start after ${beats} beats`,
+    CONDUCTOR_MOOD_GOOD_BAD_OR_NEUTRAL: 'NEUTRAL',
+    CONDUCTOR_MESSAGE_DISPLAY_FOR_DURATION_IN_MS: Math.min(2000, msPerBeat(bpm) * beats),
+  });
+
   await START_STREAMING_WS({ countdownBeats: beats, bpm });
-
-  // Show per-beat countdown on the conductor; “Recording…” appears after it ends
-  runBeatCountdown(beats, bpm).catch(() => {});
-
-  // Kick the while-recording refresh loop
-  REFRESH_LOOP_WHILE_RECORDING();
 }
 
 // Stop → call P_CLIENT_RECORD_END, stop WS
@@ -155,6 +125,7 @@ async function STOP_BUTTON_TAPPED_HANDLER() {
   CLIENT_APP_VARIABLES._IS_PAUSED = false;
   CLIENT_APP_VARIABLES._IS_PLAYING = false;
   CLIENT_APP_VARIABLES._IS_RECORDING = false;
+  MARK_UI_DIRTY();
 
   try {
     await STOP_STREAMING_WS();
@@ -162,7 +133,14 @@ async function STOP_BUTTON_TAPPED_HANDLER() {
     LOG('STOP_STREAMING_WS error', e?.message || e);
   }
 
-  await CALL_SP('P_CLIENT_RECORD_END', { RECORDING_ID: CLIENT_APP_VARIABLES.RECORDING_ID });
+  // Gracefully end the take
+  try {
+    await fetch(`${CLIENT_APP_VARIABLES.BACKEND_URL}/CALL_SP`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ SP_NAME: 'P_CLIENT_RECORD_END', PARAMS: { RECORDING_ID: CLIENT_APP_VARIABLES.RECORDING_ID } }),
+    });
+  } catch {}
 
   CLIENT_APP_VARIABLES.START_AUDIO_CHUNK_NO = null;
   CLIENT_APP_VARIABLES.END_AUDIO_CHUNK_NO = null;
@@ -178,12 +156,14 @@ function PLAY_BUTTON_TAPPED_HANDLER() {
   CLIENT_APP_VARIABLES._IS_PLAYING = true;
   CLIENT_APP_VARIABLES._IS_RECORDING = false;
   CLIENT_APP_VARIABLES._IS_PAUSED = false;
+  MARK_UI_DIRTY();
 }
 
 // Pause tapped
 function PAUSE_BUTTON_TAPPED_HANDLER() {
   LOG('PAUSE_BUTTON_TAPPED_HANDLER');
   CLIENT_APP_VARIABLES._IS_PAUSED = true;
+  MARK_UI_DIRTY();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -252,6 +232,7 @@ export function REFRESH_LOOP_WHILE_RECORDING() {
       (CLIENT_APP_VARIABLES._IS_RECORDING || CLIENT_APP_VARIABLES._IS_PLAYING)
     ) {
       await STOP_BUTTON_TAPPED_HANDLER();
+      MARK_UI_DIRTY();
     }
 
     // Or stop just the client loop if asked
@@ -270,7 +251,13 @@ export default function SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS({
   USER_EVENT_PAUSE_BUTTON_TAPPED,
   USER_EVENT_STOP_BUTTON_TAPPED,
 }) {
+  const [version, setVersion] = useState(0); // force re-render on EVT_UI_DIRTY
   const compose = isComposeMode();
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('EVT_UI_DIRTY', () => setVersion(v => v + 1));
+    return () => { try { sub.remove(); } catch {} };
+  }, []);
 
   return (
     <View style={STYLES.container}>
@@ -323,7 +310,7 @@ export default function SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS({
             </TouchableOpacity>
           )}
 
-          {/* While PLAYING → Pause + Stop (unchanged) */}
+          {/* While PLAYING → Pause + Stop */}
           {CLIENT_APP_VARIABLES._IS_PLAYING && !CLIENT_APP_VARIABLES._IS_RECORDING && (
             <>
               <TouchableOpacity
@@ -349,7 +336,7 @@ export default function SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS({
         </>
       )}
 
-      {/* Paused state: show record (if no take yet) + play (but hide Play in Compose) */}
+      {/* Paused state */}
       {CLIENT_APP_VARIABLES._IS_PAUSED && (
         <>
           {!CLIENT_APP_VARIABLES.RECORDING_ID && (
@@ -383,12 +370,13 @@ export default function SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS({
 const STYLES = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    gap: 10,
+    // 'gap' is not supported across all RN versions; simulate it with padding/margins
     marginVertical: 4,
     justifyContent: 'flex-start',
     alignItems: 'flex-start',
   },
   circleButton: {
     padding: 4,
+    marginRight: 10,
   },
 });

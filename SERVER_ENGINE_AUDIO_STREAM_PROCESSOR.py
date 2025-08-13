@@ -411,13 +411,16 @@ def _LOAD_VOLUME_10MS(CONN, RECORDING_ID: int, AUDIO_CHUNK_NO: int,
                       VOL_SERIES: Iterable[Tuple[int, int, float, float]]):
     LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._LOAD_VOLUME_10MS",
         {"RECORDING_ID": RECORDING_ID, "CHUNK": AUDIO_CHUNK_NO})
+    rows = list(VOL_SERIES)
+    if not rows:
+        return
     SQL = """
       INSERT INTO ENGINE_LOAD_VOLUME_10_MS
       (RECORDING_ID, AUDIO_CHUNK_NO, START_MS, END_MS, VOLUME, VOLUME_IN_DB)
       VALUES (?, ?, ?, ?, ?, ?)
     """
     PACK = (
-        (RECORDING_ID, AUDIO_CHUNK_NO, s, e, v, vdb) for (s, e, v, vdb) in VOL_SERIES
+        (RECORDING_ID, AUDIO_CHUNK_NO, s, e, v, vdb) for (s, e, v, vdb) in rows
     )
     _BULK_INSERT(CONN, SQL, PACK)
 
@@ -460,6 +463,20 @@ def _PARSE_MIDI_TO_NOTES(midi_path: Path) -> List[Tuple[int, int, int, int, str]
             e = int(round(n.end   * 1000.0))
             rows.append((s, e, int(n.pitch), int(n.velocity), "ONS"))
     return rows
+
+def _COMPUTE_ONS_VIA_MICROSERVICE(chunk_wav_path: Path) -> List[Tuple[int, int, int, int, str]]:
+    """
+    Wrapper that was referenced upstream but not defined:
+    runs microservice and parses MIDI to engine note rows.
+    """
+    midi = _RUN_ONSETS_AND_FRAMES_MICROSERVICE(chunk_wav_path)
+    if not midi:
+        return []
+    try:
+        return _PARSE_MIDI_TO_NOTES(midi)
+    except Exception as e:
+        LOG("Parse MIDI failed", str(e))
+        return []
 
 def _COMPUTE_FFT(audio_22k: np.ndarray, sr: int, base_start_ms: int) -> List[Tuple[int, int, int, float, float, float, float]]:
     """
@@ -584,16 +601,21 @@ def _COMPUTE_CREPE_SERIES(audio_16k: np.ndarray, sr: int) -> List[Tuple[int, int
     except Exception:
         fmin, fmax = 196.0, 4186.0
 
+    # ---- IMPORTANT: pass a CALLABLE decoder, not a string ----
+    decoder_fn = getattr(torchcrepe.decode, "viterbi", None)
+    if decoder_fn is None:
+        # Fallback to argmax if viterbi is unavailable
+        decoder_fn = torchcrepe.decode.argmax
+
     with torch.no_grad():
-        # Ask for periodicity as confidence
         f0, periodicity = torchcrepe.predict(
             x,
             sample_rate=sr,
             hop_length=hop_length,
             fmin=fmin, fmax=fmax,
             model="full",
-            decoder="viterbi",
-            batch_size=2048,
+            decoder=decoder_fn,          # <<< fixed
+            batch_size=1024,
             device=device,
             return_periodicity=True
         )
@@ -611,25 +633,26 @@ def _COMPUTE_CREPE_SERIES(audio_16k: np.ndarray, sr: int) -> List[Tuple[int, int
 
 def _COMPUTE_VOLUME(audio: np.ndarray, sr: int, base_start_ms: int) -> Tuple[Optional[Tuple[float, float]], List[Tuple[int, int, float, float]]]:
     """
-    Aggregate RMS & dB for the chunk, and a 1 ms series:
+    Aggregate RMS & dB for the chunk, and a 10 ms series to match ENGINE_LOAD_VOLUME_10_MS:
       returns ( (avg_rms, avg_db), [ (start_ms, end_ms, rms, db), ... ] )
     """
     LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_VOLUME", {"sr": sr, "len": int(audio.shape[0])})
     if sr <= 0 or audio.size == 0:
         return None, []
 
-    hop_ms = 1
+    # 25 ms window / 10 ms hop
+    hop_ms = 10
+    win_ms = 25
     hop = max(1, int(round(sr * (hop_ms / 1000.0))))
+    win = max(1, int(round(sr * (win_ms / 1000.0))))
 
     series: List[Tuple[int, int, float, float]] = []
 
     if librosa is not None:
-        # Use librosa at 1 ms hop; small ~2 ms window to match your example
-        frame_length = max(hop * 2, hop)
         try:
-            rms = librosa.feature.rms(y=audio, frame_length=frame_length, hop_length=hop, center=True)[0]
-            # frame times in seconds from chunk start
-            times = librosa.frames_to_time(np.arange(len(rms)), sr=sr, hop_length=hop, n_fft=frame_length)
+            rms = librosa.feature.rms(y=audio, frame_length=win, hop_length=hop, center=True)[0]
+            # frame times in seconds from chunk start (aligned to hop)
+            times = librosa.frames_to_time(np.arange(len(rms)), sr=sr, hop_length=hop, n_fft=win)
             for r, t in zip(rms, times):
                 s_ms = base_start_ms + int(round(t * 1000.0))
                 e_ms = s_ms + (hop_ms - 1)
@@ -638,14 +661,16 @@ def _COMPUTE_VOLUME(audio: np.ndarray, sr: int, base_start_ms: int) -> Tuple[Opt
                 series.append((s_ms, e_ms, v, vdb))
         except Exception as e:
             LOG("librosa RMS failed, falling back to numpy", str(e))
-            # fall through to numpy implementation below
 
     if not series:
-        # Numpy fallback with 1 ms hop and 2 ms window
-        win = max(hop * 2, hop)
+        # Numpy fallback with Hann window
         i = 0
-        while i + win <= audio.size:
+        hann = np.hanning(win) if win > 1 else None
+        N = audio.size
+        while i + win <= N:
             seg = audio[i:i+win]
+            if hann is not None:
+                seg = seg * hann
             v = float(np.sqrt(np.mean(seg * seg))) if seg.size else 0.0
             vdb = float(20.0 * math.log10(max(v, 1e-12)))
             s_ms = base_start_ms + int(round((i / sr) * 1000.0))
@@ -753,7 +778,7 @@ async def PROCESS_AUDIO_STREAM(
                                      for (rs, re, hz, conf) in cr_series_rel]
                     _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, "CREPE", cr_series_abs)
 
-                # Volume (computed at 22.05k, per 1 ms)
+                # Volume (computed at 22.05k, per 10 ms)
                 vol_agg, vol_series = _COMPUTE_VOLUME(audio_22k, 22050, start_ms)
                 _LOAD_VOLUME(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, vol_agg)
                 _LOAD_VOLUME_10MS(CONN, int(RID), AUDIO_CHUNK_NO, vol_series)
@@ -763,8 +788,8 @@ async def PROCESS_AUDIO_STREAM(
                     "VIOLINIST_ID": int(CTX["VIOLINIST_ID"]),
                     "RECORDING_ID": int(RID),
                     "COMPOSE_PLAY_OR_PRACTICE": "COMPOSE",
-                    "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                    "YN_RECORDING_STOPPED": None,
+                    "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO
+                    # "YN_RECORDING_STOPPED": None,
                 })
 
                 # Advance
@@ -818,7 +843,7 @@ async def PROCESS_AUDIO_STREAM(
                                      for (rs, re, hz, conf) in cr_series_rel]
                     _LOAD_HZ(CONN, int(RID), AUDIO_CHUNK_NO, "CREPE", cr_series_abs)
 
-                # Volume
+                # Volume (per 10 ms)
                 vol_agg, vol_series = _COMPUTE_VOLUME(audio_22k, 22050, start_ms)
                 _LOAD_VOLUME(CONN, int(RID), AUDIO_CHUNK_NO, start_ms, vol_agg)
                 _LOAD_VOLUME_10MS(CONN, int(RID), AUDIO_CHUNK_NO, vol_series)
@@ -828,8 +853,8 @@ async def PROCESS_AUDIO_STREAM(
                     "VIOLINIST_ID": int(CTX["VIOLINIST_ID"]),
                     "RECORDING_ID": int(RID),
                     "COMPOSE_PLAY_OR_PRACTICE": MODE,
-                    "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                    "YN_RECORDING_STOPPED": None,
+                    "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO
+                    # "YN_RECORDING_STOPPED": None,
                 })
 
                 idx += 1

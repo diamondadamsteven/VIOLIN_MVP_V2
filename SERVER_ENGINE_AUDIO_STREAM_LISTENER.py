@@ -13,6 +13,9 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any
 
+import builtins as _bi
+import traceback
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
@@ -105,7 +108,7 @@ def STEP_1_ENSURE_OAF_CONTAINER_RUNNING():
             LOG_TO_CONSOLE("OAF container already running")
             return
     except Exception as e:
-        LOG_TO_CONSOLE("docker inspect failed (will try to run container)", str(e))
+        LOG_TO_CONSOLE("docker inspect failed (will try to run container)", _bi.str(e))
 
     LOG_TO_CONSOLE("Starting OAF container...", {"image": OAF_IMAGE, "name": OAF_CONTAINER})
     cmd = [
@@ -134,7 +137,7 @@ def STEP_0_ON_STARTUP():
     try:
         STEP_1_ENSURE_OAF_CONTAINER_RUNNING()
     except Exception as exc:
-        LOG_TO_CONSOLE("Failed to launch OAF container (you can still run without O&F until needed).", str(exc))
+        LOG_TO_CONSOLE("Failed to launch OAF container (you can still run without O&F until needed).", _bi.str(exc))
 
 # ─────────────────────────────────────────────────────────────
 # Endpoints
@@ -168,12 +171,12 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                     meta = json.loads(raw_text)
                 except Exception as exc:
                     await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": f"Bad JSON: {exc}"})
-                    LOG_TO_CONSOLE("WS TEXT PARSE ERROR", str(exc))
+                    LOG_TO_CONSOLE("WS TEXT PARSE ERROR", _bi.str(exc))
                     continue
 
                 mtype = meta.get("type")
                 if mtype == "START":
-                    rec_id = str(meta.get("RECORDING_ID") or "").strip()
+                    rec_id = _bi.str(meta.get("RECORDING_ID") or "").strip()
                     audio_name = meta.get("AUDIO_STREAM_FILE_NAME") or None
                     if not rec_id:
                         await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "Missing RECORDING_ID in START"})
@@ -182,17 +185,18 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
 
                     rec_dir = CREATE_TEMP_AUDIO_DIR(rec_id)
                     ACTIVE_RECORDINGS[rec_id] = {
-                        "TEMP_AUDIO_STREAM_DIRECTORY": str(rec_dir),
+                        "TEMP_AUDIO_STREAM_DIRECTORY": _bi.str(rec_dir),
                         "FIRST_FRAME_RECEIVED": False,
                     }
-                    NEXT_EXPECTED.setdefault(rec_id, 0)
+                    # Expect first positive frame to be 1 (no frame 0 in your protocol)
+                    NEXT_EXPECTED.setdefault(rec_id, 1)
                     REGISTER_RECORDING_CONTEXT_HINT(rec_id, AUDIO_STREAM_FILE_NAME=audio_name)
 
-                    LOG_TO_CONSOLE("START ACK ->", {"RECORDING_ID": rec_id, "dir": str(rec_dir), "audio_file": audio_name})
+                    LOG_TO_CONSOLE("START ACK ->", {"RECORDING_ID": rec_id, "dir": _bi.str(rec_dir), "audio_file": audio_name})
                     await WEBSOCKET_SEND_JSON(ws, {"type": "START_ACK", "RECORDING_ID": rec_id})
 
                 elif mtype == "FRAME":
-                    rec_id = str(meta.get("RECORDING_ID") or "").strip()
+                    rec_id = _bi.str(meta.get("RECORDING_ID") or "").strip()
                     frame_no = meta.get("FRAME_NO")
                     frame_dur = meta.get("FRAME_DURATION_IN_MS")
                     overlap = meta.get("COUNTDOWN_OVERLAP_MS", 0)
@@ -206,10 +210,10 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                     if rec_id not in ACTIVE_RECORDINGS:
                         rec_dir = CREATE_TEMP_AUDIO_DIR(rec_id)
                         ACTIVE_RECORDINGS[rec_id] = {
-                            "TEMP_AUDIO_STREAM_DIRECTORY": str(rec_dir),
+                            "TEMP_AUDIO_STREAM_DIRECTORY": _bi.str(rec_dir),
                             "FIRST_FRAME_RECEIVED": False,
                         }
-                        NEXT_EXPECTED.setdefault(rec_id, 0)
+                        NEXT_EXPECTED.setdefault(rec_id, 1)
 
                     PENDING_META[ws][int(frame_no)] = {
                         "RECORDING_ID": rec_id,
@@ -223,7 +227,7 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                     })
 
                 elif mtype == "STOP":
-                    rec_id = str(meta.get("RECORDING_ID") or "").strip()
+                    rec_id = _bi.str(meta.get("RECORDING_ID") or "").strip()
                     if not rec_id:
                         await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "Missing RECORDING_ID in STOP"})
                         LOG_TO_CONSOLE("STOP missing RECORDING_ID", meta)
@@ -264,29 +268,59 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                 frame_dur = meta["FRAME_DURATION_IN_MS"]
                 overlap = meta["COUNTDOWN_OVERLAP_MS"]
 
+                # NEW: ignore non-positive frames completely (no write/no process), but still ACK
+                if int(frame_no) <= 0:
+                    LOG_TO_CONSOLE("IGNORED NON-POSITIVE FRAME", {
+                        "RECORDING_ID": rec_id, "FRAME_NO": frame_no, "len": len(data)
+                    })
+                    # Keep NEXT_EXPECTED pointed at first positive frame
+                    if NEXT_EXPECTED.get(rec_id, 1) < 1:
+                        NEXT_EXPECTED[rec_id] = 1
+                    ack = {
+                        "type": "ACK",
+                        "RECORDING_ID": rec_id,
+                        "FRAME_NO": frame_no,
+                        "NEXT_EXPECTED_FRAME_NO": NEXT_EXPECTED.get(rec_id, 1),
+                        "MISSING_FRAMES": [],
+                    }
+                    await WEBSOCKET_SEND_JSON(ws, ack)
+                    LOG_TO_CONSOLE("ACK (IGNORED) ->", ack)
+                    continue
+
                 rec_dir = Path(ACTIVE_RECORDINGS[rec_id]["TEMP_AUDIO_STREAM_DIRECTORY"])
                 out_path = rec_dir / f"{int(frame_no):08d}.m4a"
                 out_path.write_bytes(data)
-                LOG_TO_CONSOLE("BINARY SAVED", {"RECORDING_ID": rec_id, "FRAME_NO": frame_no, "path": str(out_path), "len": len(data)})
+                LOG_TO_CONSOLE("BINARY SAVED", {"RECORDING_ID": rec_id, "FRAME_NO": frame_no, "path": _bi.str(out_path), "len": len(data)})
 
                 if not ACTIVE_RECORDINGS[rec_id]["FIRST_FRAME_RECEIVED"]:
                     ACTIVE_RECORDINGS[rec_id]["FIRST_FRAME_RECEIVED"] = True
                     LOG_TO_CONSOLE("FIRST FRAME RECEIVED", {"RECORDING_ID": rec_id})
 
-                frame_start_ms = int(frame_no) * int(frame_dur)
+                # If frames are 1-based, align timestamps to 0-based time
+                frame_index = max(0, int(frame_no) - 1)
+                frame_start_ms = frame_index * int(frame_dur)
                 frame_end_ms = frame_start_ms + int(frame_dur) - 1
 
-                await PROCESS_AUDIO_STREAM(
-                    RECORDING_ID=rec_id,
-                    FRAME_NO=int(frame_no),
-                    FRAME_START_MS=frame_start_ms,
-                    FRAME_END_MS=frame_end_ms,
-                    FRAME_DURATION_IN_MS=int(frame_dur),
-                    COUNTDOWN_OVERLAP_MS=int(overlap or 0),
-                    AUDIO_STREAM_FILE_PATH=str(out_path),
-                )
+                try:
+                    await PROCESS_AUDIO_STREAM(
+                        RECORDING_ID=rec_id,
+                        FRAME_NO=int(frame_no),
+                        FRAME_START_MS=frame_start_ms,
+                        FRAME_END_MS=frame_end_ms,
+                        FRAME_DURATION_IN_MS=int(frame_dur),
+                        COUNTDOWN_OVERLAP_MS=int(overlap or 0),
+                        AUDIO_STREAM_FILE_PATH=_bi.str(out_path),
+                    )
+                except Exception as exc:
+                    tb = traceback.format_exc()
+                    LOG_TO_CONSOLE("PROCESS_AUDIO_STREAM error", {"exc": _bi.str(exc), "trace": tb, "rec_id": rec_id, "frame_no": frame_no})
+                    try:
+                        await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": _bi.str(exc), "trace": tb})
+                    except Exception:
+                        pass
+                    continue  # keep socket alive; skip ACK for this frame
 
-                next_expected = NEXT_EXPECTED.get(rec_id, 0)
+                next_expected = NEXT_EXPECTED.get(rec_id, 1)
                 if frame_no == next_expected:
                     NEXT_EXPECTED[rec_id] = next_expected + 1
 
@@ -294,7 +328,7 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                     "type": "ACK",
                     "RECORDING_ID": rec_id,
                     "FRAME_NO": frame_no,
-                    "NEXT_EXPECTED_FRAME_NO": NEXT_EXPECTED.get(rec_id, 0),
+                    "NEXT_EXPECTED_FRAME_NO": NEXT_EXPECTED.get(rec_id, 1),
                     "MISSING_FRAMES": [],
                 }
                 await WEBSOCKET_SEND_JSON(ws, ack)
@@ -307,9 +341,9 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
     except WebSocketDisconnect:
         LOG_TO_CONSOLE("WS DISCONNECT")
     except Exception as exc:
-        LOG_TO_CONSOLE("Listener exception", str(exc))
+        LOG_TO_CONSOLE("Listener exception", _bi.str(exc))
         try:
-            await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": str(exc)})
+            await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": _bi.str(exc)})
         except Exception:
             pass
     finally:
