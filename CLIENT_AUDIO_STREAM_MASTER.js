@@ -136,12 +136,16 @@ const RESEND_BUFFER_SIZE = 128;
 const SEND_SLACK_MS = 15;
 
 let WS = null;
-let LOOP_TIMER = null;
 let STREAMING = false;
 
 let FRAME_NO = 0;
 let COUNTDOWN_REMAINING_MS = 0;
 let BOUNDARY_SENT = false;
+
+// NEW: single active recorder + non-overlapping tick scheduling
+let _rec = null;                 // Audio.Recording
+let _isChunking = false;         // guard against overlap
+let _nextTimeout = null;         // handle for setTimeout chain
 
 // Resend buffer
 const RESEND_BUFFER = new Map();
@@ -184,17 +188,38 @@ function BASE64_TO_BYTES(b64) {
   return bytes;
 }
 
-// Record micro-chunk
+// NEW: micro-chunk using the single active recorder
 async function RECORD_MICRO_CHUNK(ms) {
   LOG('Start function CLIENT_AUDIO_STREAM_MASTER.RECORD_MICRO_CHUNK');
-  const rec = new Audio.Recording();
-  await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-  await rec.startAsync();
-  await new Promise((r) => setTimeout(r, ms));
-  await rec.stopAndUnloadAsync();
-  const uri = rec.getURI();
-  LOG('Recorded micro-chunk', { uri });
-  return uri;
+  if (_isChunking) {
+    LOG('RECORD_MICRO_CHUNK skipped (busy)');
+    return null;
+  }
+  _isChunking = true;
+  try {
+    if (!_rec) {
+      _rec = new Audio.Recording();
+      await _rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await _rec.startAsync();
+    }
+
+    // Wait for the slice to elapse
+    await new Promise((r) => setTimeout(r, ms));
+
+    // Stop current slice and get URI
+    await _rec.stopAndUnloadAsync();
+    const uri = _rec.getURI();
+    LOG('Recorded micro-chunk', { uri });
+
+    // Immediately start the next slice
+    _rec = new Audio.Recording();
+    await _rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+    await _rec.startAsync();
+
+    return uri;
+  } finally {
+    _isChunking = false;
+  }
 }
 
 async function READ_FILE_AS_UINT8(uri) {
@@ -284,17 +309,13 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
     WARN('Listener /health probe failed (still trying WS)', { error: String(e) });
   }
 
-  // Mic perms + audio mode (safe subset: omit interruption modes)
+  // Mic perms + audio mode
   try {
     const perm = await Audio.requestPermissionsAsync();
     LOG('Mic permission result', perm);
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: true,
       playsInSilentModeIOS: true,
-      // staysActiveInBackground can be added if needed:
-      // staysActiveInBackground: false,
-      // (Omit interruption modes to avoid SDK/version mismatches)
-      // shouldDuckAndroid omitted as well for maximum compatibility
     });
   } catch (e) {
     ERR('Audio permission/mode error', String(e));
@@ -309,7 +330,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
     return;
   }
   const AUDIO_STREAM_FILE_NAME = String(CLIENT_APP_VARIABLES.AUDIO_STREAM_FILE_NAME || '');
-  LOG('Preflight echo connect', { ECHO_URL });
+  LOG('Preflight echo connect');
 
   // 1) Echo preflight (4s)
   let echoWS = null;
@@ -379,13 +400,23 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   FRAME_NO = -Math.ceil(COUNTDOWN_REMAINING_MS / FRAME_MS);
   BOUNDARY_SENT = COUNTDOWN_REMAINING_MS === 0;
 
-  // Streaming sender loop
-  async function REFRESH_LOOP_WHILE_RECORDING() {
-    LOG('Start function CLIENT_AUDIO_STREAM_MASTER.REFRESH_LOOP_WHILE_RECORDING');
+  // Prime the first recording slice so the first tick can stop/unload it
+  _rec = new Audio.Recording();
+  await _rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+  await _rec.startAsync();
+
+  // Non-overlapping tick loop
+  const TICK = async () => {
     if (!STREAMING || !WS || WS.readyState !== 1) return;
 
     try {
       const uri = await RECORD_MICRO_CHUNK(FRAME_MS);
+      if (!uri) {
+        // busy; try again shortly without piling up calls
+        if (STREAMING) _nextTimeout = setTimeout(TICK, FRAME_MS);
+        return;
+      }
+
       const audioBytes = await READ_FILE_AS_UINT8(uri);
 
       let overlapMs = 0;
@@ -416,11 +447,13 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
       else FRAME_NO += 1;
     } catch (e) {
       ERR('Streaming loop error', String(e));
+    } finally {
+      if (STREAMING) _nextTimeout = setTimeout(TICK, FRAME_MS + SEND_SLACK_MS);
     }
-  }
+  };
 
-  await REFRESH_LOOP_WHILE_RECORDING();
-  LOOP_TIMER = setInterval(REFRESH_LOOP_WHILE_RECORDING, FRAME_MS + SEND_SLACK_MS);
+  // Kick off loop
+  _nextTimeout = setTimeout(TICK, FRAME_MS + SEND_SLACK_MS);
 }
 
 export async function STOP_STREAMING_WS() {
@@ -428,8 +461,15 @@ export async function STOP_STREAMING_WS() {
   if (!STREAMING) return;
   STREAMING = false;
 
-  if (LOOP_TIMER) clearInterval(LOOP_TIMER);
-  LOOP_TIMER = null;
+  if (_nextTimeout) { clearTimeout(_nextTimeout); _nextTimeout = null; }
+
+  try {
+    if (_rec) {
+      try { await _rec.stopAndUnloadAsync(); } catch {}
+    }
+  } catch {}
+  _rec = null;
+  _isChunking = false;
 
   try {
     if (WS && WS.readyState === 1) {
