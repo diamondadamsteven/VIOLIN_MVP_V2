@@ -1,221 +1,231 @@
 # SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS.py
 # ----------------------------------------------------------------------
 # Onsets & Frames processing for a single audio chunk.
-# Responsibilities:
-#   • Call O&F microservice with a WAV path (16 kHz mono is fine)
-#   • Parse returned MIDI into (START_MS, END_MS, MIDI, VELOCITY)
-#   • Convert CHUNK-relative times to ABSOLUTE by adding AUDIO_CHUNK_START_MS
-#   • Bulk insert into ENGINE_LOAD_NOTE with SOURCE_METHOD='ONS'
-#
-# NOTE: Step-2 decides whether to call this (via YN_ONS) and will run
-#       P_ENGINE_ALL_MASTER afterwards; this module only loads rows.
+#   • Accept 16 kHz mono float32 audio (array)
+#   • Temp-write WAV for the O&F microservice (expects a file path)
+#   • Call microservice → MIDI path
+#   • Parse MIDI → (START_MS, END_MS, MIDI, VELOCITY) relative
+#   • Convert to ABSOLUTE times with AUDIO_CHUNK_START_MS
+#   • Bulk insert into ENGINE_LOAD_NOTE (SOURCE_METHOD='ONS')
 # ----------------------------------------------------------------------
 
+from __future__ import annotations
+
 import os
-import json
 import traceback
 from pathlib import Path
-from typing import Any, Iterable, List, Tuple
+from typing import Iterable, List, Tuple, Optional
 
 import builtins as _bi
 import requests
+import numpy as np
+import soundfile as sf  # for temp WAV write
 
+# MIDI parsing
 try:
-    import pretty_midi  # MIDI parsing
+    import pretty_midi  # type: ignore
 except Exception:  # pragma: no cover
     pretty_midi = None
 
-# ─────────────────────────────────────────────────────────────
-# Console logging (ASCII-safe)
-# ─────────────────────────────────────────────────────────────
-def CONSOLE_LOG(L_MSG: str, L_OBJ: Any = None):
-    L_PREFIX = "PROCESS_ONS"
-    try:
-        if L_OBJ is None:
-            print(f"{L_PREFIX} - {L_MSG}", flush=True)
-        else:
-            print(f"{L_PREFIX} - {L_MSG} {L_OBJ}", flush=True)
-    except Exception:
-        try:
-            L_S = f"{L_PREFIX} - {L_MSG} {L_OBJ}".encode("utf-8", "replace").decode("ascii", "ignore")
-            print(L_S, flush=True)
-        except Exception:
-            print(f"{L_PREFIX} - {L_MSG}", flush=True)
+from SERVER_ENGINE_APP_VARIABLES import TEMP_RECORDING_AUDIO_DIR, RECORDING_AUDIO_CHUNK_ARRAY  # <-- added
+from SERVER_ENGINE_APP_FUNCTIONS import (
+    CONSOLE_LOG,
+    DB_CONNECT,
+    DB_BULK_INSERT,
+)
+
+PREFIX = "ONS"
 
 # ─────────────────────────────────────────────────────────────
-# DB helpers (ODBC)
+# DB bulk insert
 # ─────────────────────────────────────────────────────────────
-def DB_GET_CONN():
-    import pyodbc  # type: ignore
-    L_CONN_STR = os.getenv("VIOLIN_ODBC", "")
-    if not L_CONN_STR:
-        raise RuntimeError("VIOLIN_ODBC not set (ODBC connection string).")
-    return pyodbc.connect(L_CONN_STR, autocommit=True)
-
-def DB_BULK_INSERT(L_CONN, L_SQL: str, L_ROWS: Iterable[tuple]) -> None:
-    L_ROWS_LIST = list(L_ROWS)
-    if not L_ROWS_LIST:
-        return
-    L_CUR = L_CONN.cursor()
-    L_CUR.fast_executemany = True
-    L_CUR.executemany(L_SQL, L_ROWS_LIST)
-
-def DB_LOAD_NOTE_ROWS(
-    L_CONN,
+def _db_load_note_rows(
+    conn,
     RECORDING_ID: int,
     AUDIO_CHUNK_NO: int,
-    NOTE_ROWS_ARRAY: Iterable[Tuple[int, int, int, int, str]],
+    rows: Iterable[Tuple[int, int, int, int, str]],
 ) -> None:
     """
-    Insert rows into ENGINE_LOAD_NOTE:
+    ENGINE_LOAD_NOTE columns:
       (RECORDING_ID, AUDIO_CHUNK_NO, START_MS, END_MS,
        NOTE_MIDI_PITCH_NO, VOLUME_MIDI_VELOCITY_NO, SOURCE_METHOD)
     """
-    L_SQL = """
+    sql = """
       INSERT INTO ENGINE_LOAD_NOTE
       (RECORDING_ID, AUDIO_CHUNK_NO, START_MS, END_MS,
        NOTE_MIDI_PITCH_NO, VOLUME_MIDI_VELOCITY_NO, SOURCE_METHOD)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     """
     DB_BULK_INSERT(
-        L_CONN,
-        L_SQL,
+        conn,
+        sql,
         (
-            (RECORDING_ID, AUDIO_CHUNK_NO, L_S, L_E, L_MIDI, L_VEL, L_SRC)
-            for (L_S, L_E, L_MIDI, L_VEL, L_SRC) in NOTE_ROWS_ARRAY
+            (RECORDING_ID, AUDIO_CHUNK_NO, s, e, midi, vel, src)
+            for (s, e, midi, vel, src) in rows
         ),
     )
 
 # ─────────────────────────────────────────────────────────────
-# Microservice call (Onsets & Frames)
+# O&F microservice URL
 # ─────────────────────────────────────────────────────────────
-def ONS_MICROSERVICE_URL() -> str:
-    L_HOST = os.getenv("OAF_HOST", "127.0.0.1")
-    L_PORT = int(os.getenv("OAF_PORT", "9077"))
-    return f"http://{L_HOST}:{L_PORT}"
+def _ons_service_url() -> str:
+    host = os.getenv("OAF_HOST", "127.0.0.1")
+    port = int(os.getenv("OAF_PORT", "9077"))
+    return f"http://{host}:{port}"
 
-def ONS_RUN_MICROSERVICE_AND_GET_MIDI_PATH(WAV_PATH: Path) -> Path | None:
-    """
-    POST {url}/transcribe  with  {"audio_path": "<abs path>"}
-    Expects JSON: {"ok": true, "midi_path": "<abs path>"}
-    """
-    L_URL = ONS_MICROSERVICE_URL().rstrip("/") + "/transcribe"
-    L_PAYLOAD = {"audio_path": _bi.str(WAV_PATH)}
-    CONSOLE_LOG("ONS_HTTP_POST", {"url": L_URL, "payload": L_PAYLOAD})
-    L_RESP = requests.post(L_URL, json=L_PAYLOAD, timeout=120)
-    if not L_RESP.ok:
-        CONSOLE_LOG("ONS_HTTP_ERROR", {"status": L_RESP.status_code, "text": L_RESP.text[:300]})
-        return None
+# ─────────────────────────────────────────────────────────────
+# Microservice call
+# ─────────────────────────────────────────────────────────────
+def _ons_run_and_get_midi_path(wav_path: Path) -> Optional[Path]:
+    url = _ons_service_url().rstrip("/") + "/transcribe"
+    payload = {"audio_path": _bi.str(wav_path)}
+    CONSOLE_LOG(PREFIX, "HTTP_POST", {"url": url, "payload": payload})
+
     try:
-        L_DATA = L_RESP.json()
+        resp = requests.post(url, json=payload, timeout=120)
+    except Exception as exc:
+        CONSOLE_LOG(PREFIX, "HTTP_REQUEST_FAILED", {"err": _bi.str(exc)})
+        return None
+
+    if not resp.ok:
+        CONSOLE_LOG(PREFIX, "HTTP_ERROR", {"status": resp.status_code, "text": (resp.text or "")[:300]})
+        return None
+
+    try:
+        data = resp.json()
     except Exception:
-        CONSOLE_LOG("ONS_BAD_JSON", {"text": L_RESP.text[:300]})
+        CONSOLE_LOG(PREFIX, "BAD_JSON", {"text": (resp.text or "")[:300]})
         return None
-    if not L_DATA.get("ok"):
-        CONSOLE_LOG("ONS_SERVICE_NOT_OK", L_DATA)
+
+    if not data.get("ok"):
+        CONSOLE_LOG(PREFIX, "SERVICE_NOT_OK", data)
         return None
-    L_MIDI = Path(_bi.str(L_DATA.get("midi_path", ""))).resolve()
-    if not L_MIDI.exists():
-        CONSOLE_LOG("ONS_MIDI_NOT_FOUND", {"midi_path": _bi.str(L_MIDI)})
+
+    midi = Path(_bi.str(data.get("midi_path", ""))).resolve()
+    if not midi.exists():
+        CONSOLE_LOG(PREFIX, "MIDI_NOT_FOUND", {"midi_path": _bi.str(midi)})
         return None
-    return L_MIDI
+    return midi
 
 # ─────────────────────────────────────────────────────────────
-# MIDI → note rows (relative to the chunk WAV)
+# MIDI → note rows (relative)
 # ─────────────────────────────────────────────────────────────
-def ONS_PARSE_MIDI_TO_NOTE_ROWS_RELATIVE(MIDI_PATH: Path) -> List[Tuple[int, int, int, int]]:
+def _midi_to_relative_note_rows(midi_path: Path) -> List[Tuple[int, int, int, int]]:
     """
-    Returns rows (relative to the given WAV):
+    Returns chunk-relative rows:
       [(START_MS_REL, END_MS_REL, MIDI_PITCH, VELOCITY), ...]
     """
     if pretty_midi is None:
-        CONSOLE_LOG("PRETTY_MIDI_MISSING")
+        CONSOLE_LOG(PREFIX, "PRETTY_MIDI_MISSING")
         return []
     try:
-        L_PM = pretty_midi.PrettyMIDI(_bi.str(MIDI_PATH))
-    except Exception as L_EXC:
-        CONSOLE_LOG("PRETTY_MIDI_LOAD_FAILED", {"err": _bi.str(L_EXC)})
+        pm = pretty_midi.PrettyMIDI(_bi.str(midi_path))
+    except Exception as exc:
+        CONSOLE_LOG(PREFIX, "PRETTY_MIDI_LOAD_FAILED", {"err": _bi.str(exc)})
         return []
 
-    L_ROWS: List[Tuple[int, int, int, int]] = []
-    for L_INST in L_PM.instruments:
-        for L_N in L_INST.notes:
-            L_S = int(round(float(L_N.start) * 1000.0))
-            L_E = int(round(float(L_N.end)   * 1000.0))
-            L_ROWS.append((L_S, L_E, int(L_N.pitch), int(L_N.velocity)))
-    return L_ROWS
+    rows: List[Tuple[int, int, int, int]] = []
+    for inst in pm.instruments:
+        for n in inst.notes:
+            s = int(round(float(n.start) * 1000.0))
+            e = int(round(float(n.end)   * 1000.0))
+            rows.append((s, e, int(n.pitch), int(n.velocity)))
+    return rows
 
 # ─────────────────────────────────────────────────────────────
-# PUBLIC ENTRY
+# PUBLIC ENTRY (called by Step-2)
 # ─────────────────────────────────────────────────────────────
 def SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS(
     RECORDING_ID: int,
     AUDIO_CHUNK_NO: int,
-    WAV16K_PATH: str,
     AUDIO_CHUNK_START_MS: int,
+    AUDIO_ARRAY_16000: np.ndarray,
+    SAMPLE_RATE_16000: int,
 ) -> None:
     """
-    Step-2 calls this if YN_ONS='Y'.
-
     Inputs:
       • RECORDING_ID, AUDIO_CHUNK_NO
-      • WAV16K_PATH: absolute path to the chunk's mono WAV (16 kHz is fine)
       • AUDIO_CHUNK_START_MS: absolute ms offset for this chunk
+      • AUDIO_ARRAY_16000: mono float32 at 16,000 Hz
+      • SAMPLE_RATE_16000: expected 16000
 
     Behavior:
-      • Calls microservice to transcribe WAV → MIDI
-      • Parses MIDI → relative rows
-      • Offsets to ABSOLUTE times using AUDIO_CHUNK_START_MS
-      • Bulk-inserts into ENGINE_LOAD_NOTE with SOURCE_METHOD='ONS'
+      • Temp-write WAV for microservice
+      • Microservice → MIDI path
+      • Parse MIDI → relative rows
+      • Offset to ABS ms and bulk-insert to ENGINE_LOAD_NOTE (SOURCE_METHOD='ONS')
     """
     try:
-        L_WAV = Path(_bi.str(WAV16K_PATH)).resolve()
-        if not L_WAV.exists():
-            CONSOLE_LOG("WAV_NOT_FOUND", {"path": _bi.str(L_WAV)})
+        if not isinstance(AUDIO_ARRAY_16000, np.ndarray) or AUDIO_ARRAY_16000.size == 0:
+            CONSOLE_LOG(PREFIX, "EMPTY_AUDIO", {"SR": SAMPLE_RATE_16000})
+            # stamp zero so Step-2 logging has an explicit count
+            chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
+            chunks.setdefault(int(AUDIO_CHUNK_NO), {"RECORDING_ID": int(RECORDING_ID), "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO)})["ONS_RECORD_CNT"] = 0
+            return
+        if int(SAMPLE_RATE_16000) <= 0:
+            CONSOLE_LOG(PREFIX, "BAD_SR", {"SR": SAMPLE_RATE_16000})
+            chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
+            chunks.setdefault(int(AUDIO_CHUNK_NO), {"RECORDING_ID": int(RECORDING_ID), "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO)})["ONS_RECORD_CNT"] = 0
             return
 
-        CONSOLE_LOG("ONS_BEGIN", {
+        # Ensure per-recording temp dir and make a stable temp WAV name
+        rec_dir = (TEMP_RECORDING_AUDIO_DIR / str(RECORDING_ID))
+        rec_dir.mkdir(parents=True, exist_ok=True)
+        wav_path = rec_dir / f"ons_chunk_{int(AUDIO_CHUNK_NO):06d}_16k.wav"
+
+        # Write temp WAV (mono float32 → PCM_16 is fine; O&F just needs audio content)
+        sf.write(_bi.str(wav_path), AUDIO_ARRAY_16000.astype("float32"), int(SAMPLE_RATE_16000), subtype="PCM_16")
+
+        CONSOLE_LOG(PREFIX, "BEGIN", {
             "RECORDING_ID": int(RECORDING_ID),
             "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
-            "WAV16K_PATH": _bi.str(L_WAV),
             "AUDIO_CHUNK_START_MS": int(AUDIO_CHUNK_START_MS),
+            "SR_16K": int(SAMPLE_RATE_16000),
+            "WAV_PATH": _bi.str(wav_path),
         })
 
-        L_MIDI_PATH = ONS_RUN_MICROSERVICE_AND_GET_MIDI_PATH(L_WAV)
-        if not L_MIDI_PATH:
-            CONSOLE_LOG("ONS_SKIPPED_NO_MIDI")
+        midi_path = _ons_run_and_get_midi_path(wav_path)
+        if not midi_path:
+            CONSOLE_LOG(PREFIX, "NO_MIDI_RETURNED")
+            chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
+            chunks.setdefault(int(AUDIO_CHUNK_NO), {"RECORDING_ID": int(RECORDING_ID), "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO)})["ONS_RECORD_CNT"] = 0
             return
 
-        L_ROWS_REL = ONS_PARSE_MIDI_TO_NOTE_ROWS_RELATIVE(L_MIDI_PATH)
-        CONSOLE_LOG("ONS_ROWS_RELATIVE", {"count": len(L_ROWS_REL)})
-
-        if not L_ROWS_REL:
+        rel_rows = _midi_to_relative_note_rows(midi_path)
+        CONSOLE_LOG(PREFIX, "ROWS_RELATIVE", {"count": len(rel_rows)})
+        if not rel_rows:
+            chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
+            chunks.setdefault(int(AUDIO_CHUNK_NO), {"RECORDING_ID": int(RECORDING_ID), "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO)})["ONS_RECORD_CNT"] = 0
             return
 
-        # Convert to ABSOLUTE ms and add SOURCE_METHOD
-        L_ROWS_ABS_WITH_SRC: List[Tuple[int, int, int, int, str]] = []
-        for (L_S_REL, L_E_REL, L_MIDI, L_VEL) in L_ROWS_REL:
-            L_S_ABS = int(AUDIO_CHUNK_START_MS) + int(L_S_REL)
-            L_E_ABS = int(AUDIO_CHUNK_START_MS) + int(L_E_REL)
-            L_ROWS_ABS_WITH_SRC.append((L_S_ABS, L_E_ABS, int(L_MIDI), int(L_VEL), "ONS"))
+        # Convert to absolute times and tag with source
+        rows_abs_with_src: List[Tuple[int, int, int, int, str]] = []
+        base = int(AUDIO_CHUNK_START_MS)
+        for (s_rel, e_rel, midi, vel) in rel_rows:
+            rows_abs_with_src.append((base + int(s_rel), base + int(e_rel), int(midi), int(vel), "ONS"))
 
-        with DB_GET_CONN() as L_CONN:
-            DB_LOAD_NOTE_ROWS(
-                L_CONN=L_CONN,
+        # NEW: stamp ONS record count in memory for Step-2's DB_LOG_RECORDING_AUDIO_CHUNK
+        chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
+        ch = chunks.setdefault(int(AUDIO_CHUNK_NO), {"RECORDING_ID": int(RECORDING_ID), "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO)})
+        ch["ONS_RECORD_CNT"] = int(len(rows_abs_with_src))
+
+        with DB_CONNECT() as conn:
+            _db_load_note_rows(
+                conn=conn,
                 RECORDING_ID=int(RECORDING_ID),
                 AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
-                NOTE_ROWS_ARRAY=L_ROWS_ABS_WITH_SRC,
+                rows=rows_abs_with_src,
             )
 
-        CONSOLE_LOG("ONS_DB_INSERT_OK", {
+        CONSOLE_LOG(PREFIX, "DB_INSERT_OK", {
             "RECORDING_ID": int(RECORDING_ID),
             "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
-            "ROW_COUNT": len(L_ROWS_ABS_WITH_SRC),
+            "ROW_COUNT": len(rows_abs_with_src),
         })
 
-    except Exception as L_EXC:
-        CONSOLE_LOG("ONS_FATAL_ERROR", {
-            "ERROR": _bi.str(L_EXC),
+    except Exception as exc:
+        CONSOLE_LOG(PREFIX, "FATAL_ERROR", {
+            "ERROR": _bi.str(exc),
             "TRACE": traceback.format_exc(),
             "RECORDING_ID": int(RECORDING_ID),
             "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
