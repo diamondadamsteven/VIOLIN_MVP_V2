@@ -1,17 +1,19 @@
 # SERVER_ENGINE_AUDIO_STREAM_LISTENER.py
 # ------------------------------------------------------------
 # FastAPI WebSocket listener for VIOLIN_MVP audio streaming.
-# Keeps an Onsets&Frames Docker container running (Option A)
-# that exposes DOCKER_ONSETS_AND_FRAMES_SERVER.py on 9077 (in-container).
-# Host side maps 127.0.0.1:OAF_PORT -> container:9077.
+# Writes incoming .m4a frames to per-recording temp folders.
+# On START: initializes recording plan and spawns chunk pipeline.
+# On FRAME: queues TEXT meta, pairs next BINARY by arrival order, saves <FRAME_NO>.m4a.
+# On STOP: drops a STOP marker; the pipeline will finish remaining chunks and finalize.
 # ------------------------------------------------------------
 
 import os
 import sys
 import json
+import asyncio
 import subprocess
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 import builtins as _bi
 import traceback
@@ -20,11 +22,15 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
 
-from SERVER_ENGINE_AUDIO_STREAM_PROCESSOR import (
-    PROCESS_AUDIO_STREAM,
-    PROCESS_STOP_RECORDING,
-    REGISTER_RECORDING_CONTEXT_HINT,
+# New step modules (to be implemented per our plan)
+from SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_1_CONCATENATE import (
+    STEP_1_NEW_RECORDING_STARTED,
+    STEP_2_AUDIO_CHUNKS,
 )
+# Step-3 is called by the pipeline after it completes all chunks (not by listener)
+# from SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_3_STOP import (
+#     SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_3_STOP,
+# )
 
 # --- Force UTF-8 console on Windows; also handle any stray unencodables gracefully
 try:
@@ -55,7 +61,7 @@ def LOG_TO_CONSOLE(msg, obj=None):
 # ─────────────────────────────────────────────────────────────
 # App + CORS
 # ─────────────────────────────────────────────────────────────
-APP = FastAPI(title="VIOLIN_MVP Audio Stream WS Listener", version="1.0.0")
+APP = FastAPI(title="VIOLIN_MVP Audio Stream WS Listener", version="1.1.0")
 APP.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],   # tighten later
@@ -80,12 +86,15 @@ async def _log_routes_on_startup():
 BASE_TEMP_DIR = Path(os.getenv("AUDIO_TMP_DIR", "./tmp/active_recordings")).resolve()
 BASE_TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
+# Per-recording state tracked by the listener
 ACTIVE_RECORDINGS: Dict[str, Dict[str, Any]] = {}
-PENDING_META: Dict[WebSocket, Dict[int, Dict[str, Any]]] = {}
+# For each WebSocket, we keep a FIFO queue of pending TEXT FRAME metas
+PENDING_META_QUEUE: Dict[WebSocket, List[Dict[str, Any]]] = {}
+# Simple "expected next frame" counter used only to echo status back to the client
 NEXT_EXPECTED: Dict[str, int] = {}
 
 # ─────────────────────────────────────────────────────────────
-# Onsets&Frames Docker management (Option A)
+# Onsets&Frames Docker management (Option A) — unchanged
 # ─────────────────────────────────────────────────────────────
 OAF_IMAGE = os.getenv("OAF_IMAGE", "tensorflow/magenta")
 OAF_CONTAINER = os.getenv("OAF_CONTAINER", "violin_oaf_server")
@@ -128,6 +137,9 @@ def CREATE_TEMP_AUDIO_DIR(recording_id: str) -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 
+def STOP_MARKER_PATH(recording_id: str) -> Path:
+    return (BASE_TEMP_DIR / recording_id) / "_STOP"
+
 # ─────────────────────────────────────────────────────────────
 # Startup hook (ensures OAF container is up)
 # ─────────────────────────────────────────────────────────────
@@ -151,13 +163,37 @@ async def WEBSOCKET_SEND_JSON(ws: WebSocket, payload: Dict[str, Any]):
     if ws.client_state == WebSocketState.CONNECTED:
         await ws.send_text(json.dumps(payload))
 
+async def _spawn_pipeline_task(recording_id: str):
+    """
+    Run the per-recording pipeline:
+      1) STEP_1_NEW_RECORDING_STARTED(recording_id)
+      2) STEP_2_AUDIO_CHUNKS(recording_id)  (this should block until STOP marker seen and all chunks processed)
+         Step-2 will call Step-3 to finalize when done.
+    """
+    try:
+        await STEP_1_NEW_RECORDING_STARTED(recording_id)
+        await STEP_2_AUDIO_CHUNKS(recording_id)
+    except asyncio.CancelledError:
+        LOG_TO_CONSOLE("Pipeline task cancelled", {"RECORDING_ID": recording_id})
+        raise
+    except Exception as exc:
+        LOG_TO_CONSOLE("Pipeline task error", {"RECORDING_ID": recording_id, "error": _bi.str(exc), "trace": traceback.format_exc()})
+    finally:
+        # When pipeline is done, mark finished
+        st = ACTIVE_RECORDINGS.get(recording_id)
+        if st is not None:
+            st["PIPELINE_DONE"] = True
+
 @APP.websocket("/ws/stream")
 async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
     peer = getattr(ws.client, "__dict__", None)
     LOG_TO_CONSOLE("WS CONNECT -> /ws/stream", {"peer": peer})
     await ws.accept()
     LOG_TO_CONSOLE("WS ACCEPTED", {"subprotocol": getattr(ws, "subprotocol", None)})
-    PENDING_META[ws] = {}
+    PENDING_META_QUEUE[ws] = []
+
+    # Track which recording_id this socket is currently handling (one per WS expected)
+    current_recording_id: Optional[str] = None
 
     try:
         while True:
@@ -183,48 +219,57 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                         LOG_TO_CONSOLE("START missing RECORDING_ID", meta)
                         continue
 
+                    current_recording_id = rec_id
                     rec_dir = CREATE_TEMP_AUDIO_DIR(rec_id)
                     ACTIVE_RECORDINGS[rec_id] = {
                         "TEMP_AUDIO_STREAM_DIRECTORY": _bi.str(rec_dir),
                         "FIRST_FRAME_RECEIVED": False,
+                        "PIPELINE_DONE": False,
                     }
-                    # Expect first positive frame to be 1 (no frame 0 in your protocol)
                     NEXT_EXPECTED.setdefault(rec_id, 1)
-                    REGISTER_RECORDING_CONTEXT_HINT(rec_id, AUDIO_STREAM_FILE_NAME=audio_name)
+
+                    # Spawn per-recording pipeline task
+                    task = asyncio.create_task(_spawn_pipeline_task(rec_id))
+                    ACTIVE_RECORDINGS[rec_id]["PIPELINE_TASK"] = task
 
                     LOG_TO_CONSOLE("START ACK ->", {"RECORDING_ID": rec_id, "dir": _bi.str(rec_dir), "audio_file": audio_name})
                     await WEBSOCKET_SEND_JSON(ws, {"type": "START_ACK", "RECORDING_ID": rec_id})
 
                 elif mtype == "FRAME":
+                    # Minimal FRAME meta: only RECORDING_ID and FRAME_NO are required
                     rec_id = _bi.str(meta.get("RECORDING_ID") or "").strip()
                     frame_no = meta.get("FRAME_NO")
-                    frame_dur = meta.get("FRAME_DURATION_IN_MS")
-                    overlap = meta.get("COUNTDOWN_OVERLAP_MS", 0)
-                    bytes_len = meta.get("BYTES_LEN")
 
-                    if any(v is None for v in (rec_id, frame_no, frame_dur, bytes_len)):
-                        await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "FRAME meta missing required fields"})
-                        LOG_TO_CONSOLE("FRAME meta missing fields", meta)
+                    if not rec_id or frame_no is None:
+                        await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "FRAME meta requires RECORDING_ID and FRAME_NO"})
+                        LOG_TO_CONSOLE("FRAME meta missing required fields", meta)
                         continue
 
+                    if current_recording_id is None:
+                        current_recording_id = rec_id
+
+                    # If this socket suddenly switches to a different recording_id, reject
+                    if rec_id != current_recording_id:
+                        await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "Multiple RECORDING_IDs on one WebSocket not supported"})
+                        LOG_TO_CONSOLE("FRAME with different RECORDING_ID on same WS", {"expected": current_recording_id, "got": rec_id})
+                        continue
+
+                    # Ensure state exists
                     if rec_id not in ACTIVE_RECORDINGS:
                         rec_dir = CREATE_TEMP_AUDIO_DIR(rec_id)
                         ACTIVE_RECORDINGS[rec_id] = {
                             "TEMP_AUDIO_STREAM_DIRECTORY": _bi.str(rec_dir),
                             "FIRST_FRAME_RECEIVED": False,
+                            "PIPELINE_DONE": False,
                         }
                         NEXT_EXPECTED.setdefault(rec_id, 1)
 
-                    PENDING_META[ws][int(frame_no)] = {
+                    # Queue meta FIFO; we'll pair the very next binary payload with this meta
+                    PENDING_META_QUEUE[ws].append({
                         "RECORDING_ID": rec_id,
                         "FRAME_NO": int(frame_no),
-                        "FRAME_DURATION_IN_MS": int(frame_dur),
-                        "COUNTDOWN_OVERLAP_MS": int(overlap or 0),
-                        "BYTES_LEN": int(bytes_len),
-                    }
-                    LOG_TO_CONSOLE("FRAME META QUEUED", {
-                        "RECORDING_ID": rec_id, "FRAME_NO": int(frame_no), "BYTES_LEN": int(bytes_len)
                     })
+                    LOG_TO_CONSOLE("FRAME META QUEUED", {"RECORDING_ID": rec_id, "FRAME_NO": int(frame_no)})
 
                 elif mtype == "STOP":
                     rec_id = _bi.str(meta.get("RECORDING_ID") or "").strip()
@@ -234,9 +279,13 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                         continue
 
                     LOG_TO_CONSOLE("STOP received <-", {"RECORDING_ID": rec_id})
-                    await PROCESS_STOP_RECORDING(rec_id)
-                    ACTIVE_RECORDINGS.pop(rec_id, None)
-                    NEXT_EXPECTED.pop(rec_id, None)
+
+                    # Drop a STOP marker; the pipeline will finish remaining chunks and then finalize.
+                    try:
+                        STOP_MARKER_PATH(rec_id).write_text("stop", encoding="utf-8")
+                    except Exception as e:
+                        LOG_TO_CONSOLE("Failed to write STOP marker", _bi.str(e))
+
                     await WEBSOCKET_SEND_JSON(ws, {"type": "STOP_ACK", "RECORDING_ID": rec_id})
                     LOG_TO_CONSOLE("STOP ACK ->", {"RECORDING_ID": rec_id})
 
@@ -247,33 +296,20 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
             # ── BINARY FRAMES ──────────────────────────────────
             elif "bytes" in msg and msg["bytes"] is not None:
                 data: bytes = msg["bytes"]
-                meta_map = PENDING_META.get(ws, {})
-                match_key = None
-                meta = None
-                for k, m in list(meta_map.items()):
-                    if m["BYTES_LEN"] == len(data):
-                        match_key = k
-                        meta = m
-                        break
-
-                if not meta:
-                    await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "Binary payload without matching FRAME meta"})
+                q = PENDING_META_QUEUE.get(ws, [])
+                if not q:
+                    await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "Binary payload without preceding FRAME meta"})
                     LOG_TO_CONSOLE("BINARY WITHOUT META", {"len": len(data)})
                     continue
 
-                del meta_map[match_key]
-
+                # FIFO pair: pop the oldest pending meta for this socket
+                meta = q.pop(0)
                 rec_id = meta["RECORDING_ID"]
-                frame_no = meta["FRAME_NO"]
-                frame_dur = meta["FRAME_DURATION_IN_MS"]
-                overlap = meta["COUNTDOWN_OVERLAP_MS"]
+                frame_no = int(meta["FRAME_NO"])
 
-                # NEW: ignore non-positive frames completely (no write/no process), but still ACK
-                if int(frame_no) <= 0:
-                    LOG_TO_CONSOLE("IGNORED NON-POSITIVE FRAME", {
-                        "RECORDING_ID": rec_id, "FRAME_NO": frame_no, "len": len(data)
-                    })
-                    # Keep NEXT_EXPECTED pointed at first positive frame
+                # Ignore non-positive frames completely (still ACK for hygiene)
+                if frame_no <= 0:
+                    LOG_TO_CONSOLE("IGNORED NON-POSITIVE FRAME", {"RECORDING_ID": rec_id, "FRAME_NO": frame_no, "len": len(data)})
                     if NEXT_EXPECTED.get(rec_id, 1) < 1:
                         NEXT_EXPECTED[rec_id] = 1
                     ack = {
@@ -287,8 +323,9 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                     LOG_TO_CONSOLE("ACK (IGNORED) ->", ack)
                     continue
 
+                # Persist .m4a
                 rec_dir = Path(ACTIVE_RECORDINGS[rec_id]["TEMP_AUDIO_STREAM_DIRECTORY"])
-                out_path = rec_dir / f"{int(frame_no):08d}.m4a"
+                out_path = rec_dir / f"{frame_no:08d}.m4a"
                 out_path.write_bytes(data)
                 LOG_TO_CONSOLE("BINARY SAVED", {"RECORDING_ID": rec_id, "FRAME_NO": frame_no, "path": _bi.str(out_path), "len": len(data)})
 
@@ -296,30 +333,7 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                     ACTIVE_RECORDINGS[rec_id]["FIRST_FRAME_RECEIVED"] = True
                     LOG_TO_CONSOLE("FIRST FRAME RECEIVED", {"RECORDING_ID": rec_id})
 
-                # If frames are 1-based, align timestamps to 0-based time
-                frame_index = max(0, int(frame_no) - 1)
-                frame_start_ms = frame_index * int(frame_dur)
-                frame_end_ms = frame_start_ms + int(frame_dur) - 1
-
-                try:
-                    await PROCESS_AUDIO_STREAM(
-                        RECORDING_ID=rec_id,
-                        FRAME_NO=int(frame_no),
-                        FRAME_START_MS=frame_start_ms,
-                        FRAME_END_MS=frame_end_ms,
-                        FRAME_DURATION_IN_MS=int(frame_dur),
-                        COUNTDOWN_OVERLAP_MS=int(overlap or 0),
-                        AUDIO_STREAM_FILE_PATH=_bi.str(out_path),
-                    )
-                except Exception as exc:
-                    tb = traceback.format_exc()
-                    LOG_TO_CONSOLE("PROCESS_AUDIO_STREAM error", {"exc": _bi.str(exc), "trace": tb, "rec_id": rec_id, "frame_no": frame_no})
-                    try:
-                        await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": _bi.str(exc), "trace": tb})
-                    except Exception:
-                        pass
-                    continue  # keep socket alive; skip ACK for this frame
-
+                # Update simple NEXT_EXPECTED counter for client visibility only
                 next_expected = NEXT_EXPECTED.get(rec_id, 1)
                 if frame_no == next_expected:
                     NEXT_EXPECTED[rec_id] = next_expected + 1
@@ -329,7 +343,7 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                     "RECORDING_ID": rec_id,
                     "FRAME_NO": frame_no,
                     "NEXT_EXPECTED_FRAME_NO": NEXT_EXPECTED.get(rec_id, 1),
-                    "MISSING_FRAMES": [],
+                    "MISSING_FRAMES": [],  # could compute gaps later if needed
                 }
                 await WEBSOCKET_SEND_JSON(ws, ack)
                 LOG_TO_CONSOLE("ACK ->", ack)
@@ -340,6 +354,16 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
 
     except WebSocketDisconnect:
         LOG_TO_CONSOLE("WS DISCONNECT")
+        # If the socket drops without an explicit STOP, nudge the pipeline by writing a STOP marker
+        if current_recording_id and current_recording_id in ACTIVE_RECORDINGS:
+            try:
+                sm = STOP_MARKER_PATH(current_recording_id)
+                if not sm.exists():
+                    sm.write_text("stop", encoding="utf-8")
+                    LOG_TO_CONSOLE("STOP marker written on disconnect", {"RECORDING_ID": current_recording_id})
+            except Exception as e:
+                LOG_TO_CONSOLE("Failed to write STOP marker on disconnect", _bi.str(e))
+
     except Exception as exc:
         LOG_TO_CONSOLE("Listener exception", _bi.str(exc))
         try:
@@ -347,7 +371,8 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
         except Exception:
             pass
     finally:
-        PENDING_META.pop(ws, None)
+        # Clean per-WS meta queue
+        PENDING_META_QUEUE.pop(ws, None)
         LOG_TO_CONSOLE("WEBSOCKET_RECEIVE_INCOMING_DATA finalized for this socket")
 
 # ─────────────────────────────────────────────────────────────

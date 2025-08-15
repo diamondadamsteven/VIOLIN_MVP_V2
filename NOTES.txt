@@ -24,22 +24,3 @@
 # Copy
 # Edit
 # powershell -ExecutionPolicy Bypass -File .\setup_server.ps1
-
-20250812:
-
-def _COMPUTE_FFT(AUDIO: np.ndarray, SR: int):
-    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_FFT")
-    return []
-
-def _COMPUTE_PYIN(AUDIO: np.ndarray, SR: int):
-    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_PYIN")
-    return []
-
-def _COMPUTE_CREPE(AUDIO: np.ndarray, SR: int):
-    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_CREPE")
-    return []
-
-def _COMPUTE_VOLUME(AUDIO: np.ndarray, SR: int):
-    LOG("Start function SERVER_ENGINE_AUDIO_STREAM_PROCESSOR._COMPUTE_VOLUME")
-    return None, []
-

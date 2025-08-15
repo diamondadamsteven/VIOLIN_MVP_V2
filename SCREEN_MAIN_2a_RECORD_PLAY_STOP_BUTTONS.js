@@ -1,3 +1,4 @@
+// SCREEN_MAIN_2a_RECORD_PLAY_STOP_BUTTONS.js
 import { FontAwesome } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { DeviceEventEmitter, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -18,6 +19,8 @@ CLIENT_APP_VARIABLES._IS_RECORDING = false;
 CLIENT_APP_VARIABLES._IS_PAUSED = false;
 // Track last chunk we reacted to
 let L_START_AUDIO_CHUNK_NO = 0;
+// Countdown timer handle
+let _countdownTimer = null;
 // ─────────────────────────────────────────────────────────────
 
 function LOG(msg, obj) {
@@ -27,11 +30,18 @@ function LOG(msg, obj) {
 }
 
 function setConductor(text, mood = 'NEUTRAL', ms = 1000) {
+  // Keep shared vars in sync for UIs that read directly
+  CLIENT_APP_VARIABLES.CONDUCTOR_MESSAGE_TEXT = text;
+  CLIENT_APP_VARIABLES.CONDUCTOR_MOOD_GOOD_BAD_OR_NEUTRAL = mood;
+  CLIENT_APP_VARIABLES.CONDUCTOR_MESSAGE_DISPLAY_FOR_DURATION_IN_MS = ms;
+
   DeviceEventEmitter.emit(EVT_CONDUCTOR_UPDATED, {
     CONDUCTOR_MESSAGE_TEXT: text,
     CONDUCTOR_MOOD_GOOD_BAD_OR_NEUTRAL: mood,
     CONDUCTOR_MESSAGE_DISPLAY_FOR_DURATION_IN_MS: ms,
   });
+
+  try { DeviceEventEmitter.emit('EVT_UI_DIRTY'); } catch {}
 }
 
 function msPerBeat(bpm) { return 60000 / Math.max(1, Number(bpm) || 60); }
@@ -45,6 +55,38 @@ function isComposeMode() {
 // Make React update when we flip plain JS flags
 function MARK_UI_DIRTY() {
   try { DeviceEventEmitter.emit('EVT_UI_DIRTY'); } catch {}
+}
+
+/**
+ * Show thought-bubble text during countdown, once per beat.
+ * Text: "Start in {COUNTDOWN_BEATS + 1 - COUNTDOWN_ITERATION_NO}"
+ * Runs for exactly CLIENT_APP_VARIABLES.COUNTDOWN_BEATS iterations.
+ */
+function CONDUCTOR_THOUGHT_TEXT_DURING_COUNTDOWN(beats, bpm) {
+  const periodMs = msPerBeat(bpm);
+  clearTimeout(_countdownTimer);
+  CLIENT_APP_VARIABLES.COUNTDOWN_ITERATION_NO = 0;
+
+  const tick = () => {
+    if (!CLIENT_APP_VARIABLES._IS_RECORDING) return;
+
+    CLIENT_APP_VARIABLES.COUNTDOWN_ITERATION_NO += 1;
+    const iter = CLIENT_APP_VARIABLES.COUNTDOWN_ITERATION_NO;
+    const remaining = Math.max(0, (beats + 1) - iter);
+    const text = remaining > 0 ? `Start in ${remaining}` : 'Start!';
+
+    // Hold slightly longer than one beat so it stays visible
+    setConductor(text, 'NEUTRAL', Math.min(2000, periodMs + 120));
+
+    if (iter < beats) {
+      _countdownTimer = setTimeout(tick, periodMs);
+    } else {
+      _countdownTimer = null;
+    }
+  };
+
+  // Kick off immediately
+  _countdownTimer = setTimeout(tick, 0);
 }
 
 // Record start → call P_CLIENT_RECORD_START, populate app vars, kick countdown & WS
@@ -108,7 +150,10 @@ async function RECORD_BUTTON_TAPPED_HANDLER() {
   const beats = Number(CLIENT_APP_VARIABLES.COUNTDOWN_BEATS || 0);
   const bpm = Number(CLIENT_APP_VARIABLES.BPM || 60);
 
-  // Show per-beat countdown text immediately; START_STREAMING_WS also discards pre-boundary audio
+  // Kick the per-beat thought bubble during countdown
+  CONDUCTOR_THOUGHT_TEXT_DURING_COUNTDOWN(beats, bpm);
+
+  // (We still send a single event immediately as before)
   DeviceEventEmitter.emit(EVT_CONDUCTOR_UPDATED, {
     CONDUCTOR_MESSAGE_TEXT: `Start after ${beats} beats`,
     CONDUCTOR_MOOD_GOOD_BAD_OR_NEUTRAL: 'NEUTRAL',
@@ -132,6 +177,10 @@ async function STOP_BUTTON_TAPPED_HANDLER() {
   } catch (e) {
     LOG('STOP_STREAMING_WS error', e?.message || e);
   }
+
+  // Stop any active countdown ticks
+  try { clearTimeout(_countdownTimer); } catch {}
+  _countdownTimer = null;
 
   // Gracefully end the take
   try {

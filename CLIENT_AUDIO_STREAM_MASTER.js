@@ -1,7 +1,7 @@
 // CLIENT_AUDIO_STREAM_MASTER.js
 // WebSocket audio streaming client for VIOLIN_MVP
 // Protocol per frame: send TEXT meta (JSON) then BINARY audio bytes.
-// Fields: RECORDING_ID, FRAME_NO, FRAME_DURATION_IN_MS, COUNTDOWN_OVERLAP_MS, BYTES_LEN.
+// Fields now: RECORDING_ID, FRAME_NO, FRAME_DURATION_IN_MS, BYTES_LEN.
 
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -137,7 +137,8 @@ function GET_HEALTH_URL() {
 }
 
 // ─────────────────────────────────────────────────────────────
-const FRAME_MS = 250;
+// Frame size is now set dynamically (from DB via CLIENT_APP_VARIABLES)
+const FRAME_MS = Number(CLIENT_APP_VARIABLES.AUDIO_STREAM_FRAME_SIZE_IN_MS) || 250;
 const RESEND_BUFFER_SIZE = 128;
 const SEND_SLACK_MS = 15;
 
@@ -245,7 +246,7 @@ function WS_SEND_JSON(obj) {
   }
 }
 
-async function SEND_FRAME_PAIR({ recordingId, frameNo, frameMs, overlapMs, bytes }) {
+async function SEND_FRAME_PAIR({ recordingId, frameNo, frameMs, bytes }) {
   LOG('Start function CLIENT_AUDIO_STREAM_MASTER.SEND_FRAME_PAIR');
   if (!WS || WS.readyState !== 1) return;
 
@@ -253,9 +254,8 @@ async function SEND_FRAME_PAIR({ recordingId, frameNo, frameMs, overlapMs, bytes
     type: 'FRAME',
     RECORDING_ID: String(recordingId),
     FRAME_NO: frameNo,
-    FRAME_DURATION_IN_MS: frameMs,
-    COUNTDOWN_OVERLAP_MS: overlapMs || 0,
-    BYTES_LEN: bytes.byteLength,
+    FRAME_DURATION_IN_MS: frameMs,   // kept (listener currently uses it)
+    BYTES_LEN: bytes.byteLength,     // kept (listener pairs text↔binary)
   };
 
   WS_SEND_JSON(header);
@@ -327,7 +327,7 @@ function START_CONDUCTOR_COUNTDOWN(beats, bpm) {
 }
 
 export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
-  LOG('Start function CLIENT_AUDIO_STREAM_MASTER.START_STREAMING_WS');
+  LOG('Start function CLIENT_AUDIO_STREAM_MASTER.START_STREAMING_WS', { FRAME_MS });
   if (STREAMING) return;
   STREAMING = true;
   MARK_UI_DIRTY(); // force buttons to update immediately (Stop only)
@@ -422,7 +422,6 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
               recordingId: RECORDING_ID,
               frameNo: m,
               frameMs: entry.header.FRAME_DURATION_IN_MS,
-              overlapMs: entry.header.COUNTDOWN_OVERLAP_MS,
               bytes: entry.bytes,
             });
           }
@@ -469,46 +468,40 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
 
       const audioBytes = await READ_FILE_AS_UINT8(uri);
 
-      // Decide whether to send this chunk, and with what frame number / overlap
-      let shouldSend = false;
-      let frameNoToSend = FRAME_NO;
-      let overlapMs = 0;
-
+      // New: no overlaps. Discard every chunk until countdown completes exactly on a frame boundary.
       if (!BOUNDARY_SENT) {
-        if (COUNTDOWN_REMAINING_MS > FRAME_MS) {
+        if (COUNTDOWN_REMAINING_MS > 0) {
           COUNTDOWN_REMAINING_MS -= FRAME_MS;
-          shouldSend = false; // discard countdown chunk
           LOG('Countdown chunk discarded', { COUNTDOWN_REMAINING_MS });
+          if (COUNTDOWN_REMAINING_MS <= 0) {
+            // Countdown finished at this frame boundary; next chunk becomes frame #1
+            BOUNDARY_SENT = true;
+            FRAME_NO = 1;
+            LOG('Countdown finished; next chunk will be frame #1');
+          }
+          try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
+          if (STREAMING) _nextTimeout = setTimeout(TICK, FRAME_MS + SEND_SLACK_MS);
+          return; // do not send this chunk
         } else {
-          // boundary chunk: send as frame 1 with overlap
-          overlapMs = FRAME_MS - COUNTDOWN_REMAINING_MS;
-          COUNTDOWN_REMAINING_MS = 0;
-          BOUNDARY_SENT = true;
-          frameNoToSend = 1;
-          shouldSend = true;
-          FRAME_NO = 2; // next tick continues with 2
-          LOG('Boundary reached', { overlapMs });
+          BOUNDARY_SENT = true; // (in case countdownBeats was 0)
         }
-      } else {
-        shouldSend = true;
-        frameNoToSend = FRAME_NO;
-        FRAME_NO += 1;
       }
 
-      if (shouldSend) {
-        RESEND_BUFFER_PUT(frameNoToSend, {
-          header: { FRAME_DURATION_IN_MS: FRAME_MS, COUNTDOWN_OVERLAP_MS: overlapMs },
-          bytes: audioBytes,
-        });
+      // Send a regular frame
+      const frameNoToSend = FRAME_NO;
+      FRAME_NO += 1;
 
-        await SEND_FRAME_PAIR({
-          recordingId: RECORDING_ID,
-          frameNo: frameNoToSend,
-          frameMs: FRAME_MS,
-          overlapMs,
-          bytes: audioBytes,
-        });
-      }
+      RESEND_BUFFER_PUT(frameNoToSend, {
+        header: { FRAME_DURATION_IN_MS: FRAME_MS },
+        bytes: audioBytes,
+      });
+
+      await SEND_FRAME_PAIR({
+        recordingId: RECORDING_ID,
+        frameNo: frameNoToSend,
+        frameMs: FRAME_MS,
+        bytes: audioBytes,
+      });
 
       try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
     } catch (e) {
