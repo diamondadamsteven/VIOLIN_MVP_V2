@@ -1,4 +1,4 @@
-@echo off
+@echo off 
 setlocal EnableExtensions EnableDelayedExpansion
 pushd "%~dp0"
 
@@ -10,7 +10,10 @@ set "NOW=%NOW: =0%"
 
 set "LOG_FILE=%~dp0VIOLIN_MVP_START_SERVER_output.txt"
 set "BACKEND_LOG_FILE=%~dp0VIOLIN_MVP_START_SERVER_backend_output.txt"
-set "LISTENER_LOG_FILE=%~dp0VIOLIN_MVP_START_SERVER_listener_output.log"
+
+rem Per-listener logs will be placed here:
+set "LISTENERS_LOG_DIR=%~dp0VIOLIN_MVP_LISTENER_LOGS"
+if not exist "%LISTENERS_LOG_DIR%" mkdir "%LISTENERS_LOG_DIR%"
 
 set "OAF_CONTAINER=violin_oaf_server"
 set "OAF_IMAGE=violin/oaf:latest"
@@ -25,6 +28,10 @@ rem ============================
 rem Logging helper
 rem ============================
 if exist "%LOG_FILE%" del "%LOG_FILE%" >nul 2>&1
+if exist "%BACKEND_LOG_FILE%" del "%BACKEND_LOG_FILE%" >nul 2>&1
+rem Wipe old listener logs so we start fresh
+if exist "%LISTENERS_LOG_DIR%\*.log" del /q "%LISTENERS_LOG_DIR%\*.log" >nul 2>&1
+
 call :LOG "======== SERVER STARTUP LOG %DATE% %TIME% ========"
 
 rem 1) venv
@@ -61,21 +68,43 @@ rem 4) Backend
 echo Backend
 call :LOG "Starting FastAPI backend on :8000 ..."
 start "FastAPI Backend" /D "%PROJECT_ROOT%" cmd /k ^
-  python -m uvicorn SERVER_VIOLIN_MVP_START:app --host 0.0.0.0 --port 8000 --reload ^>^>"%BACKEND_LOG_FILE%" 2^>^&1
+  python -m uvicorn SERVER_VIOLIN_MVP_START:app --host 0.0.0.0 --port 8000 --reload ^>"%BACKEND_LOG_FILE%" 2^>^&1
 
-rem 5) Listener
-echo Listener
-call :LOG "Starting Server Engine Listener on :7070 ..."
-start "Server Engine Listener" /D "%PROJECT_ROOT%" cmd /k ^
-  python -m uvicorn SERVER_ENGINE_AUDIO_STREAM_LISTENER:APP --host 0.0.0.0 --port 7070 --reload ^>^>"%LISTENER_LOG_FILE%" 2^>^&1
+rem 5) Listeners (multiple worker scripts)
+echo Listeners
+call :LOG "Starting listener workers..."
 
-echo "Servers launched. Backend: http://localhost:8000  WS: ws://localhost:7070/ws/stream  O&F: http://127.0.0.1:%OAF_PORT%"
-echo "(Close the two console windows to stop them. To stop O&F: docker stop %OAF_CONTAINER%)"
+rem Space-separated list of listener worker files to launch
+set "LISTENER_FILES= ^
+SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS.py ^
+SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES.py ^
+SERVER_ENGINE_LISTEN_3A_FOR_START.py ^
+SERVER_ENGINE_LISTEN_3B_FOR_FRAMES.py ^
+SERVER_ENGINE_LISTEN_3C_FOR_STOP.py ^
+SERVER_ENGINE_LISTEN_4_FOR_AUDIO_CHUNKS_TO_PREPARE.py ^
+SERVER_ENGINE_LISTEN_5_CONCATENATE.py ^
+SERVER_ENGINE_LISTEN_6_FOR_AUDIO_CHUNKS_TO_PROCESS.py ^
+SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS.py"
 
+for %%F in (%LISTENER_FILES%) do (
+  set "FILE=%%F"
+  set "BASE=%%~nF"
+  call :LOG "Launching !FILE! ..."
+  rem Each listener gets a fresh (overwritten) log
+  start "Listener - !BASE!" /D "%PROJECT_ROOT%" cmd /k ^
+    set PYTHONUNBUFFERED=1 ^& python "!FILE!" ^>"%LISTENERS_LOG_DIR%\!BASE!_output.log" 2^>^&1
+)
+
+echo.
+echo "Servers launched."
+echo   Backend:  http://localhost:8000
+echo   Listeners: %LISTENERS_LOG_DIR% (one log per worker)
+echo   O&F:      http://127.0.0.1:%OAF_PORT%
+echo.
+echo "(Close the spawned console windows to stop them. To stop O&F: docker stop %OAF_CONTAINER%)"
+echo.
 echo Startup complete. See logs:
 echo   %LOG_FILE%
-rem echo   %BACKEND_LOG%
-rem echo   %LISTENER_LOG%
 echo.
 pause
 popd
@@ -84,5 +113,4 @@ exit /b 0
 
 :LOG
 >> "%LOG_FILE%" echo %DATE% %TIME% ^| %~1 %~2 %~3 %~4 %~5 %~6 %~7 %~8 %~9
-
 goto :eof
