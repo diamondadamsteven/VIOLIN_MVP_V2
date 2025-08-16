@@ -28,6 +28,7 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_CONNECT,
     DB_BULK_INSERT,
+    DB_LOG_FUNCTIONS,  # <-- add decorator
 )
 
 PREFIX = "VOLUME"
@@ -35,6 +36,7 @@ PREFIX = "VOLUME"
 # ─────────────────────────────────────────────────────────────
 # DB loaders
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _db_load_volume_aggregate_row(
     conn,
     RECORDING_ID: int,
@@ -59,6 +61,7 @@ def _db_load_volume_aggregate_row(
     )
 
 
+@DB_LOG_FUNCTIONS()
 def _db_load_volume_10ms_series(
     conn,
     RECORDING_ID: int,
@@ -86,6 +89,7 @@ def _db_load_volume_10ms_series(
 # ─────────────────────────────────────────────────────────────
 # Volume math (NumPy-only, center=False)
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _rms_series(
     audio: np.ndarray,
     sr: int,
@@ -132,6 +136,7 @@ def _rms_series(
     return out
 
 
+@DB_LOG_FUNCTIONS()
 def _aggregate_from_series(series: List[Tuple[int, int, float, float]]) -> Tuple[float, float]:
     """
     Average RMS over frames; convert to dB with epsilon.
@@ -146,6 +151,7 @@ def _aggregate_from_series(series: List[Tuple[int, int, float, float]]) -> Tuple
 # ─────────────────────────────────────────────────────────────
 # PUBLIC ENTRY (called by Step-2)
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME(
     RECORDING_ID: int,
     AUDIO_CHUNK_NO: int,

@@ -2,8 +2,10 @@
 # ------------------------------------------------------------
 # FastAPI WebSocket listener for VIOLIN_MVP audio streaming.
 # Writes incoming .m4a frames to per-recording temp folders.
-# On START: initializes recording plan and spawns chunk pipeline.
+# On START: initializes recording plan.
+# On first BINARY: starts Step-2 pipeline (concatenate).
 # On FRAME: queues TEXT meta, pairs next BINARY by arrival order, saves <FRAME_NO>.m4a.
+# On FLUSH_CHUNK: writes a flush marker (partial chunk boundary).
 # On STOP: drops a STOP marker; the pipeline will finish remaining chunks and finalize.
 # ------------------------------------------------------------
 
@@ -19,10 +21,12 @@ from datetime import datetime
 
 import builtins as _bi
 import traceback
+import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
+from starlette.types import ASGIApp, Scope, Receive, Send  # for logging WS Origin
 
 # Step-1 driver (loads DB config & watches frames → emits chunks → calls Step-2 + Step-3)
 from SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_1_CONCATENATE import (
@@ -39,6 +43,7 @@ from SERVER_ENGINE_APP_VARIABLES import (
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
+    DB_LOG_FUNCTIONS,  # <<< logging decorator
 )
 
 # --- Force UTF-8 console on Windows
@@ -53,16 +58,45 @@ PREFIX = "SERVER_ENGINE_AUDIO_STREAM_LISTENER"
 # ─────────────────────────────────────────────────────────────
 # App + CORS
 # ─────────────────────────────────────────────────────────────
-APP = FastAPI(title="VIOLIN_MVP Audio Stream WS Listener", version="1.3.0")
+APP = FastAPI(title="VIOLIN_MVP Audio Stream WS Listener", version="1.4.0")
+
+# Middleware to log WebSocket Origin/Host during the handshake
+class LogWsOrigin:
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope.get("type") == "websocket":
+            hdrs = dict(scope.get("headers") or [])
+            origin = hdrs.get(b"origin", b"").decode("latin1", "ignore")
+            host   = hdrs.get(b"host",   b"").decode("latin1", "ignore")
+            path   = scope.get("path")
+            print(f"WS_ORIGIN={origin}  WS_HOST={host}  PATH={path}", flush=True)
+        await self.app(scope, receive, send)
+
+# Add the origin-logging middleware BEFORE CORS
+APP.add_middleware(LogWsOrigin)
+
+# Allow explicit dev origins + React Native's Origin:null
+ALLOWED_ORIGINS = [
+    "http://localhost",
+    "http://localhost:19000",       # Expo/Metro
+    "http://localhost:19006",       # Expo web preview
+    "http://192.168.1.27",
+    "http://192.168.1.27:19000",
+    "http://192.168.1.27:19006",
+]
 APP.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # tighten later
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"^null$",   # accept RN’s Origin: null
+    allow_credentials=False,        # keep False when using wildcard/regex
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 @APP.on_event("startup")
+@DB_LOG_FUNCTIONS()
 async def _log_routes_on_startup():
     CONSOLE_LOG(PREFIX, "ROUTES_REGISTERED", {"count": len(APP.router.routes)})
     for r in APP.router.routes:
@@ -74,13 +108,19 @@ async def _log_routes_on_startup():
 # ─────────────────────────────────────────────────────────────
 # Paths / runtime state
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def CREATE_TEMP_AUDIO_DIR(RECORDING_ID: int) -> Path:
     d = TEMP_RECORDING_AUDIO_DIR / str(RECORDING_ID)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
+@DB_LOG_FUNCTIONS()
 def STOP_MARKER_PATH(RECORDING_ID: int) -> Path:
     return (TEMP_RECORDING_AUDIO_DIR / str(RECORDING_ID)) / "_STOP"
+
+@DB_LOG_FUNCTIONS()
+def FLUSH_MARKER_PATH(RECORDING_ID: int) -> Path:
+    return (TEMP_RECORDING_AUDIO_DIR / str(RECORDING_ID)) / "_FLUSH"
 
 # Per-recording state tracked by the listener
 ACTIVE_RECORDINGS: Dict[int, Dict[str, Any]] = {}
@@ -92,7 +132,6 @@ NEXT_EXPECTED: Dict[int, int] = {}
 # ─────────────────────────────────────────────────────────────
 # Onsets & Frames Docker management (kept here; called at startup)
 # ─────────────────────────────────────────────────────────────
-import os
 OAF_IMAGE = os.getenv("OAF_IMAGE", "violin/oaf:latest")
 OAF_CONTAINER = os.getenv("OAF_CONTAINER", "violin_oaf_server")
 # Host exposes microservice at 127.0.0.1:OAF_PORT -> container:9077
@@ -102,6 +141,7 @@ OAF_PORT = int(os.getenv("OAF_PORT", "9077"))
 PROJECT_ROOT = PROJECT_ROOT_DIR
 CHECKPOINT_DIR = PROJECT_ROOT_DIR / "onsets-frames"   # local default; no env dependency
 
+@DB_LOG_FUNCTIONS()
 def STEP_1_ENSURE_OAF_CONTAINER_RUNNING():
     """Ensures the O&F Docker container is up and serving DOCKER_ONSETS_AND_FRAMES_SERVER.py on 9077."""
     CONSOLE_LOG(PREFIX, "STEP_1_ENSURE_OAF_CONTAINER_RUNNING")
@@ -130,6 +170,7 @@ def STEP_1_ENSURE_OAF_CONTAINER_RUNNING():
     subprocess.run(cmd, check=True)
 
 @APP.on_event("startup")
+@DB_LOG_FUNCTIONS()
 def STEP_0_ON_STARTUP():
     CONSOLE_LOG(PREFIX, "STEP_0_ON_STARTUP")
     try:
@@ -141,11 +182,13 @@ def STEP_0_ON_STARTUP():
 # Endpoints
 # ─────────────────────────────────────────────────────────────
 @APP.get("/health")
+@DB_LOG_FUNCTIONS()
 async def STEP_2_HEALTH():
     CONSOLE_LOG(PREFIX, "GET /health")
     return {"ok": True, "mode": "websocket", "oaf_port": OAF_PORT}
 
 @APP.post("/CLIENT_LOG")
+@DB_LOG_FUNCTIONS()
 async def client_log(request: Request):
     try:
         body = await request.json()
@@ -157,31 +200,13 @@ async def client_log(request: Request):
         CONSOLE_LOG(PREFIX, "CLIENT_LOG_ERROR", _bi.str(exc))
         return {"ok": False, "error": _bi.str(exc)}
 
+@DB_LOG_FUNCTIONS()
 async def WEBSOCKET_SEND_JSON(ws: WebSocket, payload: Dict[str, Any]):
     if ws.client_state == WebSocketState.CONNECTED:
         await ws.send_text(json.dumps(payload))
 
-async def _spawn_pipeline_task(RECORDING_ID: int):
-    """
-    Run the per-recording pipeline:
-      1) STEP_1_NEW_RECORDING_STARTED(RECORDING_ID)
-      2) STEP_2_CREATE_AUDIO_CHUNKS(RECORDING_ID)  (blocks until STOP marker seen and all chunks processed)
-         Step-2 will call Step-3 to finalize when done.
-    """
-    try:
-        await STEP_1_NEW_RECORDING_STARTED(RECORDING_ID)
-        await STEP_2_CREATE_AUDIO_CHUNKS(RECORDING_ID)
-    except asyncio.CancelledError:
-        CONSOLE_LOG(PREFIX, "PIPELINE_TASK_CANCELLED", {"RECORDING_ID": RECORDING_ID})
-        raise
-    except Exception as exc:
-        CONSOLE_LOG(PREFIX, "PIPELINE_TASK_ERROR", {"RECORDING_ID": RECORDING_ID, "error": _bi.str(exc), "trace": traceback.format_exc()})
-    finally:
-        st = ACTIVE_RECORDINGS.get(RECORDING_ID)
-        if st is not None:
-            st["PIPELINE_DONE"] = True
-
 @APP.websocket("/ws/stream")
+@DB_LOG_FUNCTIONS()
 async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
     peer = getattr(ws.client, "__dict__", None)
     CONSOLE_LOG(PREFIX, "WS_CONNECT /ws/stream", {"peer": peer})
@@ -194,6 +219,11 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
     try:
         while True:
             msg = await ws.receive()
+
+            # If Starlette delivered an explicit disconnect message, stop immediately.
+            if msg and isinstance(msg, dict) and msg.get("type") == "websocket.disconnect":
+                CONSOLE_LOG(PREFIX, "WS_DISCONNECT_MSG")
+                break
 
             # ── TEXT FRAMES ─────────────────────────────────────
             if "text" in msg and msg["text"] is not None:
@@ -225,6 +255,8 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                         "FIRST_FRAME_RECEIVED": False,
                         "PIPELINE_DONE": False,
                         "AUDIO_STREAM_FILE_NAME": audio_name,  # canonical source will be DB/Step-1
+                        "CONFIG_TASK": None,
+                        "PIPELINE_TASK": None,
                     }
                     NEXT_EXPECTED.setdefault(rec_id, 1)
 
@@ -235,9 +267,9 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                     if not cfg.get("DT_RECORDING_START"):
                         cfg["DT_RECORDING_START"] = datetime.utcnow()
 
-                    # Spawn per-recording pipeline task
-                    task = asyncio.create_task(_spawn_pipeline_task(rec_id))
-                    ACTIVE_RECORDINGS[rec_id]["PIPELINE_TASK"] = task
+                    # Kick only Step-1 (config load) now; Step-2 starts after the first binary frame arrives
+                    if ACTIVE_RECORDINGS[rec_id]["CONFIG_TASK"] is None:
+                        ACTIVE_RECORDINGS[rec_id]["CONFIG_TASK"] = asyncio.create_task(STEP_1_NEW_RECORDING_STARTED(rec_id))
 
                     CONSOLE_LOG(PREFIX, "START_ACK ->", {"RECORDING_ID": rec_id, "dir": _bi.str(rec_dir), "audio_file": audio_name})
                     await WEBSOCKET_SEND_JSON(ws, {"type": "START_ACK", "RECORDING_ID": rec_id})
@@ -269,6 +301,8 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                             "FIRST_FRAME_RECEIVED": False,
                             "PIPELINE_DONE": False,
                             "AUDIO_STREAM_FILE_NAME": None,
+                            "CONFIG_TASK": None,
+                            "PIPELINE_TASK": None,
                         }
                         NEXT_EXPECTED.setdefault(rec_id, 1)
 
@@ -277,6 +311,24 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                         "FRAME_NO": frame_no,
                     })
                     CONSOLE_LOG(PREFIX, "FRAME_META_QUEUED", {"RECORDING_ID": rec_id, "FRAME_NO": frame_no})
+
+                elif mtype == "FLUSH_CHUNK":
+                    rec_id_raw = meta.get("RECORDING_ID")
+                    try:
+                        rec_id = int(rec_id_raw)
+                    except Exception:
+                        await WEBSOCKET_SEND_JSON(ws, {"type": "ERROR", "reason": "Missing/invalid RECORDING_ID in FLUSH_CHUNK"})
+                        CONSOLE_LOG(PREFIX, "FLUSH_INVALID_RECORDING_ID", {"value": rec_id_raw})
+                        continue
+
+                    try:
+                        FLUSH_MARKER_PATH(rec_id).write_text("flush", encoding="utf-8")
+                        CONSOLE_LOG(PREFIX, "FLUSH_MARKER_WRITTEN", {"RECORDING_ID": rec_id})
+                    except Exception as e:
+                        CONSOLE_LOG(PREFIX, "FLUSH_MARKER_WRITE_FAILED", _bi.str(e))
+
+                    await WEBSOCKET_SEND_JSON(ws, {"type": "FLUSH_ACK", "RECORDING_ID": rec_id})
+                    CONSOLE_LOG(PREFIX, "FLUSH_ACK ->", {"RECORDING_ID": rec_id})
 
                 elif mtype == "STOP":
                     rec_id_raw = meta.get("RECORDING_ID")
@@ -334,17 +386,18 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
                 out_path.write_bytes(data)
                 CONSOLE_LOG(PREFIX, "BINARY_SAVED", {"RECORDING_ID": rec_id, "FRAME_NO": frame_no, "path": _bi.str(out_path), "len": len(data)})
 
-                # Update in-memory frame timings ONLY
+                # Update in-memory frame timings (used by Step-1)
                 frames = RECORDING_AUDIO_FRAME_ARRAY.setdefault(rec_id, {})
                 fr = frames.setdefault(frame_no, {"RECORDING_ID": rec_id, "FRAME_NO": frame_no})
                 if not fr.get("DT_FRAME_RECEIVED"):
                     fr["DT_FRAME_RECEIVED"] = datetime.utcnow()
-                    # NOTE: Do NOT call DB_LOG_ENGINE_DB_AUDIO_FRAME_TRANSFER here.
-                    # It will be called by Step-1 after concatenation & purge.
 
+                # Mark first-frame and start Step-2 pipeline (if not already running)
                 if not ACTIVE_RECORDINGS[rec_id]["FIRST_FRAME_RECEIVED"]:
                     ACTIVE_RECORDINGS[rec_id]["FIRST_FRAME_RECEIVED"] = True
                     CONSOLE_LOG(PREFIX, "FIRST_FRAME_RECEIVED", {"RECORDING_ID": rec_id})
+                    if ACTIVE_RECORDINGS[rec_id].get("PIPELINE_TASK") is None:
+                        ACTIVE_RECORDINGS[rec_id]["PIPELINE_TASK"] = asyncio.create_task(STEP_2_CREATE_AUDIO_CHUNKS(rec_id))
 
                 next_expected = NEXT_EXPECTED.get(rec_id, 1)
                 if frame_no == next_expected:
@@ -388,6 +441,7 @@ async def WEBSOCKET_RECEIVE_INCOMING_DATA(ws: WebSocket):
 # Echo test endpoint (bound directly on APP)
 # ─────────────────────────────────────────────────────────────
 @APP.websocket("/ws/echo")
+@DB_LOG_FUNCTIONS()
 async def ws_echo(ws: WebSocket):
     await ws.accept()
     await ws.send_text("echo-server: connected")

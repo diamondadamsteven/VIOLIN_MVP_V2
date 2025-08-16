@@ -32,6 +32,7 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_CONNECT,
     DB_EXEC_SP_NO_RESULT,
+    DB_LOG_FUNCTIONS,  # ← logging decorator
 )
 
 PREFIX = "STEP_3_STOP"
@@ -40,6 +41,7 @@ PREFIX = "STEP_3_STOP"
 # ─────────────────────────────────────────────────────────────
 # Chunk discovery
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _extract_chunk_no(path: Path) -> Tuple[int, str]:
     """
     Pull a number like `chunk_000123` or `_000123` from the stem for ordering.
@@ -55,6 +57,7 @@ def _extract_chunk_no(path: Path) -> Tuple[int, str]:
     return 10**9, name
 
 
+@DB_LOG_FUNCTIONS()
 def list_chunk_wavs_in_order(RECORDING_ID: int, final_basename: str) -> List[Path]:
     """
     Scan TEMP_RECORDING_AUDIO_DIR/<RID> (recursively) for '*_48k.wav'.
@@ -72,6 +75,7 @@ def list_chunk_wavs_in_order(RECORDING_ID: int, final_basename: str) -> List[Pat
 # ─────────────────────────────────────────────────────────────
 # Concatenation & write
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def concatenate_and_write_final_wav(
     RECORDING_ID: int,
     AUDIO_STREAM_FILE_NAME: str,
@@ -124,6 +128,7 @@ def concatenate_and_write_final_wav(
 # ─────────────────────────────────────────────────────────────
 # PUBLIC ENTRY
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 async def SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_3_STOP(RECORDING_ID: int) -> None:
     """
     Build the final 48k WAV and notify the DB that recording has ended.
@@ -148,8 +153,7 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_3_STOP(RECORDING_ID: int) ->
                 DB_EXEC_SP_NO_RESULT(
                     conn,
                     "P_ENGINE_RECORD_END",
-                    RECORDING_ID=int(RECORDING_ID),
-                    AUDIO_STREAM_FILE_NAME=str(audio_stream_file_name),
+                    RECORDING_ID=int(RECORDING_ID)
                 )
             CONSOLE_LOG(PREFIX, "P_ENGINE_RECORD_END_CALLED", {
                 "RECORDING_ID": RECORDING_ID,

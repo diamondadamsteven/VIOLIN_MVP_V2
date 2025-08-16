@@ -25,8 +25,9 @@ class RECORDING_AUDIO_FRAME_DICT(TypedDict):
     RECORDING_ID: Required[int]           # bigint
     FRAME_NO: Required[int]               # int
     DT_FRAME_RECEIVED: NotRequired[Optional[datetime.datetime]]
-    DT_FRAME_CONCATENATED_TO_AUDIO_CHUNK: NotRequired[Optional[datetime.datetime]]
-    AUDIO_CHUNK_NO: NotRequired[Optional[int]]
+    AUDIO_FRAME_DATA: Optional[bytes] 
+    # DT_FRAME_CONCATENATED_TO_AUDIO_CHUNK: NotRequired[Optional[datetime.datetime]]
+    #AUDIO_CHUNK_NO: NotRequired[Optional[int]]
 
 class RECORDING_AUDIO_CHUNK_DICT(TypedDict):
     # Required
@@ -37,6 +38,8 @@ class RECORDING_AUDIO_CHUNK_DICT(TypedDict):
     END_MS: Required[int]
     MIN_AUDIO_STREAM_FRAME_NO: Required[int]
     MAX_AUDIO_STREAM_FRAME_NO: Required[int]
+    AUDIO_CHUNK_DATA_16K: Optional[bytes]       # ← if truly needed
+    AUDIO_CHUNK_DATA_22050: Optional[bytes]
 
     # Optional flags
     YN_RUN_FFT: NotRequired[Optional[str]]
@@ -46,6 +49,15 @@ class RECORDING_AUDIO_CHUNK_DICT(TypedDict):
 
     # Optional timing/metrics
     DT_COMPLETE_FRAMES_RECEIVED: NotRequired[Optional[datetime.datetime]]
+    DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK: NotRequired[Optional[datetime.datetime]]
+    DT_COMPLETE_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK: NotRequired[Optional[datetime.datetime]]
+    DT_AUDIO_CHUNK_CONVERTED_TO_WAV: NotRequired[Optional[datetime.datetime]]
+    DT_AUDIO_CHUNK_WAV_SAVED_TO_FILE: NotRequired[Optional[datetime.datetime]]
+    DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_16K: NotRequired[Optional[datetime.datetime]]
+    DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_22050: NotRequired[Optional[datetime.datetime]]
+    DT_AUDIO_CHUNK_PREPARATION_COMPLETE: NotRequired[Optional[datetime.datetime]]
+    DT_START_AUDIO_CHUNK_PROCESS: NotRequired[Optional[datetime.datetime]]
+    DT_END_AUDIO_CHUNK_PROCESS: NotRequired[Optional[datetime.datetime]]
 
     DT_START_FFT: NotRequired[Optional[datetime.datetime]]
     FFT_DURATION_IN_MS: NotRequired[Optional[int]]
@@ -72,13 +84,15 @@ class RECORDING_AUDIO_CHUNK_DICT(TypedDict):
     DT_START_P_ENGINE_ALL_MASTER: NotRequired[Optional[datetime.datetime]]
     P_ENGINE_ALL_MASTER_DURATION_IN_MS: NotRequired[Optional[int]]
 
-    TOTAL_PROCESSING_DURATION_IN_MS: NotRequired[Optional[int]]
+    # TOTAL_PROCESSING_DURATION_IN_MS: NotRequired[Optional[int]]
 
 class RECORDING_CONFIG_DICT(TypedDict):
     # Required id; the rest can be filled in as we learn them
     RECORDING_ID: Required[int]           # bigint
-
+    WEBSOCKET_CONNECTION_ID: NotRequired[Optional[int]]
     DT_RECORDING_START: NotRequired[Optional[datetime.datetime]]
+    DT_RECORDING_STOP: NotRequired[Optional[datetime.datetime]]
+
     VIOLINIST_ID: NotRequired[Optional[int]]
     COMPOSE_PLAY_OR_PRACTICE: NotRequired[Optional[str]]
     AUDIO_STREAM_FILE_NAME: NotRequired[Optional[str]]
@@ -87,10 +101,41 @@ class RECORDING_CONFIG_DICT(TypedDict):
     AUDIO_CHUNK_DURATION_IN_MS: NotRequired[Optional[int]]
     CNT_FRAMES_PER_AUDIO_CHUNK: NotRequired[Optional[int]]
     YN_RUN_FFT: NotRequired[Optional[str]]
+    COMPOSE_CURRENT_AUDIO_CHUNK_NO: NotRequired[Optional[int]]
+
+
+class RECORDING_WEBSOCKET_MESSAGE_DICT(TypedDict):
+    # Identity
+    MESSAGE_ID: int
+    RECORDING_ID: int
+    MESSAGE_TYPE: str                # e.g. "START", "STOP", "FRAME", "CHUNK"
+    AUDIO_FRAME_NO: NotRequired[Optional[int]]  # If this is a FRAME message
+    DT_MESSAGE_RECEIVED: datetime.datetime  # when message was received
+    DT_MESSAGE_PROCESS_STARTED: NotRequired[Optional[datetime.datetime]]
+    
+ 
+class RECORDING_WEBSOCKET_CONNECTION_DICT(TypedDict):
+    # Identity
+    WEBSOCKET_CONNECTION_ID: int                        # bigint, unique per connection (incrementing or timestamp-based)
+    # RECORDING_ID: NotRequired[Optional[int]]  # If this WS is bound to a recording (set after START)
+    CLIENT_HOST_IP_ADDRESS: NotRequired[Optional[str]]   # ws.client.host
+    CLIENT_PORT: NotRequired[Optional[int]]   # ws.client.port
+    CLIENT_HEADERS: NotRequired[Dict[str, str]]  # optional: origin, user-agent, etc.
+
+    # Lifecycle
+    DT_CONNECTION_REQUEST: datetime.datetime  # when client attempted connection
+    DT_CONNECTION_ACCEPTED: NotRequired[Optional[datetime.datetime]]  # when ws.accept() succeeded
+    DT_CONNECTION_CLOSED: NotRequired[Optional[datetime.datetime]]    # when disconnect/close occurred
 
 # ─────────────────────────────────────────────────────────────
 # Global in-memory stores
 # ─────────────────────────────────────────────────────────────
+# One config per Websocket Connection (bigint)
+RECORDING_WEBSOCKET_MESSAGE_ARRAY: Dict[int, RECORDING_WEBSOCKET_MESSAGE_DICT] = {}
+
+# One per Websocket Connection 
+RECORDING_WEBSOCKET_CONNECTION_ARRAY: Dict[int, RECORDING_WEBSOCKET_CONNECTION_DICT] = {}
+
 # One config per recording_id (bigint)
 RECORDING_CONFIG_ARRAY: Dict[int, RECORDING_CONFIG_DICT] = {}
 

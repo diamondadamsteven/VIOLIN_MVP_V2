@@ -32,6 +32,7 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_CONNECT,
     DB_BULK_INSERT,
+    DB_LOG_FUNCTIONS,  # <-- logging decorator
 )
 
 PREFIX = "ONS"
@@ -39,6 +40,7 @@ PREFIX = "ONS"
 # ─────────────────────────────────────────────────────────────
 # DB bulk insert
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _db_load_note_rows(
     conn,
     RECORDING_ID: int,
@@ -68,6 +70,7 @@ def _db_load_note_rows(
 # ─────────────────────────────────────────────────────────────
 # O&F microservice URL
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _ons_service_url() -> str:
     host = os.getenv("OAF_HOST", "127.0.0.1")
     port = int(os.getenv("OAF_PORT", "9077"))
@@ -76,6 +79,7 @@ def _ons_service_url() -> str:
 # ─────────────────────────────────────────────────────────────
 # Microservice call
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _ons_run_and_get_midi_path(wav_path: Path) -> Optional[Path]:
     url = _ons_service_url().rstrip("/") + "/transcribe"
     payload = {"audio_path": _bi.str(wav_path)}
@@ -110,6 +114,7 @@ def _ons_run_and_get_midi_path(wav_path: Path) -> Optional[Path]:
 # ─────────────────────────────────────────────────────────────
 # MIDI → note rows (relative)
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _midi_to_relative_note_rows(midi_path: Path) -> List[Tuple[int, int, int, int]]:
     """
     Returns chunk-relative rows:
@@ -135,6 +140,7 @@ def _midi_to_relative_note_rows(midi_path: Path) -> List[Tuple[int, int, int, in
 # ─────────────────────────────────────────────────────────────
 # PUBLIC ENTRY (called by Step-2)
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS(
     RECORDING_ID: int,
     AUDIO_CHUNK_NO: int,

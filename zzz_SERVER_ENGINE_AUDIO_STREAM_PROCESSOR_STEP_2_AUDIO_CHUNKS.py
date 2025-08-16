@@ -6,7 +6,8 @@
 #       * COMPOSE: if YN_FFT is None => SP P_ENGINE_ALL_METHOD_COMPOSE_DONT_RUN_FFT
 #                  else run FFT then SP P_ENGINE_ALL_METHOD_FFT
 #       * PLAY/PRACTICE: always run FFT
-#   - Other processing per flags (ONS, PYIN, CREPE, VOLUME) — pass arrays/paths
+#   - Other processing per flags (ONS, PYIN, CREPE, VOLUME) — reads flags from
+#     RECORDING_AUDIO_CHUNK_ARRAY[RECORDING_ID][AUDIO_CHUNK_NO]
 #   - Call P_ENGINE_ALL_MASTER
 #   - Update in-memory metrics and log via DB_LOG_RECORDING_AUDIO_CHUNK
 # ----------------------------------------------------------------------
@@ -14,9 +15,9 @@
 from __future__ import annotations
 
 import time
-import asyncio
 import traceback
-from typing import Dict, Optional, Tuple
+from pathlib import Path
+from typing import Dict, Any, Tuple, Optional
 from datetime import datetime
 
 import builtins as _bi
@@ -34,9 +35,10 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_CONNECT,
     DB_EXEC_SP_NO_RESULT,
     DB_LOG_RECORDING_AUDIO_CHUNK,
+    DB_LOG_FUNCTIONS,  # ← add logging decorator
 )
 
-# Sub-processors (public entries; current signatures)
+# Sub-processors (public entries; array-first APIs)
 from SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT import SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT
 from SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS import SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS
 from SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN import SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN
@@ -47,6 +49,7 @@ from SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME import SERVER_ENGINE_AUDIO_STREAM
 # ─────────────────────────────────────────────────────────────
 # Resampling
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _resample_for_step2(wav48k_path: str) -> Tuple[np.ndarray, int, np.ndarray, int, np.ndarray, int]:
     """
     Read mono WAV (expect ~48k) -> float32 arrays at 48k / 22.05k / 16k.
@@ -68,9 +71,10 @@ def _resample_for_step2(wav48k_path: str) -> Tuple[np.ndarray, int, np.ndarray, 
 
 
 # ─────────────────────────────────────────────────────────────
-# FFT (Step 1) and compose-flag behavior
+# FFT (Step 1) and compose-flag refresh
 # ─────────────────────────────────────────────────────────────
-async def _run_fft_if_needed(
+@DB_LOG_FUNCTIONS()
+def _run_fft_if_needed(
     RECORDING_ID: int,
     AUDIO_CHUNK_NO: int,
     COMPOSE_PLAY_OR_PRACTICE: str,
@@ -83,8 +87,10 @@ async def _run_fft_if_needed(
     Compose:
       - If YN_FFT is None → SP P_ENGINE_ALL_METHOD_COMPOSE_DONT_RUN_FFT
       - Else run FFT then SP P_ENGINE_ALL_METHOD_FFT
+      - Return flags (YN_RUN_ONS/YN_RUN_PYIN/YN_RUN_CREPE) via SP refresh if needed
+        (we centralize most flags in Step-1; optional refresh can be added later).
     Play/Practice:
-      - Always run FFT
+      - Always run FFT; no refresh needed.
     """
     mode = _bi.str(COMPOSE_PLAY_OR_PRACTICE).upper()
 
@@ -97,9 +103,9 @@ async def _run_fft_if_needed(
 
     run_flags: Dict[str, Optional[str]] = {
         "YN_RUN_FFT": YN_FFT,
-        "YN_RUN_ONS": ch.get("YN_RUN_ONS"),
-        "YN_RUN_PYIN": ch.get("YN_RUN_PYIN"),
-        "YN_RUN_CREPE": ch.get("YN_RUN_CREPE"),
+        "YN_RUN_ONS": None,
+        "YN_RUN_PYIN": None,
+        "YN_RUN_CREPE": None,
     }
 
     if mode == "COMPOSE":
@@ -120,16 +126,13 @@ async def _run_fft_if_needed(
             ch["DT_START_FFT"] = datetime.utcnow()
             t_fft = time.perf_counter()
 
-            # FFT expects AUDIO_DATA_22K + SR_22K
-            ret = SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(
-                int(RECORDING_ID),
-                int(AUDIO_CHUNK_NO),
-                int(AUDIO_CHUNK_START_MS),
-                AUDIO_ARRAY_22050,
-                int(SR_22050),
+            SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(
+                RECORDING_ID=int(RECORDING_ID),
+                AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
+                AUDIO_CHUNK_START_MS=int(AUDIO_CHUNK_START_MS),
+                AUDIO_ARRAY_22050=AUDIO_ARRAY_22050,
+                SAMPLE_RATE_22050=int(SR_22050),
             )
-            if asyncio.iscoroutine(ret):
-                await ret
 
             ch["FFT_DURATION_IN_MS"] = int(round((time.perf_counter() - t_fft) * 1000))
             try:
@@ -148,15 +151,15 @@ async def _run_fft_if_needed(
         CONSOLE_LOG("STEP2", "PLAY_PRACTICE_FFT_RUNNING", {"AUDIO_CHUNK_NO": AUDIO_CHUNK_NO})
         ch["DT_START_FFT"] = datetime.utcnow()
         t_fft = time.perf_counter()
-        ret = SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(
-            int(RECORDING_ID),
-            int(AUDIO_CHUNK_NO),
-            int(AUDIO_CHUNK_START_MS),
-            AUDIO_ARRAY_22050,
-            int(SR_22050),
+
+        SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(
+            RECORDING_ID=int(RECORDING_ID),
+            AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
+            AUDIO_CHUNK_START_MS=int(AUDIO_CHUNK_START_MS),
+            AUDIO_ARRAY_22050=AUDIO_ARRAY_22050,
+            SAMPLE_RATE_22050=int(SR_22050),
         )
-        if asyncio.iscoroutine(ret):
-            await ret
+
         ch["FFT_DURATION_IN_MS"] = int(round((time.perf_counter() - t_fft) * 1000))
 
     return run_flags
@@ -165,7 +168,8 @@ async def _run_fft_if_needed(
 # ─────────────────────────────────────────────────────────────
 # Other processing (ONS, PYIN, CREPE, VOLUME) + P_ENGINE_ALL_MASTER
 # ─────────────────────────────────────────────────────────────
-async def _run_others_and_master(
+@DB_LOG_FUNCTIONS()
+def _run_others_and_master(
     RECORDING_ID: int,
     AUDIO_CHUNK_NO: int,
     COMPOSE_PLAY_OR_PRACTICE: str,
@@ -177,7 +181,6 @@ async def _run_others_and_master(
     AUDIO_ARRAY_16K: np.ndarray,
     SR_16K: int,
     AUDIO_CHUNK_START_MS: int,
-    WAV48K_PATH: str,
 ) -> None:
 
     chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(RECORDING_ID, {})
@@ -186,20 +189,19 @@ async def _run_others_and_master(
         "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
     })
 
-    # ONS (microservice expects a WAV path; 48k path is acceptable)
+    # ONS
     if (YN_ONS or "").upper() == "Y":
         try:
             CONSOLE_LOG("STEP2", "RUN_ONS_BEGIN", {"AUDIO_CHUNK_NO": AUDIO_CHUNK_NO})
             ch["DT_START_ONS"] = datetime.utcnow()
             t = time.perf_counter()
-            ret = SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS(
-                int(RECORDING_ID),
-                int(AUDIO_CHUNK_NO),
-                _bi.str(WAV48K_PATH),
-                int(AUDIO_CHUNK_START_MS),
+            SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS(
+                RECORDING_ID=int(RECORDING_ID),
+                AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
+                AUDIO_CHUNK_START_MS=int(AUDIO_CHUNK_START_MS),
+                AUDIO_ARRAY_16000=AUDIO_ARRAY_16K,
+                SAMPLE_RATE_16000=int(SR_16K),
             )
-            if asyncio.iscoroutine(ret):
-                await ret
             ch["ONS_DURATION_IN_MS"] = int(round((time.perf_counter() - t) * 1000))
             CONSOLE_LOG("STEP2", "RUN_ONS_END", {"AUDIO_CHUNK_NO": AUDIO_CHUNK_NO})
         except Exception as exc:
@@ -211,34 +213,31 @@ async def _run_others_and_master(
             CONSOLE_LOG("STEP2", "RUN_PYIN_BEGIN", {"AUDIO_CHUNK_NO": AUDIO_CHUNK_NO})
             ch["DT_START_PYIN"] = datetime.utcnow()
             t = time.perf_counter()
-            ret = SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
-                int(RECORDING_ID),
-                int(AUDIO_CHUNK_NO),
-                int(AUDIO_CHUNK_START_MS),
-                AUDIO_ARRAY_22K,
-                int(SR_22K),
+            SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
+                RECORDING_ID=int(RECORDING_ID),
+                AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
+                AUDIO_CHUNK_START_MS=int(AUDIO_CHUNK_START_MS),
+                AUDIO_ARRAY_22050=AUDIO_ARRAY_22K,
+                SAMPLE_RATE_22050=int(SR_22K),
             )
-            if asyncio.iscoroutine(ret):
-                await ret
             ch["PYIN_DURATION_IN_MS"] = int(round((time.perf_counter() - t) * 1000))
             CONSOLE_LOG("STEP2", "RUN_PYIN_END", {"AUDIO_CHUNK_NO": AUDIO_CHUNK_NO})
         except Exception as exc:
             CONSOLE_LOG("STEP2", "RUN_PYIN_ERROR_NON_FATAL", {"err": _bi.str(exc), "trace": traceback.format_exc()})
 
-    # CREPE (array-based; computes absolute times from config)
+    # CREPE
     if (YN_CREPE or "").upper() == "Y":
         try:
             CONSOLE_LOG("STEP2", "RUN_CREPE_BEGIN", {"AUDIO_CHUNK_NO": AUDIO_CHUNK_NO})
             ch["DT_START_CREPE"] = datetime.utcnow()
             t = time.perf_counter()
-            ret = SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
-                _bi.str(RECORDING_ID),
-                int(AUDIO_CHUNK_NO),
-                AUDIO_ARRAY_16K,
-                int(SR_16K),
+            SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
+                RECORDING_ID=int(RECORDING_ID),
+                AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
+                AUDIO_CHUNK_START_MS=int(AUDIO_CHUNK_START_MS),
+                AUDIO_ARRAY_16000=AUDIO_ARRAY_16K,
+                SAMPLE_RATE_16000=int(SR_16K),
             )
-            if asyncio.iscoroutine(ret):
-                await ret
             ch["CREPE_DURATION_IN_MS"] = int(round((time.perf_counter() - t) * 1000))
             CONSOLE_LOG("STEP2", "RUN_CREPE_END", {"AUDIO_CHUNK_NO": AUDIO_CHUNK_NO})
         except Exception as exc:
@@ -249,18 +248,15 @@ async def _run_others_and_master(
         CONSOLE_LOG("STEP2", "RUN_VOLUME_BEGIN", {"AUDIO_CHUNK_NO": AUDIO_CHUNK_NO})
         ch["DT_START_VOLUME"] = datetime.utcnow()
         t = time.perf_counter()
-        ret = SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME(
-            int(RECORDING_ID),
-            int(AUDIO_CHUNK_NO),
-            int(AUDIO_CHUNK_START_MS),
-            AUDIO_ARRAY_22K,
-            int(SR_22K),
+        SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME(
+            RECORDING_ID=int(RECORDING_ID),
+            AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
+            AUDIO_CHUNK_START_MS=int(AUDIO_CHUNK_START_MS),
+            AUDIO_ARRAY_22050=AUDIO_ARRAY_22K,
+            SAMPLE_RATE_22050=int(SR_22K),
         )
-        if asyncio.iscoroutine(ret):
-            await ret
-        # If volume processor fills specific *_RECORD_CNT/_DURATION_* fields in `ch`, keep them.
-        # Otherwise record a total elapsed as a fallback for 10ms duration:
-        ch.setdefault("VOLUME_10_MS_DURATION_IN_MS", int(round((time.perf_counter() - t) * 1000)))
+        elapsed_ms = int(round((time.perf_counter() - t) * 1000))
+        ch.setdefault("VOLUME_10_MS_DURATION_IN_MS", elapsed_ms)
         CONSOLE_LOG("STEP2", "RUN_VOLUME_END", {"AUDIO_CHUNK_NO": AUDIO_CHUNK_NO})
     except Exception as exc:
         CONSOLE_LOG("STEP2", "RUN_VOLUME_ERROR_NON_FATAL", {"err": _bi.str(exc), "trace": traceback.format_exc()})
@@ -295,41 +291,41 @@ async def _run_others_and_master(
 
 
 # ─────────────────────────────────────────────────────────────
-# PUBLIC ENTRY (called by Step-1) — reads flags/times from arrays
+# PUBLIC ENTRY (called by Step-1) — IDs only
 # ─────────────────────────────────────────────────────────────
-async def SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_2_AUDIO_CHUNKS(
+@DB_LOG_FUNCTIONS()
+def SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_2_AUDIO_CHUNKS(
     RECORDING_ID: int,
     AUDIO_CHUNK_NO: int,
     WAV48K_PATH: str,
 ) -> None:
     """
     Runs full Step-2 for one audio chunk.
-    Reads start/end/flags from RECORDING_AUDIO_CHUNK_ARRAY and mode from RECORDING_CONFIG_ARRAY.
+
+    All timing/flags are read from:
+      - RECORDING_CONFIG_ARRAY[RECORDING_ID]
+      - RECORDING_AUDIO_CHUNK_ARRAY[RECORDING_ID][AUDIO_CHUNK_NO]
     """
     t0 = time.perf_counter()
 
-    # Look up mode and per-chunk spec from in-memory arrays
+    # Look up mode + per-chunk spec from app variables
     cfg = RECORDING_CONFIG_ARRAY.get(RECORDING_ID, {})
     mode = _bi.str(cfg.get("COMPOSE_PLAY_OR_PRACTICE") or "").upper()
 
     chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(RECORDING_ID, {})
-    ch = chunks.setdefault(AUDIO_CHUNK_NO, {"RECORDING_ID": RECORDING_ID, "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO})
+    ch = chunks.setdefault(AUDIO_CHUNK_NO, {
+        "RECORDING_ID": RECORDING_ID,
+        "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
+    })
 
-    start_ms = int(ch.get("START_MS") or 0)
-    end_ms   = int(ch.get("END_MS") or (start_ms - 1))
-    ch["AUDIO_CHUNK_DURATION_IN_MS"] = end_ms - start_ms + 1 if end_ms >= start_ms else 0
+    start_ms = int(ch.get("START_MS", 0))
+    end_ms   = int(ch.get("END_MS", max(0, start_ms - 1)))
+    ch["AUDIO_CHUNK_DURATION_IN_MS"] = end_ms - start_ms + 1
 
-    # Preserve YN flags already decided in Step-1 (or defaults/compose)
     yn_fft   = ch.get("YN_RUN_FFT")
     yn_ons   = ch.get("YN_RUN_ONS")
     yn_pyin  = ch.get("YN_RUN_PYIN")
     yn_crepe = ch.get("YN_RUN_CREPE")
-
-    # Helpful count if min/max are present
-    min_f = ch.get("MIN_AUDIO_STREAM_FRAME_NO")
-    max_f = ch.get("MAX_AUDIO_STREAM_FRAME_NO")
-    if isinstance(min_f, int) and isinstance(max_f, int) and max_f >= min_f:
-        ch.setdefault("CNT_AUDIO_FRAMES", int(max_f - min_f + 1))
 
     CONSOLE_LOG("STEP2", "ENTRY", {
         "RECORDING_ID": RECORDING_ID,
@@ -350,37 +346,35 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_2_AUDIO_CHUNKS(
         "AUDIO_CHUNK_DURATION_IN_MS": ch["AUDIO_CHUNK_DURATION_IN_MS"],
     })
 
-    # Step 1: FFT (+ compose handling)
-    run_flags = await _run_fft_if_needed(
+    # Step 1: FFT (+ optional compose refresh)
+    run_flags = _run_fft_if_needed(
         RECORDING_ID=RECORDING_ID,
         AUDIO_CHUNK_NO=AUDIO_CHUNK_NO,
         COMPOSE_PLAY_OR_PRACTICE=mode,
         YN_FFT=yn_fft,
-        AUDIO_CHUNK_START_MS=start_ms,
+        AUDIO_CHUNK_START_MS=int(start_ms),
         AUDIO_ARRAY_22050=y22,
         SR_22050=sr22,
     )
 
-    # Resolve flags: for COMPOSE we might override with refreshed values (if any),
-    # otherwise use the existing chunk flags.
+    # Resolve flags: for COMPOSE use refreshed values; else use inputs
     if mode == "COMPOSE":
         yn_ons   = run_flags.get("YN_RUN_ONS", yn_ons)
         yn_pyin  = run_flags.get("YN_RUN_PYIN", yn_pyin)
         yn_crepe = run_flags.get("YN_RUN_CREPE", yn_crepe)
 
     # Step 2: other processors + master
-    await _run_others_and_master(
+    _run_others_and_master(
         RECORDING_ID=RECORDING_ID,
         AUDIO_CHUNK_NO=AUDIO_CHUNK_NO,
         COMPOSE_PLAY_OR_PRACTICE=mode,
         YN_ONS=yn_ons, YN_PYIN=yn_pyin, YN_CREPE=yn_crepe,
         AUDIO_ARRAY_22K=y22, SR_22K=sr22,
         AUDIO_ARRAY_16K=y16, SR_16K=sr16,
-        AUDIO_CHUNK_START_MS=start_ms,
-        WAV48K_PATH=WAV48K_PATH,
+        AUDIO_CHUNK_START_MS=int(start_ms),
     )
 
-    # Finalize per-chunk metrics & persist a single log row (AFTER P_ENGINE_ALL_MASTER)
+    # Finalize per-chunk metrics & persist a single log row
     ch["TOTAL_PROCESSING_DURATION_IN_MS"] = int(round((time.perf_counter() - t0) * 1000))
     DB_LOG_RECORDING_AUDIO_CHUNK(RECORDING_ID, AUDIO_CHUNK_NO)
 

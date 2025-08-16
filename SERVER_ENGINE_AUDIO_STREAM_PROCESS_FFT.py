@@ -24,6 +24,7 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_CONNECT,
     DB_BULK_INSERT,
+    DB_LOG_FUNCTIONS,  # <-- logging decorator
 )
 
 PREFIX = "FFT"
@@ -31,6 +32,7 @@ PREFIX = "FFT"
 # ─────────────────────────────────────────────────────────────
 # DB bulk load
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _db_load_fft_rows(
     conn,
     RECORDING_ID: int,
@@ -60,6 +62,7 @@ def _db_load_fft_rows(
 # ─────────────────────────────────────────────────────────────
 # Core FFT
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _compute_fft_rows(
     AUDIO_ARRAY_22050: np.ndarray,
     AUDIO_CHUNK_START_MS: int,
@@ -125,6 +128,7 @@ def _compute_fft_rows(
 # ─────────────────────────────────────────────────────────────
 # PUBLIC ENTRY (called by Step-2)
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(
     RECORDING_ID: int,
     AUDIO_CHUNK_NO: int,

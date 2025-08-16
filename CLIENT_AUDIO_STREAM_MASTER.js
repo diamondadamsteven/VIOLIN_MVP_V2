@@ -160,14 +160,14 @@ let _countdownTimer = null;
 // Resend buffer
 const RESEND_BUFFER = new Map();
 function RESEND_BUFFER_PUT(frameNo, entry) {
-  RESEND_BUFFER.set(frameNo, entry);
+  RESEND_BUFFER.set(Number(frameNo), entry);
   if (RESEND_BUFFER.size > RESEND_BUFFER_SIZE) {
     const oldest = RESEND_BUFFER.keys().next().value;
     RESEND_BUFFER.delete(oldest);
   }
 }
 function RESEND_BUFFER_GET(frameNo) {
-  return RESEND_BUFFER.get(frameNo);
+  return RESEND_BUFFER.get(Number(frameNo));
 }
 
 // Base64 → bytes
@@ -198,7 +198,16 @@ function BASE64_TO_BYTES(b64) {
   return bytes;
 }
 
-// NEW: micro-chunk using the single active recorder
+// JSON parse that preserves large IDs as strings for logging clarity
+function JSON_PARSE_SAFE(raw) {
+  try {
+    return JSON.parse(raw, (k, v) => (k === 'RECORDING_ID' ? String(v) : v));
+  } catch {
+    return null;
+  }
+}
+
+// NEW: micro-chunk using the single active recorder, race-safe with STOP
 async function RECORD_MICRO_CHUNK(ms) {
   LOG('Start function CLIENT_AUDIO_STREAM_MASTER.RECORD_MICRO_CHUNK');
   if (_isChunking) {
@@ -213,20 +222,38 @@ async function RECORD_MICRO_CHUNK(ms) {
       await _rec.startAsync();
     }
 
+    // Capture the recorder reference used for this slice
+    const recRef = _rec;
+
     // Wait for the slice to elapse
     await new Promise((r) => setTimeout(r, ms));
 
+    // If stop was pressed during the wait, or the recorder changed, bail
+    if (!STREAMING) return null;
+    if (!recRef || recRef !== _rec) return null;
+
     // Stop current slice and get URI
-    await _rec.stopAndUnloadAsync();
-    const uri = _rec.getURI();
+    try {
+      await recRef.stopAndUnloadAsync();
+    } catch (e) {
+      // If it was already stopped elsewhere, just bail
+      WARN('stopAndUnloadAsync failed (likely due to STOP race); ignoring.', String(e));
+      return null;
+    }
+    const uri = recRef.getURI();
     LOG('Recorded micro-chunk', { uri });
 
-    // Immediately start the next slice
-    _rec = new Audio.Recording();
-    await _rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-    await _rec.startAsync();
+    // Immediately start the next slice if we're still streaming and the active recorder is still this one
+    if (STREAMING && recRef === _rec) {
+      _rec = new Audio.Recording();
+      await _rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await _rec.startAsync();
+    }
 
     return uri;
+  } catch (e) {
+    ERR('RECORD_MICRO_CHUNK error', String(e));
+    return null;
   } finally {
     _isChunking = false;
   }
@@ -253,9 +280,9 @@ async function SEND_FRAME_PAIR({ recordingId, frameNo, frameMs, bytes }) {
   const header = {
     type: 'FRAME',
     RECORDING_ID: String(recordingId),
-    FRAME_NO: frameNo,
-    FRAME_DURATION_IN_MS: frameMs,   // kept (listener currently uses it)
-    BYTES_LEN: bytes.byteLength,     // kept (listener pairs text↔binary)
+    FRAME_NO: String(frameNo), // send as string
+    FRAME_DURATION_IN_MS: frameMs,
+    BYTES_LEN: bytes.byteLength,
   };
 
   WS_SEND_JSON(header);
@@ -380,7 +407,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   // 1) Echo preflight (4s)
   let echoWS = null;
   try {
-    echoWS = await WS_OPEN_WITH_TIMEOUT(ECHO_URL, 4000);
+    echoWS = await WS_OPEN_WITH_TIMEOUT(GET_WS_ECHO_URL(), 4000);
     LOG('Echo WS open ✓');
   } catch (e) {
     ERR('Echo WS failed to open', String(e));
@@ -409,11 +436,12 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
       LOG('WS onmessage', { preview: String(payload).slice(0, 200) });
     } catch {}
     try {
-      const msg = typeof evt.data === 'string'
-        ? JSON.parse(evt.data)
-        : JSON.parse(new TextDecoder().decode(evt.data));
+      const raw = typeof evt.data === 'string'
+        ? evt.data
+        : new TextDecoder().decode(evt.data);
+      const msg = JSON_PARSE_SAFE(raw) || {};
       if (msg.type === 'ACK') {
-        const missing = msg.MISSING_FRAMES || [];
+        const missing = Array.isArray(msg.MISSING_FRAMES) ? msg.MISSING_FRAMES : [];
         if (missing.length) LOG('Resend requested', { missing });
         for (const m of missing) {
           const entry = RESEND_BUFFER_GET(m);
@@ -454,6 +482,15 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   await _rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
   await _rec.startAsync();
 
+  // Single-flight arming helper (ensure only one next tick)
+  const ARM_NEXT = (delayMs) => {
+    if (_nextTimeout !== null) return; // already armed
+    _nextTimeout = setTimeout(async () => {
+      _nextTimeout = null;
+      await TICK();
+    }, delayMs);
+  };
+
   // Non-overlapping tick loop
   const TICK = async () => {
     if (!STREAMING || !WS || WS.readyState !== 1) return;
@@ -461,14 +498,13 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
     try {
       const uri = await RECORD_MICRO_CHUNK(FRAME_MS);
       if (!uri) {
-        // busy; try again shortly without piling up calls
-        if (STREAMING) _nextTimeout = setTimeout(TICK, FRAME_MS);
+        // Busy or race/stop; finally will ARM_NEXT() once.
         return;
       }
 
       const audioBytes = await READ_FILE_AS_UINT8(uri);
 
-      // New: no overlaps. Discard every chunk until countdown completes exactly on a frame boundary.
+      // Discard every chunk until countdown completes exactly on a frame boundary.
       if (!BOUNDARY_SENT) {
         if (COUNTDOWN_REMAINING_MS > 0) {
           COUNTDOWN_REMAINING_MS -= FRAME_MS;
@@ -480,8 +516,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
             LOG('Countdown finished; next chunk will be frame #1');
           }
           try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
-          if (STREAMING) _nextTimeout = setTimeout(TICK, FRAME_MS + SEND_SLACK_MS);
-          return; // do not send this chunk
+          return; // finally will ARM_NEXT()
         } else {
           BOUNDARY_SENT = true; // (in case countdownBeats was 0)
         }
@@ -507,12 +542,12 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
     } catch (e) {
       ERR('Streaming loop error', String(e));
     } finally {
-      if (STREAMING) _nextTimeout = setTimeout(TICK, FRAME_MS + SEND_SLACK_MS);
+      if (STREAMING) ARM_NEXT(FRAME_MS + SEND_SLACK_MS);
     }
   };
 
   // Kick off loop
-  _nextTimeout = setTimeout(TICK, FRAME_MS + SEND_SLACK_MS);
+  ARM_NEXT(FRAME_MS + SEND_SLACK_MS);
 }
 
 export async function STOP_STREAMING_WS() {
@@ -523,13 +558,15 @@ export async function STOP_STREAMING_WS() {
   if (_nextTimeout) { clearTimeout(_nextTimeout); _nextTimeout = null; }
   if (_countdownTimer) { try { clearInterval(_countdownTimer); } catch {} _countdownTimer = null; }
 
-  try {
-    if (_rec) {
-      try { await _rec.stopAndUnloadAsync(); } catch {}
-    }
-  } catch {}
+  // Race-safe: detach current recorder, then stop it
+  let recRef = _rec;
   _rec = null;
   _isChunking = false;
+  try {
+    if (recRef) {
+      try { await recRef.stopAndUnloadAsync(); } catch {}
+    }
+  } catch {}
 
   try {
     if (WS && WS.readyState === 1) {

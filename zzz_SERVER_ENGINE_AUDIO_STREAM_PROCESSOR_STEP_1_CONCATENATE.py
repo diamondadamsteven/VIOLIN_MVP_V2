@@ -31,9 +31,9 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_CONNECT,
     DB_EXEC_SP_SINGLE_ROW,
     DB_EXEC_SP_MULTIPLE_ROWS,
-    # NEW: DB logs per our rules
     DB_LOG_RECORDING_CONFIG,
-    DB_LOG_ENGINE_DB_AUDIO_FRAME_TRANSFER,
+    DB_LOG_RECORDING_AUDIO_CHUNK,  # ← chunk logger
+    DB_LOG_FUNCTIONS,              # ← add logging decorator
 )
 
 # Step-2/3 public entries — assumed refactored to read globals
@@ -49,17 +49,21 @@ PREFIX = "STEP_1_CONCATENATE"
 # ─────────────────────────────────────────────────────────────
 # Local path helpers (file-only; intentionally not centralized)
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _rec_dir(rid_int: int) -> Path:
     d = TEMP_RECORDING_AUDIO_DIR / str(rid_int)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
+@DB_LOG_FUNCTIONS()
 def _stop_marker_path(rid_int: int) -> Path:
     return _rec_dir(rid_int) / "_STOP"
 
+@DB_LOG_FUNCTIONS()
 def _chunk_wav48k_path(rid_int: int, chunk_no: int) -> Path:
     return _rec_dir(rid_int) / f"chunk_{chunk_no:06d}_48k.wav"
 
+@DB_LOG_FUNCTIONS()
 def _frame_path(rid_int: int, frame_no: int) -> Path:
     return _rec_dir(rid_int) / f"{frame_no:08d}.m4a"
 
@@ -67,6 +71,7 @@ def _frame_path(rid_int: int, frame_no: int) -> Path:
 # ─────────────────────────────────────────────────────────────
 # PUBLIC: STEP-1 config load for a recording
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 async def STEP_1_NEW_RECORDING_STARTED(RECORDING_ID: int | str) -> None:
     """
     1) P_ENGINE_ALL_RECORDING_PARAMETERS_GET
@@ -154,7 +159,7 @@ async def STEP_1_NEW_RECORDING_STARTED(RECORDING_ID: int | str) -> None:
             # Compose chunks are uniform; Step-1 will generate each chunk spec on the fly.
             RECORDING_AUDIO_CHUNK_ARRAY.setdefault(rid, {})
 
-        # ← DB_LOG_RECORDING_CONFIG only here (Step-1), after SPs per rules
+        # DB log the top-level config
         DB_LOG_RECORDING_CONFIG(rid)
 
         CONSOLE_LOG(PREFIX, "CONFIG_LOADED", {
@@ -173,11 +178,12 @@ async def STEP_1_NEW_RECORDING_STARTED(RECORDING_ID: int | str) -> None:
 # ─────────────────────────────────────────────────────────────
 # PUBLIC: STEP-2 chunk loop driver (concatenate & dispatch)
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 async def STEP_2_CREATE_AUDIO_CHUNKS(RECORDING_ID: int | str) -> None:
     """
     Iterate audio-chunk-by-audio-chunk; when all frames for a chunk are present:
       - Concatenate -> WAV 48k mono
-      - Delete consumed .m4a frames (and stamp/DB-log per-frame removals)
+      - Delete consumed .m4a frames
       - Call Step-2 processing (public entry)
     When STOP marker exists and all complete chunks processed, call Step-3 (public entry).
     """
@@ -187,6 +193,9 @@ async def STEP_2_CREATE_AUDIO_CHUNKS(RECORDING_ID: int | str) -> None:
     mode = _bi.str(RECORDING_CONFIG_ARRAY.get(rid, {}).get("COMPOSE_PLAY_OR_PRACTICE") or "").upper()
     if not mode:
         raise RuntimeError(f"No config in memory for RECORDING_ID={rid}")
+
+    # Frame size in ms for duration math (used for partial chunks)
+    frame_ms = int(RECORDING_CONFIG_ARRAY.get(rid, {}).get("AUDIO_STREAM_FRAME_SIZE_IN_MS") or 250)
 
     next_chunk_no = _next_chunk_no_from_memory(rid, mode)
     CONSOLE_LOG(PREFIX, "STARTING_AT_AUDIO_CHUNK", {"NEXT_AUDIO_CHUNK_NO": next_chunk_no})
@@ -207,9 +216,76 @@ async def STEP_2_CREATE_AUDIO_CHUNKS(RECORDING_ID: int | str) -> None:
 
             ready = await _await_frames_on_disk(rid, min_frame, max_frame)
             if not ready:
-                CONSOLE_LOG(PREFIX, "STOP_BEFORE_AUDIO_CHUNK_COMPLETE", {"AUDIO_CHUNK_NO": next_chunk_no})
+                # STOP arrived before full chunk frames were present.
+                # If we have any contiguous frames from min_frame upward, emit a final *partial* chunk.
+                eff_max_frame = _highest_contiguous_frame_present(rid, min_frame, max_frame)
+                if eff_max_frame >= min_frame:
+                    wav48 = _chunk_wav48k_path(rid, next_chunk_no)
+                    frame_paths = [_frame_path(rid, i) for i in range(min_frame, eff_max_frame + 1)]
+
+                    ch_map = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(rid, {})
+                    ch = ch_map.setdefault(next_chunk_no, {
+                        "RECORDING_ID": rid,
+                        "AUDIO_CHUNK_NO": next_chunk_no,
+                        "AUDIO_CHUNK_DURATION_IN_MS": (eff_max_frame - min_frame + 1) * frame_ms,
+                        "START_MS": start_ms,
+                        "END_MS": start_ms + (eff_max_frame - min_frame + 1) * frame_ms - 1,
+                        "MIN_AUDIO_STREAM_FRAME_NO": min_frame,
+                        "MAX_AUDIO_STREAM_FRAME_NO": eff_max_frame,
+                        "YN_RUN_FFT": flags.get("YN_RUN_FFT"),
+                        "YN_RUN_ONS": flags.get("YN_RUN_ONS"),
+                        "YN_RUN_PYIN": flags.get("YN_RUN_PYIN"),
+                        "YN_RUN_CREPE": flags.get("YN_RUN_CREPE"),
+                    })
+                    ch["DT_COMPLETE_FRAMES_RECEIVED"] = datetime.utcnow()
+
+                    # Stamp frames with concat time & chunk number
+                    frames = RECORDING_AUDIO_FRAME_ARRAY.setdefault(rid, {})
+                    cat_time = datetime.utcnow()
+                    for i in range(min_frame, eff_max_frame + 1):
+                        fr = frames.setdefault(i, {"RECORDING_ID": rid, "FRAME_NO": i})
+                        fr.setdefault("DT_FRAME_CONCATENATED_TO_AUDIO_CHUNK", cat_time)
+                        fr["AUDIO_CHUNK_NO"] = next_chunk_no
+
+                    await _concat_m4a_to_wav48k(frame_paths, wav48)
+
+                    # Purge consumed frames
+                    for f in frame_paths:
+                        try:
+                            f.unlink(missing_ok=True)
+                        except Exception as e:
+                            CONSOLE_LOG(PREFIX, "DELETE_FRAME_FAILED_NON_FATAL", {"FILE": _bi.str(f), "ERROR": _bi.str(e)})
+                    for i in range(min_frame, eff_max_frame + 1):
+                        fr = frames.setdefault(i, {"RECORDING_ID": rid, "FRAME_NO": i})
+                        fr.setdefault("DT_FRAME_REMOVED_FROM_MEMORY", datetime.utcnow())
+
+                    # Log the partial chunk
+                    try:
+                        DB_LOG_RECORDING_AUDIO_CHUNK(
+                            recording_id=rid,
+                            chunk_no=next_chunk_no,
+                            frame_start_no=min_frame,
+                            frame_end_no=eff_max_frame,
+                            wav48k_path=_bi.str(wav48),
+                            duration_ms=(eff_max_frame - min_frame + 1) * frame_ms,
+                        )
+                    except Exception as e:
+                        CONSOLE_LOG(PPREFIX, "DB_LOG_RECORDING_AUDIO_CHUNK_ERROR",
+                                    {"RECORDING_ID": rid, "AUDIO_CHUNK_NO": next_chunk_no, "ERROR": _bi.str(e)})
+
+                    # Run Step-2 on the partial chunk
+                    res = SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_2_AUDIO_CHUNKS(
+                        RECORDING_ID=rid,
+                        AUDIO_CHUNK_NO=next_chunk_no,
+                        WAV48K_PATH=_bi.str(wav48),
+                    )
+                    if asyncio.iscoroutine(res):
+                        await res
+                else:
+                    CONSOLE_LOG(PREFIX, "STOP_BEFORE_AUDIO_CHUNK_COMPLETE", {"AUDIO_CHUNK_NO": next_chunk_no})
                 break
 
+            # Full chunk path (all frames present)
             wav48 = _chunk_wav48k_path(rid, next_chunk_no)
             frame_paths = [_frame_path(rid, i) for i in range(min_frame, max_frame + 1)]
 
@@ -241,7 +317,7 @@ async def STEP_2_CREATE_AUDIO_CHUNKS(RECORDING_ID: int | str) -> None:
             # Concat to WAV
             await _concat_m4a_to_wav48k(frame_paths, wav48)
 
-            # Purge frames: delete files, stamp removal, then DB log transfer per frame
+            # Purge frames: delete files, stamp removal
             for i, f in zip(range(min_frame, max_frame + 1), frame_paths):
                 try:
                     f.unlink(missing_ok=True)
@@ -250,8 +326,20 @@ async def STEP_2_CREATE_AUDIO_CHUNKS(RECORDING_ID: int | str) -> None:
                 fr = frames.setdefault(i, {"RECORDING_ID": rid, "FRAME_NO": i})
                 if not fr.get("DT_FRAME_REMOVED_FROM_MEMORY"):
                     fr["DT_FRAME_REMOVED_FROM_MEMORY"] = datetime.utcnow()
-                    # DB log per-frame transfer ONLY here (after concat & purge)
-                    DB_LOG_ENGINE_DB_AUDIO_FRAME_TRANSFER(rid, i)
+
+            # Log the completed chunk
+            try:
+                DB_LOG_RECORDING_AUDIO_CHUNK(
+                    recording_id=rid,
+                    chunk_no=next_chunk_no,
+                    frame_start_no=min_frame,
+                    frame_end_no=max_frame,
+                    wav48k_path=_bi.str(wav48),
+                    duration_ms=(max_frame - min_frame + 1) * frame_ms,
+                )
+            except Exception as e:
+                CONSOLE_LOG(PREFIX, "DB_LOG_RECORDING_AUDIO_CHUNK_ERROR",
+                            {"RECORDING_ID": rid, "AUDIO_CHUNK_NO": next_chunk_no, "ERROR": _bi.str(e)})
 
             # Call Step-2 (reads globals)
             res = SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_2_AUDIO_CHUNKS(
@@ -291,6 +379,7 @@ async def STEP_2_CREATE_AUDIO_CHUNKS(RECORDING_ID: int | str) -> None:
 # ─────────────────────────────────────────────────────────────
 # Helpers: specs from memory, waiting, ffmpeg
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _next_chunk_no_from_memory(rid: int, mode: str) -> int:
     if mode == "COMPOSE":
         # For compose, start at 1 and proceed indefinitely until STOP
@@ -300,6 +389,7 @@ def _next_chunk_no_from_memory(rid: int, mode: str) -> int:
         return 1
     return max(chunks.keys()) + 1  # resume if partially processed
 
+@DB_LOG_FUNCTIONS()
 def _chunk_spec_from_memory(
     rid: int,
     mode: str,
@@ -347,6 +437,7 @@ def _chunk_spec_from_memory(
     }
     return frame_range, (start_ms, end_ms, dur_ms), flags
 
+@DB_LOG_FUNCTIONS()
 async def _await_frames_on_disk(
     rid: int,
     min_frame_no: int,
@@ -368,6 +459,7 @@ async def _await_frames_on_disk(
             return False
         await asyncio.sleep(poll_ms / 1000.0)
 
+@DB_LOG_FUNCTIONS()
 async def _concat_m4a_to_wav48k(
     frame_paths: List[Path],
     out_wav: Path
@@ -406,9 +498,21 @@ async def _concat_m4a_to_wav48k(
     except Exception:
         pass
 
+@DB_LOG_FUNCTIONS()
 def _escape_ffmpeg_path(s: str) -> str:
     # concat demuxer quoting; escape single quotes in path
     return s.replace("'", "'\\''")
+
+@DB_LOG_FUNCTIONS()
+def _highest_contiguous_frame_present(rid: int, start_frame: int, end_frame: int) -> int:
+    """
+    Returns the largest N such that all frames [start_frame..N] exist on disk,
+    where N <= end_frame. If start_frame itself is missing, returns start_frame-1.
+    """
+    i = start_frame
+    while i <= end_frame and _frame_path(rid, i).exists():
+        i += 1
+    return i - 1
 
 
 # Back-compat alias name (optional to keep imports compiling elsewhere)

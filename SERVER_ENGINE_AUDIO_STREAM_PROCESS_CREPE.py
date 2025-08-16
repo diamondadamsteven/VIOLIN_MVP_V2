@@ -33,6 +33,7 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_CONNECT,
     DB_BULK_INSERT,
+    DB_LOG_FUNCTIONS,  # <-- logging decorator
 )
 
 PREFIX = "CREPE"
@@ -41,6 +42,7 @@ PREFIX = "CREPE"
 # ─────────────────────────────────────────────────────────────
 # DB loader (bulk insert)
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _db_load_hz_series(
     conn,
     RECORDING_ID: int,
@@ -70,6 +72,7 @@ def _db_load_hz_series(
 # ─────────────────────────────────────────────────────────────
 # CREPE core (relative series @ 10 ms hop)
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def _crepe_compute_relative_series(audio_16k: np.ndarray, sr: int = 16000) -> List[Tuple[int, int, float, float]]:
     """
     Returns per-frame rows relative to the chunk:
@@ -154,6 +157,7 @@ def _crepe_compute_relative_series(audio_16k: np.ndarray, sr: int = 16000) -> Li
 # ─────────────────────────────────────────────────────────────
 # PUBLIC ENTRY (called by Step-2)
 # ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
 def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
     RECORDING_ID: int,
     AUDIO_CHUNK_NO: int,
