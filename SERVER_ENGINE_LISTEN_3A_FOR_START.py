@@ -11,7 +11,7 @@ from SERVER_ENGINE_APP_VARIABLES import (
 from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_LOG_FUNCTIONS,
     DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE,
-    DB_CONNECT,
+    DB_CONNECT_CTX,
     DB_EXEC_SP_SINGLE_ROW,
     DB_EXEC_SP_MULTIPLE_ROWS,
     DB_LOG_ENGINE_DB_RECORDING_CONFIG
@@ -63,7 +63,7 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_START(MESSAGE_ID: int) -> None:
     RECORDING_CONFIG_ARRAY[rid] = cfg
 
     # 4) load base parameters
-    with DB_CONNECT() as conn:
+    with DB_CONNECT_CTX() as conn:
         row = DB_EXEC_SP_SINGLE_ROW(conn, "P_ENGINE_ALL_RECORDING_PARAMETERS_GET", RECORDING_ID=rid) or {}
     for k in ("VIOLINIST_ID", "COMPOSE_PLAY_OR_PRACTICE", "AUDIO_STREAM_FILE_NAME", "AUDIO_STREAM_FRAME_SIZE_IN_MS"):
         if k in row:
@@ -74,7 +74,7 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_START(MESSAGE_ID: int) -> None:
 
     # 5) compose configuration
     if mode == "COMPOSE":
-        with DB_CONNECT() as conn:
+        with DB_CONNECT_CTX() as conn:
             r = DB_EXEC_SP_SINGLE_ROW(conn, "P_ENGINE_SONG_AUDIO_CHUNK_FOR_COMPOSE_GET", RECORDING_ID=rid) or {}
         for k in ("AUDIO_CHUNK_DURATION_IN_MS", "CNT_FRAMES_PER_AUDIO_CHUNK", "YN_RUN_FFT"):
             if k in r:
@@ -83,7 +83,7 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_START(MESSAGE_ID: int) -> None:
 
     # 6) play/practice chunk plan
     elif mode in ("PLAY", "PRACTICE"):
-        with DB_CONNECT() as conn:
+        with DB_CONNECT_CTX() as conn:
             rows = DB_EXEC_SP_MULTIPLE_ROWS(conn, "P_ENGINE_SONG_AUDIO_CHUNK_FOR_PLAY_AND_PRACTICE_GET", RECORDING_ID=rid) or []
         if rows:
             RECORDING_AUDIO_CHUNK_ARRAY.setdefault(rid, {})

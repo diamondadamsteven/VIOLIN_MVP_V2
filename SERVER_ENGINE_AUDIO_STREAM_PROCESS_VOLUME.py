@@ -26,7 +26,7 @@ import numpy as np
 from SERVER_ENGINE_APP_VARIABLES import RECORDING_AUDIO_CHUNK_ARRAY  # <-- NEW
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
-    DB_CONNECT,
+    DB_CONNECT_CTX,
     DB_BULK_INSERT,
     DB_LOG_FUNCTIONS,  # <-- add decorator
 )
@@ -221,7 +221,7 @@ def SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME(
         ch["VOLUME_1_MS_RECORD_CNT"] = int(len(series_1ms))        # <-- NEW
         ch["VOLUME_10_MS_RECORD_CNT"] = int(len(series_10ms))      # <-- NEW
 
-        with DB_CONNECT() as conn:
+        with DB_CONNECT_CTX() as conn:
             # Time the 1-ms aggregate insert
             t1 = time.perf_counter()                                # <-- NEW
             _db_load_volume_aggregate_row(

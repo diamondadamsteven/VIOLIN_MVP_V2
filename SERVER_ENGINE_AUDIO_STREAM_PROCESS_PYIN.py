@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover
 from SERVER_ENGINE_APP_VARIABLES import RECORDING_AUDIO_CHUNK_ARRAY  # <-- NEW
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
-    DB_CONNECT,
+    DB_CONNECT_CTX,
     DB_BULK_INSERT,
     DB_LOG_FUNCTIONS,  # <-- add decorator
 )
@@ -193,7 +193,7 @@ def SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
         # NEW: stamp PYIN row count in memory for Step-2's DB_LOG_RECORDING_AUDIO_CHUNK
         ch["PYIN_RECORD_CNT"] = int(len(rows_abs))  # <-- NEW
 
-        with DB_CONNECT() as conn:
+        with DB_CONNECT_CTX() as conn:
             _db_load_hz_series(
                 conn=conn,
                 RECORDING_ID=int(RECORDING_ID),

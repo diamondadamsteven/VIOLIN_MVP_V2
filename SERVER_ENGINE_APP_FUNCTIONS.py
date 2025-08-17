@@ -1,22 +1,25 @@
 # SERVER_ENGINE_APP_FUNCTIONS.py
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Coroutine, Union
 
 import functools
 import inspect
 import logging
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 import asyncio
 import os
 import json as _json
 
+# Optional; kept for type hints / legacy awareness
 import pyodbc  # type: ignore
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from contextlib import contextmanager
 
 from SERVER_ENGINE_APP_VARIABLES import (
     RECORDING_AUDIO_FRAME_ARRAY,
@@ -43,11 +46,12 @@ def ASYNC_SET_MAIN_LOOP(loop: asyncio.AbstractEventLoop) -> None:
     global _MAIN_LOOP
     _MAIN_LOOP = loop
 
-def schedule_coro(coro: "asyncio.coroutines") -> "asyncio.Task | asyncio.Future":
+def schedule_coro(coro: Coroutine[Any, Any, Any]) -> Union[asyncio.Task, Any]:
     """
     Schedule a coroutine regardless of caller context:
       • If we're already on an event loop → create_task(coro)
       • If we're in a worker thread      → run_coroutine_threadsafe(coro, _MAIN_LOOP)
+    Returns a Task (in-loop) or concurrent.futures.Future (from thread).
     """
     try:
         loop = asyncio.get_running_loop()
@@ -94,6 +98,7 @@ def DB_ENGINE_STARTUP(warm_pool: bool = True) -> None:
     """
     Call once at FastAPI startup. Lazily creates the engine and (optionally)
     warms the pool with a trivial query so first real insert is fast.
+    Also ensures the background log-writer is running.
     """
     eng = get_engine()
     if warm_pool:
@@ -102,6 +107,11 @@ def DB_ENGINE_STARTUP(warm_pool: bool = True) -> None:
                 conn.execute(text("SELECT 1"))
         except Exception as e:
             LOGGER.exception("DB_ENGINE_STARTUP warm_pool failed: %s", e)
+    # Start background log writer once
+    try:
+        _start_log_writer_once()
+    except Exception as e:
+        LOGGER.exception("Failed to start log writer: %s", e)
 
 def DB_ENGINE_SHUTDOWN() -> None:
     """Optional: dispose the engine at application shutdown."""
@@ -114,7 +124,127 @@ def DB_ENGINE_SHUTDOWN() -> None:
         _DB_ENGINE = None
 
 # -----------------------------------------------------------------------------
-# Fast path: lightweight per-event insert into ENGINE_DB_LOG_FUNCTIONS
+# Background logging queue (shared for steps, websocket messages, audio frames)
+# -----------------------------------------------------------------------------
+# Data shape:
+#   {"kind": "step"|"ws_msg"|"audio_frame", "params": {...}}
+try:
+    _LOG_QUEUE  # type: ignore[name-defined]
+except NameError:
+    _LOG_QUEUE: Optional[asyncio.Queue] = None
+
+try:
+    _LOG_WRITER_STARTED  # type: ignore[name-defined]
+except NameError:
+    _LOG_WRITER_STARTED: bool = False
+
+def _ensure_log_queue() -> asyncio.Queue:
+    global _LOG_QUEUE
+    if _LOG_QUEUE is None:
+        _LOG_QUEUE = asyncio.Queue()
+    return _LOG_QUEUE
+
+def _logq_put(item: Dict[str, Any]) -> None:
+    """
+    Put into the async queue from loop or thread.
+    """
+    q = _ensure_log_queue()
+    try:
+        loop = asyncio.get_running_loop()
+        q.put_nowait(item)
+    except RuntimeError:
+        # thread: use main loop
+        if _MAIN_LOOP is None:
+            raise RuntimeError("MAIN_LOOP not set; call ASYNC_SET_MAIN_LOOP() at startup")
+        asyncio.run_coroutine_threadsafe(q.put(item), _MAIN_LOOP)
+
+def _start_log_writer_once() -> None:
+    global _LOG_WRITER_STARTED
+    if _LOG_WRITER_STARTED:
+        return
+    _LOG_WRITER_STARTED = True
+    schedule_coro(_log_writer_loop())
+
+# ----- SQL statements reused by the writer
+_SQL_STEP = text("""
+INSERT INTO ENGINE_DB_LOG_STEPS (
+    DT_ADDED, STEP_NAME, PYTHON_FUNCTION_NAME, PYTHON_FILE_NAME,
+    RECORDING_ID, AUDIO_CHUNK_NO, FRAME_NO
+) VALUES (
+    :DT_ADDED, :STEP_NAME, :PYTHON_FUNCTION_NAME, :PYTHON_FILE_NAME,
+    :RECORDING_ID, :AUDIO_CHUNK_NO, :FRAME_NO
+)
+""")
+
+_SQL_WSMSG = text("""
+INSERT INTO ENGINE_DB_LOG_WEBSOCKET_MESSAGE (
+    RECORDING_ID, MESSAGE_TYPE, AUDIO_FRAME_NO,
+    DT_MESSAGE_RECEIVED, DT_MESSAGE_PROCESS_STARTED
+) VALUES (
+    :RECORDING_ID, :MESSAGE_TYPE, :AUDIO_FRAME_NO,
+    :DT_MESSAGE_RECEIVED, :DT_MESSAGE_PROCESS_STARTED
+)
+""")
+
+_SQL_FRAME = text("""
+INSERT INTO ENGINE_DB_LOG_AUDIO_FRAME (
+    RECORDING_ID, FRAME_NO, AUDIO_STREAM_FRAME_SIZE_IN_MS, DT_FRAME_RECEIVED
+) VALUES (
+    :RECORDING_ID, :FRAME_NO, :AUDIO_STREAM_FRAME_SIZE_IN_MS, :DT_FRAME_RECEIVED
+)
+""")
+
+async def _log_writer_loop() -> None:
+    """
+    Background task: drain queue in small batches and insert per-kind.
+    """
+    BATCH_MAX = 200
+    IDLE_TIMEOUT = 0.25  # seconds
+
+    while True:
+        try:
+            q = _ensure_log_queue()
+            # block for first item
+            item = await q.get()
+            batch: List[Dict[str, Any]] = [item]
+            # slurp up to BATCH_MAX-1 more items without blocking
+            for _ in range(BATCH_MAX - 1):
+                try:
+                    batch.append(q.get_nowait())
+                except asyncio.QueueEmpty:
+                    break
+
+            # split by kind
+            steps: List[Dict[str, Any]] = []
+            wsmsgs: List[Dict[str, Any]] = []
+            frames: List[Dict[str, Any]] = []
+
+            for rec in batch:
+                k = rec.get("kind")
+                p = rec.get("params", {})
+                if k == "step":
+                    steps.append(p)
+                elif k == "ws_msg":
+                    wsmsgs.append(p)
+                elif k == "audio_frame":
+                    frames.append(p)
+
+            # write in one DB context
+            if steps or wsmsgs or frames:
+                with get_engine().begin() as CONN:
+                    if steps:
+                        CONN.execute(_SQL_STEP, steps)
+                    if wsmsgs:
+                        CONN.execute(_SQL_WSMSG, wsmsgs)
+                    if frames:
+                        CONN.execute(_SQL_FRAME, frames)
+        except Exception as e:
+            LOGGER.exception("log-writer loop error: %s", e)
+            # small backoff to avoid thrash
+            await asyncio.sleep(IDLE_TIMEOUT)
+
+# -----------------------------------------------------------------------------
+# Fast path: lightweight per-event insert into ENGINE_DB_LOG_FUNCTIONS (unchanged)
 # -----------------------------------------------------------------------------
 _LOG_INSERT_SQL_TEXT = text("""
 INSERT INTO ENGINE_DB_LOG_FUNCTIONS
@@ -331,21 +461,42 @@ def CONSOLE_LOG(prefix: str, msg: str, obj: Any = None) -> None:
             print(f"{prefix} - {msg}", flush=True)
 
 # -----------------------------------------------------------------------------
-# pyodbc helpers — now reusing the pool via raw_connection()
+# pyodbc helpers — reusing the pool via raw_connection()
 # -----------------------------------------------------------------------------
 def DB_CONNECT():
     """
     Return a DBAPI (pyodbc) connection from the pooled Engine.
-    NOTE: You are responsible for closing it (conn.close()).
+    NOTE: This is NOT a context manager. Close it or use DB_CONNECT_CTX().
     """
     conn = get_engine().raw_connection()
-    # Try to mimic old autocommit=True default where appropriate
     try:
-        # pyodbc connection sometimes exposes this flag
         conn.autocommit = True  # type: ignore[attr-defined]
     except Exception:
         pass
     return conn
+
+@contextmanager
+def DB_CONNECT_CTX():
+    """
+    Context-manager wrapper around DB_CONNECT():
+
+        with DB_CONNECT_CTX() as conn:
+            ...
+
+    Ensures close()/commit as appropriate.
+    """
+    conn = DB_CONNECT()
+    try:
+        yield conn
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 def DB_BULK_INSERT(conn, sql: str, rows: Iterable[tuple]) -> None:
     batch = list(rows)
@@ -412,27 +563,32 @@ def DB_EXEC_SP_NO_RESULT(conn, sp_name: str, **params) -> Optional[int]:
     return total if total > 0 else None
 
 # -----------------------------------------------------------------------------
-# Existing logs that use SQLAlchemy with named params (via get_engine())
+# Queue-based logger APIs (enqueue; background writer performs the INSERTs)
 # -----------------------------------------------------------------------------
 
 # 1) FRAME
 def DB_LOG_ENGINE_DB_AUDIO_FRAME(RECORDING_ID: int, FRAME_NO: int) -> None:
-    with get_engine().begin() as CONN:
-        CONN.execute(
-            text("""
-                INSERT INTO ENGINE_DB_LOG_AUDIO_FRAME
-                (RECORDING_ID, FRAME_NO, AUDIO_STREAM_FRAME_SIZE_IN_MS, DT_FRAME_RECEIVED)
-                VALUES (:RECORDING_ID, :FRAME_NO, :AUDIO_STREAM_FRAME_SIZE_IN_MS, :DT_FRAME_RECEIVED)
-            """),
-            {
-                "RECORDING_ID": RECORDING_ID,
-                "FRAME_NO": FRAME_NO,
-                "AUDIO_STREAM_FRAME_SIZE_IN_MS": RECORDING_CONFIG_ARRAY[RECORDING_ID]["AUDIO_STREAM_FRAME_SIZE_IN_MS"],
-                "DT_FRAME_RECEIVED": RECORDING_AUDIO_FRAME_ARRAY[RECORDING_ID][FRAME_NO]["DT_FRAME_RECEIVED"],
-            },
-        )
+    """
+    Enqueue an audio-frame log using DT_FRAME_RECEIVED captured at receive time.
+    """
+    cfg = RECORDING_CONFIG_ARRAY.get(RECORDING_ID, {}) or {}
+    frame_ms = cfg.get("AUDIO_STREAM_FRAME_SIZE_IN_MS")  # allow NULL if missing
 
-# 2) AUDIO CHUNK
+    frame_map = RECORDING_AUDIO_FRAME_ARRAY.get(RECORDING_ID, {}) or {}
+    frame_row = frame_map.get(FRAME_NO, {}) or {}
+    dt_frame_received = frame_row.get("DT_FRAME_RECEIVED")
+
+    _logq_put({
+        "kind": "audio_frame",
+        "params": {
+            "RECORDING_ID": RECORDING_ID,
+            "FRAME_NO": FRAME_NO,
+            "AUDIO_STREAM_FRAME_SIZE_IN_MS": frame_ms,
+            "DT_FRAME_RECEIVED": dt_frame_received,
+        },
+    })
+
+# 2) AUDIO CHUNK (unchanged; direct write, not queued — it’s much rarer & heavier)
 def DB_LOG_ENGINE_DB_RECORDING_AUDIO_CHUNK(RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> None:
     ch = RECORDING_AUDIO_CHUNK_ARRAY[RECORDING_ID][AUDIO_CHUNK_NO]
     with get_engine().begin() as CONN:
@@ -484,43 +640,43 @@ def DB_LOG_ENGINE_DB_RECORDING_AUDIO_CHUNK(RECORDING_ID: int, AUDIO_CHUNK_NO: in
                 "MIN_AUDIO_STREAM_FRAME_NO": ch.get("MIN_AUDIO_STREAM_FRAME_NO"),
                 "MAX_AUDIO_STREAM_FRAME_NO": ch.get("MAX_AUDIO_STREAM_FRAME_NO"),
                 "YN_RUN_FFT":   ch.get("YN_RUN_FFT", "N"),
-                "YN_RUN_ONS":   ch.get("YN_RUN_ONS", "N"),   # defaulted to avoid KeyError
+                "YN_RUN_ONS":   ch.get("YN_RUN_ONS", "N"),
                 "YN_RUN_PYIN":  ch.get("YN_RUN_PYIN", "N"),
                 "YN_RUN_CREPE": ch.get("YN_RUN_CREPE", "N"),
-                "DT_COMPLETE_FRAMES_RECEIVED":                 ch.get("DT_COMPLETE_FRAMES_RECEIVED"),
-                "DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK": ch.get("DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK"),
+                "DT_COMPLETE_FRAMES_RECEIVED":                      ch.get("DT_COMPLETE_FRAMES_RECEIVED"),
+                "DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK":    ch.get("DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK"),
                 "DT_COMPLETE_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK": ch.get("DT_COMPLETE_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK"),
-                "DT_AUDIO_CHUNK_CONVERTED_TO_WAV":             ch.get("DT_AUDIO_CHUNK_CONVERTED_TO_WAV"),
-                "DT_AUDIO_CHUNK_WAV_SAVED_TO_FILE":            ch.get("DT_AUDIO_CHUNK_WAV_SAVED_TO_FILE"),
-                "DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_16K": ch.get("DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_16K"),
-                "DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_22050": ch.get("DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_22050"),
-                "DT_AUDIO_CHUNK_PREPARATION_COMPLETE":         ch.get("DT_AUDIO_CHUNK_PREPARATION_COMPLETE"),
-                "DT_START_AUDIO_CHUNK_PROCESS":                ch.get("DT_START_AUDIO_CHUNK_PROCESS"),
-                "DT_END_AUDIO_CHUNK_PROCESS":                  ch.get("DT_END_AUDIO_CHUNK_PROCESS"),
-                "DT_START_FFT":                                 ch.get("DT_START_FFT"),
-                "FFT_DURATION_IN_MS":                           ch.get("FFT_DURATION_IN_MS"),
-                "FFT_RECORD_CNT":                               ch.get("FFT_RECORD_CNT"),
-                "DT_START_ONS":                                 ch.get("DT_START_ONS"),
-                "ONS_DURATION_IN_MS":                           ch.get("ONS_DURATION_IN_MS"),
-                "ONS_RECORD_CNT":                               ch.get("ONS_RECORD_CNT"),
-                "DT_START_PYIN":                                ch.get("DT_START_PYIN"),
-                "PYIN_DURATION_IN_MS":                          ch.get("PYIN_DURATION_IN_MS"),
-                "PYIN_RECORD_CNT":                              ch.get("PYIN_RECORD_CNT"),
-                "DT_START_CREPE":                               ch.get("DT_START_CREPE"),
-                "CREPE_DURATION_IN_MS":                         ch.get("CREPE_DURATION_IN_MS"),
-                "CREPE_RECORD_CNT":                             ch.get("CREPE_RECORD_CNT"),
-                "DT_START_VOLUME":                              ch.get("DT_START_VOLUME"),
-                "VOLUME_10_MS_DURATION_IN_MS":                  ch.get("VOLUME_10_MS_DURATION_IN_MS"),
-                "VOLUME_1_MS_DURATION_IN_MS":                   ch.get("VOLUME_1_MS_DURATION_IN_MS"),
-                "VOLUME_10_MS_RECORD_CNT":                      ch.get("VOLUME_10_MS_RECORD_CNT"),
-                "VOLUME_1_MS_RECORD_CNT":                       ch.get("VOLUME_1_MS_RECORD_CNT"),
-                "DT_START_P_ENGINE_ALL_MASTER":                 ch.get("DT_START_P_ENGINE_ALL_MASTER"),
-                "P_ENGINE_ALL_MASTER_DURATION_IN_MS":           ch.get("P_ENGINE_ALL_MASTER_DURATION_IN_MS"),
+                "DT_AUDIO_CHUNK_CONVERTED_TO_WAV":                  ch.get("DT_AUDIO_CHUNK_CONVERTED_TO_WAV"),
+                "DT_AUDIO_CHUNK_WAV_SAVED_TO_FILE":                 ch.get("DT_AUDIO_CHUNK_WAV_SAVED_TO_FILE"),
+                "DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_16K":      ch.get("DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_16K"),
+                "DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_22050":    ch.get("DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_22050"),
+                "DT_AUDIO_CHUNK_PREPARATION_COMPLETE":              ch.get("DT_AUDIO_CHUNK_PREPARATION_COMPLETE"),
+                "DT_START_AUDIO_CHUNK_PROCESS":                     ch.get("DT_START_AUDIO_CHUNK_PROCESS"),
+                "DT_END_AUDIO_CHUNK_PROCESS":                       ch.get("DT_END_AUDIO_CHUNK_PROCESS"),
+                "DT_START_FFT":                                     ch.get("DT_START_FFT"),
+                "FFT_DURATION_IN_MS":                               ch.get("FFT_DURATION_IN_MS"),
+                "FFT_RECORD_CNT":                                   ch.get("FFT_RECORD_CNT"),
+                "DT_START_ONS":                                     ch.get("DT_START_ONS"),
+                "ONS_DURATION_IN_MS":                               ch.get("ONS_DURATION_IN_MS"),
+                "ONS_RECORD_CNT":                                   ch.get("ONS_RECORD_CNT"),
+                "DT_START_PYIN":                                    ch.get("DT_START_PYIN"),
+                "PYIN_DURATION_IN_MS":                              ch.get("PYIN_DURATION_IN_MS"),
+                "PYIN_RECORD_CNT":                                  ch.get("PYIN_RECORD_CNT"),
+                "DT_START_CREPE":                                   ch.get("DT_START_CREPE"),
+                "CREPE_DURATION_IN_MS":                             ch.get("CREPE_DURATION_IN_MS"),
+                "CREPE_RECORD_CNT":                                 ch.get("CREPE_RECORD_CNT"),
+                "DT_START_VOLUME":                                  ch.get("DT_START_VOLUME"),
+                "VOLUME_10_MS_DURATION_IN_MS":                      ch.get("VOLUME_10_MS_DURATION_IN_MS"),
+                "VOLUME_1_MS_DURATION_IN_MS":                       ch.get("VOLUME_1_MS_DURATION_IN_MS"),
+                "VOLUME_10_MS_RECORD_CNT":                          ch.get("VOLUME_10_MS_RECORD_CNT"),
+                "VOLUME_1_MS_RECORD_CNT":                           ch.get("VOLUME_1_MS_RECORD_CNT"),
+                "DT_START_P_ENGINE_ALL_MASTER":                     ch.get("DT_START_P_ENGINE_ALL_MASTER"),
+                "P_ENGINE_ALL_MASTER_DURATION_IN_MS":               ch.get("P_ENGINE_ALL_MASTER_DURATION_IN_MS"),
                 "DT_ADDED": datetime.now(),
             },
         )
 
-# 3) RECORDING CONFIG
+# 3) RECORDING CONFIG (unchanged)
 def DB_LOG_ENGINE_DB_RECORDING_CONFIG(RECORDING_ID: int) -> None:
     cfg = RECORDING_CONFIG_ARRAY[RECORDING_ID]
     with get_engine().begin() as CONN:
@@ -554,7 +710,7 @@ def DB_LOG_ENGINE_DB_RECORDING_CONFIG(RECORDING_ID: int) -> None:
             },
         )
 
-# 4) WEBSOCKET CONNECTION
+# 4) WEBSOCKET CONNECTION (unchanged)
 MAX_VARCHAR_SAFE = 4000  # conservative cap if target column isn't MAX
 
 def _truncate_text(val: Optional[str], n: int = MAX_VARCHAR_SAFE) -> Optional[str]:
@@ -617,39 +773,21 @@ def DB_LOG_ENGINE_DB_WEBSOCKET_CONNECTION(WEBSOCKET_CONNECTION_ID: int) -> None:
         LOGGER.exception("DB_LOG_WEBSOCKET_CONNECTION insert failed (id=%s): %s",
                          WEBSOCKET_CONNECTION_ID, e)
 
+# 5) WEBSOCKET MESSAGE — now ENQUEUE (uses DT_MESSAGE_RECEIVED)
 def DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE(MESSAGE_ID: int) -> None:
-    msg = RECORDING_WEBSOCKET_MESSAGE_ARRAY[MESSAGE_ID]
-    try:
-        with get_engine().begin() as CONN:
-            CONN.execute(
-                text("""
-                    INSERT INTO ENGINE_DB_LOG_WEBSOCKET_MESSAGE (
-                        RECORDING_ID,
-                        MESSAGE_TYPE,
-                        AUDIO_FRAME_NO,
-                        DT_MESSAGE_RECEIVED,
-                        DT_MESSAGE_PROCESS_STARTED
-                    )
-                    VALUES (
-                        :RECORDING_ID,
-                        :MESSAGE_TYPE,
-                        :AUDIO_FRAME_NO,
-                        :DT_MESSAGE_RECEIVED,
-                        :DT_MESSAGE_PROCESS_STARTED
-                    )
-                """),
-                {
-                    "RECORDING_ID": msg.get("RECORDING_ID"),
-                    "MESSAGE_TYPE": msg.get("MESSAGE_TYPE"),
-                    "AUDIO_FRAME_NO": msg.get("AUDIO_FRAME_NO"),
-                    "DT_MESSAGE_RECEIVED": msg.get("DT_MESSAGE_RECEIVED"),
-                    "DT_MESSAGE_PROCESS_STARTED": msg.get("DT_MESSAGE_PROCESS_STARTED"),
-                },
-            )
-    except Exception as e:
-        LOGGER.exception("DB_LOG_WEBSOCKET_MESSAGE insert failed (mid=%s): %s",
-                         MESSAGE_ID, e)
+    msg = RECORDING_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID, {}) or {}
+    _logq_put({
+        "kind": "ws_msg",
+        "params": {
+            "RECORDING_ID": msg.get("RECORDING_ID"),
+            "MESSAGE_TYPE": msg.get("MESSAGE_TYPE"),
+            "AUDIO_FRAME_NO": msg.get("AUDIO_FRAME_NO"),
+            "DT_MESSAGE_RECEIVED": msg.get("DT_MESSAGE_RECEIVED"),
+            "DT_MESSAGE_PROCESS_STARTED": msg.get("DT_MESSAGE_PROCESS_STARTED"),
+        }
+    })
 
+# 6) STEP LOGGER — now ENQUEUE and STAMP DT_ADDED at ENQUEUE TIME
 def DB_LOG_ENGINE_DB_LOG_STEPS(
     STEP_NAME: str,
     PYTHON_FUNCTION_NAME: str,
@@ -657,47 +795,21 @@ def DB_LOG_ENGINE_DB_LOG_STEPS(
     RECORDING_ID: Optional[int] = None,
     AUDIO_CHUNK_NO: Optional[int] = None,
     FRAME_NO: Optional[int] = None,
+    DT_ADDED: Optional[datetime] = None,  # optional for callers; we stamp now if not provided
 ) -> None:
     """
-    Insert a single step marker into ENGINE_DB_LOG_STEPS.
+    Enqueue a single step marker into ENGINE_DB_LOG_STEPS.
+    DT_ADDED is captured when this function is called (execution time), not when inserted.
     """
-    try:
-        with get_engine().begin() as CONN:
-            CONN.execute(
-                text("""
-                    INSERT INTO ENGINE_DB_LOG_STEPS (
-                        DT_ADDED,
-                        STEP_NAME,
-                        PYTHON_FUNCTION_NAME,
-                        PYTHON_FILE_NAME,
-                        RECORDING_ID,
-                        AUDIO_CHUNK_NO,
-                        FRAME_NO
-                    )
-                    VALUES (
-                        :DT_ADDED,
-                        :STEP_NAME,
-                        :PYTHON_FUNCTION_NAME,
-                        :PYTHON_FILE_NAME,
-                        :RECORDING_ID,
-                        :AUDIO_CHUNK_NO,
-                        :FRAME_NO
-                    )
-                """),
-                {
-                    "DT_ADDED": datetime.now(),
-                    "STEP_NAME": STEP_NAME,
-                    "PYTHON_FUNCTION_NAME": PYTHON_FUNCTION_NAME,
-                    "PYTHON_FILE_NAME": PYTHON_FILE_NAME,
-                    "RECORDING_ID": RECORDING_ID,
-                    "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                    "FRAME_NO": FRAME_NO,
-                },
-            )
-    except Exception as e:
-        LOGGER.exception(
-            "DB_LOG_ENGINE_DB_LOG_STEPS insert failed "
-            "(step=%s, fn=%s, file=%s, rid=%s, chunk=%s, frame=%s): %s",
-            STEP_NAME, PYTHON_FUNCTION_NAME, PYTHON_FILE_NAME,
-            RECORDING_ID, AUDIO_CHUNK_NO, FRAME_NO, e
-        )
+    _logq_put({
+        "kind": "step",
+        "params": {
+            "DT_ADDED": DT_ADDED or datetime.now(),
+            "STEP_NAME": STEP_NAME,
+            "PYTHON_FUNCTION_NAME": PYTHON_FUNCTION_NAME,
+            "PYTHON_FILE_NAME": PYTHON_FILE_NAME,
+            "RECORDING_ID": RECORDING_ID,
+            "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
+            "FRAME_NO": FRAME_NO,
+        }
+    })

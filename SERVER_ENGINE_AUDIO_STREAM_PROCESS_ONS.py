@@ -30,7 +30,7 @@ except Exception:  # pragma: no cover
 from SERVER_ENGINE_APP_VARIABLES import TEMP_RECORDING_AUDIO_DIR, RECORDING_AUDIO_CHUNK_ARRAY  # <-- added
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
-    DB_CONNECT,
+    DB_CONNECT_CTX,
     DB_BULK_INSERT,
     DB_LOG_FUNCTIONS,  # <-- logging decorator
 )
@@ -215,7 +215,7 @@ def SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS(
         ch = chunks.setdefault(int(AUDIO_CHUNK_NO), {"RECORDING_ID": int(RECORDING_ID), "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO)})
         ch["ONS_RECORD_CNT"] = int(len(rows_abs_with_src))
 
-        with DB_CONNECT() as conn:
+        with DB_CONNECT_CTX() as conn:
             _db_load_note_rows(
                 conn=conn,
                 RECORDING_ID=int(RECORDING_ID),

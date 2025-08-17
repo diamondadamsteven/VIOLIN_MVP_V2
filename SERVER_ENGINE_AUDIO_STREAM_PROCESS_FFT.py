@@ -22,7 +22,7 @@ from SERVER_ENGINE_APP_VARIABLES import (
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
-    DB_CONNECT,
+    DB_CONNECT_CTX,
     DB_BULK_INSERT,
     DB_LOG_FUNCTIONS,  # <-- logging decorator
 )
@@ -171,7 +171,7 @@ def SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(
             })
             return
 
-        with DB_CONNECT() as conn:
+        with DB_CONNECT_CTX() as conn:
             _db_load_fft_rows(
                 conn=conn,
                 RECORDING_ID=int(RECORDING_ID),

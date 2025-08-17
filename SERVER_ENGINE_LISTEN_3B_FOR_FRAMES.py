@@ -11,9 +11,9 @@ from SERVER_ENGINE_APP_VARIABLES import (
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_LOG_FUNCTIONS,
-    DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE,
-    DB_LOG_ENGINE_DB_AUDIO_FRAME,
-    DB_LOG_ENGINE_DB_LOG_STEPS
+    DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE,   # now enqueues
+    DB_LOG_ENGINE_DB_AUDIO_FRAME,         # now enqueues
+    DB_LOG_ENGINE_DB_LOG_STEPS            # enqueues & stamps DT_ADDED at call time
 )
 
 def SERVER_ENGINE_LISTEN_3B_FOR_FRAMES() -> None:
@@ -33,20 +33,20 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME(MESSAGE_ID: int) -> None:
     """
     PROCESS FRAME:
       1) Mark DT_MESSAGE_PROCESS_STARTED
-      2) Log the message
+      2) Log the message (queued)
       3) Insert into RECORDING_AUDIO_FRAME_ARRAY (RECORDING_ID, FRAME_NO, DT_FRAME_RECEIVED, AUDIO_FRAME_DATA)
-      4) Log AUDIO_FRAME
+      4) Log AUDIO_FRAME (queued)
       5) Delete message entry
     """
+    # Step mark (DT_ADDED stamped inside the logger)
     DB_LOG_ENGINE_DB_LOG_STEPS(
-            STEP_NAME="Begin",
-            PYTHON_FUNCTION_NAME=inspect.currentframe().f_code.co_name,
-            PYTHON_FILE_NAME=os.path.basename(__file__),
-            RECORDING_ID=MESSAGE_ID,
-            AUDIO_CHUNK_NO=None,
-            FRAME_NO=None,
-        )
-
+        STEP_NAME="Begin",
+        PYTHON_FUNCTION_NAME=inspect.currentframe().f_code.co_name,
+        PYTHON_FILE_NAME=os.path.basename(__file__),
+        RECORDING_ID=MESSAGE_ID,
+        AUDIO_CHUNK_NO=None,
+        FRAME_NO=None,
+    )
 
     msg = RECORDING_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
     if not msg:
@@ -55,23 +55,23 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME(MESSAGE_ID: int) -> None:
     # 1) mark started
     msg["DT_MESSAGE_PROCESS_STARTED"] = datetime.now()
 
-    # 2) log message
+    # 2) log message (queued)
     DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE(MESSAGE_ID)
 
     # 3) persist frame
     rid = int(msg.get("RECORDING_ID") or 0)
     fno = int(msg.get("AUDIO_FRAME_NO") or 0)
-    dt_received = msg.get("DT_MESSAGE_RECEIVED") 
+    dt_received = msg.get("DT_MESSAGE_RECEIVED")
     audio_bytes = msg.get("AUDIO_FRAME_BYTES")  # may be None if not provided
 
     DB_LOG_ENGINE_DB_LOG_STEPS(
-            STEP_NAME="Here 2",
-            PYTHON_FUNCTION_NAME=inspect.currentframe().f_code.co_name,
-            PYTHON_FILE_NAME=os.path.basename(__file__),
-            RECORDING_ID=int(msg.get("RECORDING_ID") or 0),
-            AUDIO_CHUNK_NO=None,
-            FRAME_NO=int(msg.get("AUDIO_FRAME_NO") or 0),
-        )
+        STEP_NAME="Here 2",
+        PYTHON_FUNCTION_NAME=inspect.currentframe().f_code.co_name,
+        PYTHON_FILE_NAME=os.path.basename(__file__),
+        RECORDING_ID=rid,
+        AUDIO_CHUNK_NO=None,
+        FRAME_NO=fno,
+    )
 
     RECORDING_AUDIO_FRAME_ARRAY.setdefault(rid, {})
     RECORDING_AUDIO_FRAME_ARRAY[rid][fno] = {
@@ -82,27 +82,27 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME(MESSAGE_ID: int) -> None:
     }
 
     DB_LOG_ENGINE_DB_LOG_STEPS(
-            STEP_NAME="Here 3",
-            PYTHON_FUNCTION_NAME=inspect.currentframe().f_code.co_name,
-            PYTHON_FILE_NAME=os.path.basename(__file__),
-            RECORDING_ID=int(msg.get("RECORDING_ID") or 0),
-            AUDIO_CHUNK_NO=None,
-            FRAME_NO=int(msg.get("AUDIO_FRAME_NO") or 0),
-        )
-    # 4) db log audio frame
+        STEP_NAME="Here 3",
+        PYTHON_FUNCTION_NAME=inspect.currentframe().f_code.co_name,
+        PYTHON_FILE_NAME=os.path.basename(__file__),
+        RECORDING_ID=rid,
+        AUDIO_CHUNK_NO=None,
+        FRAME_NO=fno,
+    )
+
+    # 4) db log audio frame (queued)
     DB_LOG_ENGINE_DB_AUDIO_FRAME(rid, fno)
 
     # 5) remove message
     try:
         del RECORDING_WEBSOCKET_MESSAGE_ARRAY[MESSAGE_ID]
         DB_LOG_ENGINE_DB_LOG_STEPS(
-        STEP_NAME="Here 4",
-        PYTHON_FUNCTION_NAME=inspect.currentframe().f_code.co_name,
-        PYTHON_FILE_NAME=os.path.basename(__file__),
-        RECORDING_ID=int(msg.get("RECORDING_ID") or 0),
-        AUDIO_CHUNK_NO=None,
-        FRAME_NO=int(msg.get("AUDIO_FRAME_NO") or 0),
+            STEP_NAME="Here 4",
+            PYTHON_FUNCTION_NAME=inspect.currentframe().f_code.co_name,
+            PYTHON_FILE_NAME=os.path.basename(__file__),
+            RECORDING_ID=rid,
+            AUDIO_CHUNK_NO=None,
+            FRAME_NO=fno,
         )
-
     except KeyError:
         pass

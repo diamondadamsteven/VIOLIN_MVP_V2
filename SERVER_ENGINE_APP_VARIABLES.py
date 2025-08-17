@@ -94,6 +94,7 @@ class RECORDING_AUDIO_CHUNK_DICT(TypedDict):
 
     DT_START_P_ENGINE_ALL_MASTER: NotRequired[Optional[datetime.datetime]]
     P_ENGINE_ALL_MASTER_DURATION_IN_MS: NotRequired[Optional[int]]
+    DT_ADDED: NotRequired[Optional[datetime.datetime]]
 
     # TOTAL_PROCESSING_DURATION_IN_MS: NotRequired[Optional[int]]
 
