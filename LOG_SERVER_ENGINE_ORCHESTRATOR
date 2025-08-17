@@ -1,0 +1,7 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\diamo\\VIOLIN_MVP']
+INFO:     Uvicorn running on http://0.0.0.0:7070 (Press CTRL+C to quit)
+INFO:     Started reloader process [47056] using WatchFiles
+INFO:     Started server process [28320]
+INFO:     Waiting for application startup.
+STARTUP - Registered routes [{'type': 'Route', 'path': '/openapi.json', 'methods': ['GET', 'HEAD']}, {'type': 'Route', 'path': '/docs', 'methods': ['GET', 'HEAD']}, {'type': 'Route', 'path': '/docs/oauth2-redirect', 'methods': ['GET', 'HEAD']}, {'type': 'Route', 'path': '/redoc', 'methods': ['GET', 'HEAD']}, {'type': 'APIRoute', 'path': '/health', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/routes', 'methods': ['GET']}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/echo', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream_raw', 'methods': []}]
+INFO:     Application startup complete.

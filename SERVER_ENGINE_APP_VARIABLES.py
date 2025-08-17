@@ -7,6 +7,11 @@ except ImportError:  # pragma: no cover
     from typing_extensions import TypedDict, Required, NotRequired
 
 import datetime  # for datetime.datetime
+import os
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+
+WEBSOCKET_LISTENER = FastAPI(title="VIOLIN_MVP Audio Stream WS Listener", version="1.4.0")
 
 # Paths
 PROJECT_ROOT_DIR = Path(__file__).resolve().parent
@@ -16,6 +21,12 @@ TEMP_RECORDING_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 RECORDING_AUDIO_DIR = PROJECT_ROOT_DIR / "RECORDING_AUDIO"
 RECORDING_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+
+OAF_IMAGE = os.getenv("OAF_IMAGE", "violin/oaf:latest")
+OAF_CONTAINER = os.getenv("OAF_CONTAINER", "violin_oaf_server")
+# Host exposes microservice at 127.0.0.1:OAF_PORT -> container:9077
+OAF_PORT = int(os.getenv("OAF_PORT", "9077"))
+
 
 # ─────────────────────────────────────────────────────────────
 # TypedDicts

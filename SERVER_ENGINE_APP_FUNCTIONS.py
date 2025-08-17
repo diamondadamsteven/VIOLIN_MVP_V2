@@ -1,15 +1,7 @@
 # SERVER_ENGINE_APP_FUNCTIONS.py
+from __future__ import annotations
+
 from typing import Any, Dict, Iterable, List, Optional
-
-import pyodbc  # type: ignore
-
-from SERVER_ENGINE_APP_VARIABLES import (
-    RECORDING_AUDIO_FRAME_ARRAY,
-    RECORDING_AUDIO_CHUNK_ARRAY,
-    RECORDING_CONFIG_ARRAY,
-    RECORDING_WEBSOCKET_CONNECTION_ARRAY,
-    RECORDING_WEBSOCKET_MESSAGE_ARRAY,
-)
 
 import functools
 import inspect
@@ -19,61 +11,123 @@ from pathlib import Path
 from datetime import datetime
 import threading
 import asyncio
+import os
+import json as _json
+
+import pyodbc  # type: ignore
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
-
-DB_ENGINE = create_engine(
-    "mssql+pyodbc://violin:Test123!@104.40.11.248:3341/VIOLIN?driver=ODBC+Driver+17+for+SQL+Server",
-    fast_executemany=True,   # enables pyodbc bulk optimization
-    future=True,
-    pool_pre_ping=True,      # keeps pooled conns fresh
-    pool_recycle=1800,       # recycle every 30 min (optional)
+from SERVER_ENGINE_APP_VARIABLES import (
+    RECORDING_AUDIO_FRAME_ARRAY,
+    RECORDING_AUDIO_CHUNK_ARRAY,
+    RECORDING_CONFIG_ARRAY,
+    RECORDING_WEBSOCKET_CONNECTION_ARRAY,
+    RECORDING_WEBSOCKET_MESSAGE_ARRAY,
 )
+
+# -----------------------------------------------------------------------------
+# Async utils: loop-safe scheduler usable from threads or loop
+# -----------------------------------------------------------------------------
+# uvicorn reload can reimport modules; keep a single shared slot
+try:
+    _MAIN_LOOP  # type: ignore[name-defined]
+except NameError:
+    _MAIN_LOOP: Optional[asyncio.AbstractEventLoop] = None  # set on startup
+
+def ASYNC_SET_MAIN_LOOP(loop: asyncio.AbstractEventLoop) -> None:
+    """
+    Capture the process' main event loop exactly once at app startup.
+    Call from FastAPI's @APP.on_event("startup").
+    """
+    global _MAIN_LOOP
+    _MAIN_LOOP = loop
+
+def schedule_coro(coro: "asyncio.coroutines") -> "asyncio.Task | asyncio.Future":
+    """
+    Schedule a coroutine regardless of caller context:
+      • If we're already on an event loop → create_task(coro)
+      • If we're in a worker thread      → run_coroutine_threadsafe(coro, _MAIN_LOOP)
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        return loop.create_task(coro)
+    except RuntimeError:
+        if _MAIN_LOOP is None:
+            raise RuntimeError(
+                "MAIN event loop not set. Call ASYNC_SET_MAIN_LOOP(asyncio.get_running_loop()) at startup."
+            )
+        return asyncio.run_coroutine_threadsafe(coro, _MAIN_LOOP)
 
 LOGGER = logging.getLogger("app")
 
-# ─────────────────────────────────────────────────────────────
-# Fast path: lightweight per-event insert into ENGINE_DB_LOG_FUNCTIONS
-# ─────────────────────────────────────────────────────────────
-__LOG_CONN = None
-__LOG_CURSOR = None
-__LOG_LOCK = threading.Lock()
+# -----------------------------------------------------------------------------
+# Engine creation / pooling (lazy + startup/shutdown helpers)
+# -----------------------------------------------------------------------------
+DB_URL = os.getenv(
+    "VIOLIN_DB_URL",
+    "mssql+pyodbc://violin:Test123!@104.40.11.248:3341/VIOLIN?driver=ODBC+Driver+17+for+SQL+Server",
+)
 
-_LOG_INSERT_SQL = """
+_DB_ENGINE: Optional[Engine] = None  # set via get_engine()
+
+def _create_engine() -> Engine:
+    """
+    Create the pooled SQLAlchemy Engine.
+    """
+    return create_engine(
+        DB_URL,
+        future=True,
+        pool_pre_ping=True,   # refresh stale conns automatically
+        pool_recycle=1800,    # recycle every 30 minutes
+        fast_executemany=True # speed up pyodbc executemany
+    )
+
+def get_engine() -> Engine:
+    """Return the global Engine, creating it on first use."""
+    global _DB_ENGINE
+    if _DB_ENGINE is None:
+        _DB_ENGINE = _create_engine()
+    return _DB_ENGINE
+
+def DB_ENGINE_STARTUP(warm_pool: bool = True) -> None:
+    """
+    Call once at FastAPI startup. Lazily creates the engine and (optionally)
+    warms the pool with a trivial query so first real insert is fast.
+    """
+    eng = get_engine()
+    if warm_pool:
+        try:
+            with eng.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        except Exception as e:
+            LOGGER.exception("DB_ENGINE_STARTUP warm_pool failed: %s", e)
+
+def DB_ENGINE_SHUTDOWN() -> None:
+    """Optional: dispose the engine at application shutdown."""
+    global _DB_ENGINE
+    if _DB_ENGINE is not None:
+        try:
+            _DB_ENGINE.dispose()
+        except Exception:
+            pass
+        _DB_ENGINE = None
+
+# -----------------------------------------------------------------------------
+# Fast path: lightweight per-event insert into ENGINE_DB_LOG_FUNCTIONS
+# -----------------------------------------------------------------------------
+_LOG_INSERT_SQL_TEXT = text("""
 INSERT INTO ENGINE_DB_LOG_FUNCTIONS
-(DT_ADDED, PYTHON_FUNCTION_NAME, PYTHON_FILE_NAME, RECORDING_ID, AUDIO_CHUNK_NO, FRAME_NO, START_STOP_OR_ERROR_MSG)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-"""
+(DT_ADDED, PYTHON_FUNCTION_NAME, PYTHON_FILE_NAME,
+ RECORDING_ID, AUDIO_CHUNK_NO, FRAME_NO, START_STOP_OR_ERROR_MSG)
+VALUES (:DT_ADDED, :PYTHON_FUNCTION_NAME, :PYTHON_FILE_NAME,
+        :RECORDING_ID, :AUDIO_CHUNK_NO, :FRAME_NO, :START_STOP_OR_ERROR_MSG)
+""")
 
 def _truncate(s: Optional[str], max_len: int) -> Optional[str]:
     if s is None:
         return None
     return s if len(s) <= max_len else s[: max_len - 1] + "…"
-
-def _ensure_log_cursor():
-    """
-    Reuse a module-level connection/cursor for speed. Falls back to None on failure.
-    Uses DB_CONNECT() defined later in this file (safe at call time).
-    """
-    global __LOG_CONN, __LOG_CURSOR
-    with __LOG_LOCK:
-        try:
-            if __LOG_CONN is None or __LOG_CURSOR is None:
-                __LOG_CONN = DB_CONNECT()
-                __LOG_CURSOR = __LOG_CONN.cursor()
-            else:
-                # Ping the cursor/connection; if broken, recreate
-                try:
-                    __LOG_CURSOR.execute("SELECT 1")
-                except Exception:
-                    __LOG_CONN.close()
-                    __LOG_CONN = DB_CONNECT()
-                    __LOG_CURSOR = __LOG_CONN.cursor()
-        except Exception as e:
-            LOGGER.exception("DB_LOG_FUNCTIONS: failed to open/reopen SQL connection: %s", e)
-            __LOG_CONN = None
-            __LOG_CURSOR = None
-    return __LOG_CURSOR
 
 def _db_log_event(function_name: str,
                   file_name: str,
@@ -82,52 +136,49 @@ def _db_log_event(function_name: str,
                   audio_chunk_no=None,
                   frame_no=None) -> None:
     """
-    Single-row insert into ENGINE_DB_LOG_FUNCTIONS. Uses local machine time.
-    Never raises to caller; logs failures to LOGGER.
+    Single-row insert into ENGINE_DB_LOG_FUNCTIONS via SQLAlchemy.
+    Uses local machine time. Never raises to caller.
     """
-    cur = _ensure_log_cursor()
-    dt_added = datetime.now()  # local machine time (per requirements)
+    dt_added = datetime.now()
     fn_100 = _truncate(function_name, 100)
     file_100 = _truncate(file_name, 100)
 
     try:
-        if cur is not None:
-            cur.execute(
-                _LOG_INSERT_SQL,
-                dt_added,
-                fn_100,
-                file_100,
-                recording_id,
-                audio_chunk_no,
-                frame_no,
-                message,
-            )
-        else:
-            LOGGER.warning(
-                "DB_LOG_FUNCTIONS: no DB cursor; would insert: %s | %s | %s | rid=%s | chunk=%s | frame=%s",
-                fn_100, file_100, message, recording_id, audio_chunk_no, frame_no
+        with get_engine().begin() as CONN:
+            CONN.execute(
+                _LOG_INSERT_SQL_TEXT,
+                {
+                    "DT_ADDED": dt_added,
+                    "PYTHON_FUNCTION_NAME": fn_100,
+                    "PYTHON_FILE_NAME": file_100,
+                    "RECORDING_ID": recording_id,
+                    "AUDIO_CHUNK_NO": audio_chunk_no,
+                    "FRAME_NO": frame_no,
+                    "START_STOP_OR_ERROR_MSG": message,
+                },
             )
     except Exception as e:
-        LOGGER.exception("DB_LOG_FUNCTIONS: insert failed: %s", e)
+        LOGGER.exception(
+            "DB_LOG_FUNCTIONS insert failed: %s | fn=%s | file=%s | rid=%s | chunk=%s | frame=%s",
+            e, fn_100, file_100, recording_id, audio_chunk_no, frame_no
+        )
 
-# --- WS-safe logging decorator ---
+# -----------------------------------------------------------------------------
+# WS-safe logging decorator
+# -----------------------------------------------------------------------------
 try:
     from fastapi import WebSocket as _FastAPIWebSocket  # type: ignore
-except Exception:  # if FastAPI isn't imported here yet
+except Exception:
     _FastAPIWebSocket = None  # type: ignore
 
 def DB_LOG_FUNCTIONS(level=logging.INFO, *, defer_ws_db_io: bool = True):
     """
     WS-safe logging decorator:
-      • Logs Start/End/Error to Python logger immediately.
-      • For WebSocket handlers, DB inserts are deferred & offloaded to a thread
-        so the handshake can reach `await ws.accept()` without blocking.
-      • Never serializes WebSocket objects. Never swallows exceptions.
 
-    Args:
-      level: Python log level for Start/End.
-      defer_ws_db_io: If True (default), DB inserts for WS routes are scheduled
-        with `asyncio.create_task(asyncio.to_thread(...))` to avoid blocking.
+      • Logs Start/End/Error to Python logger immediately.
+      • For WebSocket handlers, DB inserts can be deferred/offloaded so
+        the handshake can reach `await ws.accept()` without blocking.
+      • NEVER raises out of the decorator (errors are swallowed/logged).
     """
     def decorate(func):
         is_coro = inspect.iscoroutinefunction(func)
@@ -142,13 +193,13 @@ def DB_LOG_FUNCTIONS(level=logging.INFO, *, defer_ws_db_io: bool = True):
             return kwargs.get("RECORDING_ID"), kwargs.get("AUDIO_CHUNK_NO"), kwargs.get("FRAME_NO")
 
         def _log_python(kind: str, msg: str):
-            if kind == "Error":
-                LOGGER.exception("[%s | %s] %s", func_id, file_name, msg)
-            else:
-                try:
+            try:
+                if kind == "Error":
+                    LOGGER.exception("[%s | %s] %s", func_id, file_name, msg)
+                else:
                     LOGGER.log(level, "[%s | %s] %s", func_id, file_name, msg, stacklevel=3)
-                except TypeError:
-                    LOGGER.log(level, "[%s | %s] %s", func_id, file_name, msg)
+            except Exception:
+                pass
 
         def _compose_msg(kind: str, extra_msg: str = None, elapsed: float = None) -> str:
             base = "Start" if kind == "Start" else ("End" if kind == "End" else "Error")
@@ -161,7 +212,6 @@ def DB_LOG_FUNCTIONS(level=logging.INFO, *, defer_ws_db_io: bool = True):
                 base = f"{base}: {extra}"
             return base
 
-        # Synchronous DB log call
         def _db_insert(kind: str, kwargs: dict, msg: str):
             rid, chk, frm = _extract_ctx(kwargs)
             _db_log_event(function_name=func_id,
@@ -171,19 +221,31 @@ def DB_LOG_FUNCTIONS(level=logging.INFO, *, defer_ws_db_io: bool = True):
                           audio_chunk_no=chk,
                           frame_no=frm)
 
-        # Async helper that defers DB I/O (for WS)
-        async def _db_insert_async(kind: str, kwargs: dict, msg: str):
-            await asyncio.to_thread(_db_insert, kind, kwargs, msg)
+        def _schedule_db(kind: str, kwargs: dict, msg: str, prefer_async: bool):
+            try:
+                if prefer_async:
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(asyncio.to_thread(_db_insert, kind, kwargs, msg))
+                        return
+                    except RuntimeError:
+                        pass
+                threading.Thread(target=_db_insert, args=(kind, kwargs, msg), daemon=True).start()
+            except Exception:
+                pass
 
         def _is_ws_call(args, kwargs) -> bool:
             if _FastAPIWebSocket is None:
                 return False
-            for a in args:
-                if isinstance(a, _FastAPIWebSocket):
-                    return True
-            for v in (kwargs or {}).values():
-                if isinstance(v, _FastAPIWebSocket):
-                    return True
+            try:
+                for a in args:
+                    if isinstance(a, _FastAPIWebSocket):
+                        return True
+                for v in (kwargs or {}).values():
+                    if isinstance(v, _FastAPIWebSocket):
+                        return True
+            except Exception:
+                pass
             return False
 
         @functools.wraps(func)
@@ -195,7 +257,7 @@ def DB_LOG_FUNCTIONS(level=logging.INFO, *, defer_ws_db_io: bool = True):
             _log_python("Start", start_msg)
             try:
                 if ws_mode and defer_ws_db_io:
-                    asyncio.create_task(_db_insert_async("Start", kwargs, start_msg))
+                    _schedule_db("Start", kwargs, start_msg, prefer_async=True)
                 else:
                     _db_insert("Start", kwargs, start_msg)
 
@@ -204,7 +266,7 @@ def DB_LOG_FUNCTIONS(level=logging.INFO, *, defer_ws_db_io: bool = True):
                 end_msg = _compose_msg("End", elapsed=time.perf_counter() - t0)
                 _log_python("End", end_msg)
                 if ws_mode and defer_ws_db_io:
-                    asyncio.create_task(_db_insert_async("End", kwargs, end_msg))
+                    _schedule_db("End", kwargs, end_msg, prefer_async=True)
                 else:
                     _db_insert("End", kwargs, end_msg)
                 return result
@@ -212,7 +274,7 @@ def DB_LOG_FUNCTIONS(level=logging.INFO, *, defer_ws_db_io: bool = True):
                 err_msg = _compose_msg("Error", extra_msg=f"{e.__class__.__name__}: {e}")
                 _log_python("Error", err_msg)
                 if ws_mode and defer_ws_db_io:
-                    asyncio.create_task(_db_insert_async("Error", kwargs, err_msg))
+                    _schedule_db("Error", kwargs, err_msg, prefer_async=True)
                 else:
                     _db_insert("Error", kwargs, err_msg)
                 raise
@@ -226,7 +288,7 @@ def DB_LOG_FUNCTIONS(level=logging.INFO, *, defer_ws_db_io: bool = True):
             _log_python("Start", start_msg)
             try:
                 if ws_mode and defer_ws_db_io:
-                    asyncio.create_task(_db_insert_async("Start", kwargs, start_msg))
+                    _schedule_db("Start", kwargs, start_msg, prefer_async=False)
                 else:
                     _db_insert("Start", kwargs, start_msg)
 
@@ -235,7 +297,7 @@ def DB_LOG_FUNCTIONS(level=logging.INFO, *, defer_ws_db_io: bool = True):
                 end_msg = _compose_msg("End", elapsed=time.perf_counter() - t0)
                 _log_python("End", end_msg)
                 if ws_mode and defer_ws_db_io:
-                    asyncio.create_task(_db_insert_async("End", kwargs, end_msg))
+                    _schedule_db("End", kwargs, end_msg, prefer_async=False)
                 else:
                     _db_insert("End", kwargs, end_msg)
                 return result
@@ -243,7 +305,7 @@ def DB_LOG_FUNCTIONS(level=logging.INFO, *, defer_ws_db_io: bool = True):
                 err_msg = _compose_msg("Error", extra_msg=f"{e.__class__.__name__}: {e}")
                 _log_python("Error", err_msg)
                 if ws_mode and defer_ws_db_io:
-                    asyncio.create_task(_db_insert_async("Error", kwargs, err_msg))
+                    _schedule_db("Error", kwargs, err_msg, prefer_async=False)
                 else:
                     _db_insert("Error", kwargs, err_msg)
                 raise
@@ -251,11 +313,11 @@ def DB_LOG_FUNCTIONS(level=logging.INFO, *, defer_ws_db_io: bool = True):
         return aw if is_coro else sw
     return decorate
 
-# ─────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Logging (ASCII-safe)
-# ─────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 def CONSOLE_LOG(prefix: str, msg: str, obj: Any = None) -> None:
-    """Prints a single-line log safely even if there are odd characters."""
+    """Print a single-line log safely even if there are odd characters."""
     try:
         if obj is None:
             print(f"{prefix} - {msg}", flush=True)
@@ -268,16 +330,22 @@ def CONSOLE_LOG(prefix: str, msg: str, obj: Any = None) -> None:
         except Exception:
             print(f"{prefix} - {msg}", flush=True)
 
+# -----------------------------------------------------------------------------
+# pyodbc helpers — now reusing the pool via raw_connection()
+# -----------------------------------------------------------------------------
 def DB_CONNECT():
-    CONNECTION_STRING = (
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=104.40.11.248,3341;"
-        "DATABASE=VIOLIN;"
-        "UID=violin;"
-        "PWD=Test123!"
-    )
-    return pyodbc.connect(CONNECTION_STRING, autocommit=True)
-
+    """
+    Return a DBAPI (pyodbc) connection from the pooled Engine.
+    NOTE: You are responsible for closing it (conn.close()).
+    """
+    conn = get_engine().raw_connection()
+    # Try to mimic old autocommit=True default where appropriate
+    try:
+        # pyodbc connection sometimes exposes this flag
+        conn.autocommit = True  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    return conn
 
 def DB_BULK_INSERT(conn, sql: str, rows: Iterable[tuple]) -> None:
     batch = list(rows)
@@ -286,6 +354,11 @@ def DB_BULK_INSERT(conn, sql: str, rows: Iterable[tuple]) -> None:
     cur = conn.cursor()
     cur.fast_executemany = True
     cur.executemany(sql, batch)
+    # Ensure commit when using raw_connection()
+    try:
+        conn.commit()
+    except Exception:
+        pass
 
 def _exec_sp_and_position_cursor(cur, sp_name: str, **params) -> bool:
     keys = list(params.keys())
@@ -331,11 +404,20 @@ def DB_EXEC_SP_NO_RESULT(conn, sp_name: str, **params) -> Optional[int]:
                 break
     except Exception:
         pass
+    # Commit in case the SP performs writes
+    try:
+        conn.commit()
+    except Exception:
+        pass
     return total if total > 0 else None
+
+# -----------------------------------------------------------------------------
+# Existing logs that use SQLAlchemy with named params (via get_engine())
+# -----------------------------------------------------------------------------
 
 # 1) FRAME
 def DB_LOG_ENGINE_DB_AUDIO_FRAME(RECORDING_ID: int, FRAME_NO: int) -> None:
-    with DB_ENGINE.begin() as CONN:
+    with get_engine().begin() as CONN:
         CONN.execute(
             text("""
                 INSERT INTO ENGINE_DB_LOG_AUDIO_FRAME
@@ -353,7 +435,7 @@ def DB_LOG_ENGINE_DB_AUDIO_FRAME(RECORDING_ID: int, FRAME_NO: int) -> None:
 # 2) AUDIO CHUNK
 def DB_LOG_ENGINE_DB_RECORDING_AUDIO_CHUNK(RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> None:
     ch = RECORDING_AUDIO_CHUNK_ARRAY[RECORDING_ID][AUDIO_CHUNK_NO]
-    with DB_ENGINE.begin() as CONN:
+    with get_engine().begin() as CONN:
         CONN.execute(
             text("""
                 INSERT INTO ENGINE_DB_LOG_RECORDING_AUDIO_CHUNK (
@@ -396,52 +478,52 @@ def DB_LOG_ENGINE_DB_RECORDING_AUDIO_CHUNK(RECORDING_ID: int, AUDIO_CHUNK_NO: in
             {
                 "RECORDING_ID": RECORDING_ID,
                 "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-                "AUDIO_CHUNK_DURATION_IN_MS": ch["AUDIO_CHUNK_DURATION_IN_MS"],
-                "START_MS": ch["START_MS"],
-                "END_MS": ch["END_MS"],
-                "MIN_AUDIO_STREAM_FRAME_NO": ch["MIN_AUDIO_STREAM_FRAME_NO"],
-                "MAX_AUDIO_STREAM_FRAME_NO": ch["MAX_AUDIO_STREAM_FRAME_NO"],
-                "YN_RUN_FFT": ch["YN_RUN_FFT"],
-                "YN_RUN_ONS": ch["YN_RUN_ONS"],
-                "YN_RUN_PYIN": ch["YN_RUN_PYIN"],
-                "YN_RUN_CREPE": ch["YN_RUN_CREPE"],
-                "DT_COMPLETE_FRAMES_RECEIVED": ch["DT_COMPLETE_FRAMES_RECEIVED"],
-                "DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK": ch["DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK"],
-                "DT_COMPLETE_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK": ch["DT_COMPLETE_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK"],
-                "DT_AUDIO_CHUNK_CONVERTED_TO_WAV": ch["DT_AUDIO_CHUNK_CONVERTED_TO_WAV"],
-                "DT_AUDIO_CHUNK_WAV_SAVED_TO_FILE": ch["DT_AUDIO_CHUNK_WAV_SAVED_TO_FILE"],
-                "DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_16K": ch["DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_16K"],
-                "DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_22050": ch["DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_22050"],
-                "DT_AUDIO_CHUNK_PREPARATION_COMPLETE": ch["DT_AUDIO_CHUNK_PREPARATION_COMPLETE"],
-                "DT_START_AUDIO_CHUNK_PROCESS": ch["DT_START_AUDIO_CHUNK_PROCESS"],
-                "DT_END_AUDIO_CHUNK_PROCESS": ch["DT_END_AUDIO_CHUNK_PROCESS"],
-                "DT_START_FFT": ch["DT_START_FFT"],
-                "FFT_DURATION_IN_MS": ch["FFT_DURATION_IN_MS"],
-                "FFT_RECORD_CNT": ch["FFT_RECORD_CNT"],
-                "DT_START_ONS": ch["DT_START_ONS"],
-                "ONS_DURATION_IN_MS": ch["ONS_DURATION_IN_MS"],
-                "ONS_RECORD_CNT": ch["ONS_RECORD_CNT"],
-                "DT_START_PYIN": ch["DT_START_PYIN"],
-                "PYIN_DURATION_IN_MS": ch["PYIN_DURATION_IN_MS"],
-                "PYIN_RECORD_CNT": ch["PYIN_RECORD_CNT"],
-                "DT_START_CREPE": ch["DT_START_CREPE"],
-                "CREPE_DURATION_IN_MS": ch["CREPE_DURATION_IN_MS"],
-                "CREPE_RECORD_CNT": ch["CREPE_RECORD_CNT"],
-                "DT_START_VOLUME": ch["DT_START_VOLUME"],
-                "VOLUME_10_MS_DURATION_IN_MS": ch["VOLUME_10_MS_DURATION_IN_MS"],
-                "VOLUME_1_MS_DURATION_IN_MS": ch["VOLUME_1_MS_DURATION_IN_MS"],
-                "VOLUME_10_MS_RECORD_CNT": ch["VOLUME_10_MS_RECORD_CNT"],
-                "VOLUME_1_MS_RECORD_CNT": ch["VOLUME_1_MS_RECORD_CNT"],
-                "DT_START_P_ENGINE_ALL_MASTER": ch["DT_START_P_ENGINE_ALL_MASTER"],
-                "P_ENGINE_ALL_MASTER_DURATION_IN_MS": ch["P_ENGINE_ALL_MASTER_DURATION_IN_MS"],
-                "DT_ADDED": datetime.now()
+                "AUDIO_CHUNK_DURATION_IN_MS": ch.get("AUDIO_CHUNK_DURATION_IN_MS"),
+                "START_MS": ch.get("START_MS"),
+                "END_MS": ch.get("END_MS"),
+                "MIN_AUDIO_STREAM_FRAME_NO": ch.get("MIN_AUDIO_STREAM_FRAME_NO"),
+                "MAX_AUDIO_STREAM_FRAME_NO": ch.get("MAX_AUDIO_STREAM_FRAME_NO"),
+                "YN_RUN_FFT":   ch.get("YN_RUN_FFT", "N"),
+                "YN_RUN_ONS":   ch.get("YN_RUN_ONS", "N"),   # defaulted to avoid KeyError
+                "YN_RUN_PYIN":  ch.get("YN_RUN_PYIN", "N"),
+                "YN_RUN_CREPE": ch.get("YN_RUN_CREPE", "N"),
+                "DT_COMPLETE_FRAMES_RECEIVED":                 ch.get("DT_COMPLETE_FRAMES_RECEIVED"),
+                "DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK": ch.get("DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK"),
+                "DT_COMPLETE_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK": ch.get("DT_COMPLETE_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK"),
+                "DT_AUDIO_CHUNK_CONVERTED_TO_WAV":             ch.get("DT_AUDIO_CHUNK_CONVERTED_TO_WAV"),
+                "DT_AUDIO_CHUNK_WAV_SAVED_TO_FILE":            ch.get("DT_AUDIO_CHUNK_WAV_SAVED_TO_FILE"),
+                "DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_16K": ch.get("DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_16K"),
+                "DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_22050": ch.get("DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_22050"),
+                "DT_AUDIO_CHUNK_PREPARATION_COMPLETE":         ch.get("DT_AUDIO_CHUNK_PREPARATION_COMPLETE"),
+                "DT_START_AUDIO_CHUNK_PROCESS":                ch.get("DT_START_AUDIO_CHUNK_PROCESS"),
+                "DT_END_AUDIO_CHUNK_PROCESS":                  ch.get("DT_END_AUDIO_CHUNK_PROCESS"),
+                "DT_START_FFT":                                 ch.get("DT_START_FFT"),
+                "FFT_DURATION_IN_MS":                           ch.get("FFT_DURATION_IN_MS"),
+                "FFT_RECORD_CNT":                               ch.get("FFT_RECORD_CNT"),
+                "DT_START_ONS":                                 ch.get("DT_START_ONS"),
+                "ONS_DURATION_IN_MS":                           ch.get("ONS_DURATION_IN_MS"),
+                "ONS_RECORD_CNT":                               ch.get("ONS_RECORD_CNT"),
+                "DT_START_PYIN":                                ch.get("DT_START_PYIN"),
+                "PYIN_DURATION_IN_MS":                          ch.get("PYIN_DURATION_IN_MS"),
+                "PYIN_RECORD_CNT":                              ch.get("PYIN_RECORD_CNT"),
+                "DT_START_CREPE":                               ch.get("DT_START_CREPE"),
+                "CREPE_DURATION_IN_MS":                         ch.get("CREPE_DURATION_IN_MS"),
+                "CREPE_RECORD_CNT":                             ch.get("CREPE_RECORD_CNT"),
+                "DT_START_VOLUME":                              ch.get("DT_START_VOLUME"),
+                "VOLUME_10_MS_DURATION_IN_MS":                  ch.get("VOLUME_10_MS_DURATION_IN_MS"),
+                "VOLUME_1_MS_DURATION_IN_MS":                   ch.get("VOLUME_1_MS_DURATION_IN_MS"),
+                "VOLUME_10_MS_RECORD_CNT":                      ch.get("VOLUME_10_MS_RECORD_CNT"),
+                "VOLUME_1_MS_RECORD_CNT":                       ch.get("VOLUME_1_MS_RECORD_CNT"),
+                "DT_START_P_ENGINE_ALL_MASTER":                 ch.get("DT_START_P_ENGINE_ALL_MASTER"),
+                "P_ENGINE_ALL_MASTER_DURATION_IN_MS":           ch.get("P_ENGINE_ALL_MASTER_DURATION_IN_MS"),
+                "DT_ADDED": datetime.now(),
             },
         )
 
 # 3) RECORDING CONFIG
 def DB_LOG_ENGINE_DB_RECORDING_CONFIG(RECORDING_ID: int) -> None:
     cfg = RECORDING_CONFIG_ARRAY[RECORDING_ID]
-    with DB_ENGINE.begin() as CONN:
+    with get_engine().begin() as CONN:
         CONN.execute(
             text("""
                 INSERT INTO ENGINE_DB_LOG_RECORDING_CONFIG (
@@ -459,63 +541,163 @@ def DB_LOG_ENGINE_DB_RECORDING_CONFIG(RECORDING_ID: int) -> None:
             """),
             {
                 "RECORDING_ID": RECORDING_ID,
-                "DT_RECORDING_START": cfg["DT_RECORDING_START"],
-                "VIOLINIST_ID": cfg["VIOLINIST_ID"],
-                "COMPOSE_PLAY_OR_PRACTICE": cfg["COMPOSE_PLAY_OR_PRACTICE"],
-                "AUDIO_STREAM_FILE_NAME": cfg["AUDIO_STREAM_FILE_NAME"],
-                "AUDIO_STREAM_FRAME_SIZE_IN_MS": cfg["AUDIO_STREAM_FRAME_SIZE_IN_MS"],
-                "AUDIO_CHUNK_DURATION_IN_MS": cfg["AUDIO_CHUNK_DURATION_IN_MS"],
-                "CNT_FRAMES_PER_AUDIO_CHUNK": cfg["CNT_FRAMES_PER_AUDIO_CHUNK"],
-                "YN_RUN_FFT": cfg["YN_RUN_FFT"],
+                "DT_RECORDING_START": cfg.get("DT_RECORDING_START"),
+                "VIOLINIST_ID": cfg.get("VIOLINIST_ID"),
+                "COMPOSE_PLAY_OR_PRACTICE": cfg.get("COMPOSE_PLAY_OR_PRACTICE"),
+                "AUDIO_STREAM_FILE_NAME": cfg.get("AUDIO_STREAM_FILE_NAME"),
+                "AUDIO_STREAM_FRAME_SIZE_IN_MS": cfg.get("AUDIO_STREAM_FRAME_SIZE_IN_MS"),
+                "AUDIO_CHUNK_DURATION_IN_MS": cfg.get("AUDIO_CHUNK_DURATION_IN_MS"),
+                "CNT_FRAMES_PER_AUDIO_CHUNK": cfg.get("CNT_FRAMES_PER_AUDIO_CHUNK"),
+                "YN_RUN_FFT": cfg.get("YN_RUN_FFT", "N"),
                 "DT_ADDED": datetime.now(),
-                "WEBSOCKET_CONNECTION_ID": cfg["WEBSOCKET_CONNECTION_ID"],
+                "WEBSOCKET_CONNECTION_ID": cfg.get("WEBSOCKET_CONNECTION_ID"),
             },
         )
 
 # 4) WEBSOCKET CONNECTION
+MAX_VARCHAR_SAFE = 4000  # conservative cap if target column isn't MAX
+
+def _truncate_text(val: Optional[str], n: int = MAX_VARCHAR_SAFE) -> Optional[str]:
+    if val is None:
+        return None
+    return val if len(val) <= n else val[: n - 1] + "…"
+
 def DB_LOG_ENGINE_DB_WEBSOCKET_CONNECTION(WEBSOCKET_CONNECTION_ID: int) -> None:
     row = RECORDING_WEBSOCKET_CONNECTION_ARRAY[WEBSOCKET_CONNECTION_ID]
-    with DB_ENGINE.begin() as CONN:
-        CONN.execute(
-            text("""
-                INSERT INTO ENGINE_DB_LOG_WEBSOCKET_CONNECTION (
-                    WEBSOCKET_CONNECTION_ID, CLIENT_HOST_IP_ADDRESS, CLIENT_PORT, CLIENT_HEADERS,
-                    DT_CONNECTION_REQUEST, DT_CONNECTION_ACCEPTED, DT_CONNECTION_CLOSED
-                )
-                VALUES (
-                    :WEBSOCKET_CONNECTION_ID, :CLIENT_HOST_IP_ADDRESS, :CLIENT_PORT, :CLIENT_HEADERS,
-                    :DT_CONNECTION_REQUEST, :DT_CONNECTION_ACCEPTED, :DT_CONNECTION_CLOSED
-                )
-            """),
-            {
-                "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,
-                "CLIENT_HOST_IP_ADDRESS": row["CLIENT_HOST_IP_ADDRESS"],
-                "CLIENT_PORT": row["CLIENT_PORT"],
-                "CLIENT_HEADERS": row["CLIENT_HEADERS"],
-                "DT_CONNECTION_REQUEST": row["DT_CONNECTION_REQUEST"],
-                "DT_CONNECTION_ACCEPTED": row["DT_CONNECTION_ACCEPTED"],
-                "DT_CONNECTION_CLOSED": row["DT_CONNECTION_CLOSED"],
-            },
-        )
 
-# 5) WEBSOCKET MESSAGE (by in-memory message id)
+    # Headers -> JSON string (ASCII-safe), then cap to avoid NVARCHAR length errors
+    client_headers = row.get("CLIENT_HEADERS")
+    try:
+        if isinstance(client_headers, (dict, list)):
+            client_headers = _json.dumps(client_headers, ensure_ascii=False, separators=(",", ":"))
+        elif client_headers is None:
+            client_headers = "{}"
+        else:
+            client_headers = str(client_headers)
+    except Exception as e:
+        LOGGER.exception("WS_CONN: headers serialization failed: %s", e)
+        client_headers = "{}"
+
+    client_headers = _truncate_text(client_headers, MAX_VARCHAR_SAFE)
+
+    try:
+        with get_engine().begin() as CONN:
+            CONN.execute(
+                text("""
+                    INSERT INTO ENGINE_DB_LOG_WEBSOCKET_CONNECTION (
+                        WEBSOCKET_CONNECTION_ID,
+                        CLIENT_HOST_IP_ADDRESS,
+                        CLIENT_PORT,
+                        CLIENT_HEADERS,
+                        DT_CONNECTION_REQUEST,
+                        DT_CONNECTION_ACCEPTED,
+                        DT_CONNECTION_CLOSED
+                    )
+                    VALUES (
+                        :WEBSOCKET_CONNECTION_ID,
+                        :CLIENT_HOST_IP_ADDRESS,
+                        :CLIENT_PORT,
+                        :CLIENT_HEADERS,
+                        :DT_CONNECTION_REQUEST,
+                        :DT_CONNECTION_ACCEPTED,
+                        :DT_CONNECTION_CLOSED
+                    )
+                """),
+                {
+                    "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,
+                    "CLIENT_HOST_IP_ADDRESS": row.get("CLIENT_HOST_IP_ADDRESS"),
+                    "CLIENT_PORT": row.get("CLIENT_PORT"),
+                    "CLIENT_HEADERS": client_headers,
+                    "DT_CONNECTION_REQUEST": row.get("DT_CONNECTION_REQUEST"),
+                    "DT_CONNECTION_ACCEPTED": row.get("DT_CONNECTION_ACCEPTED"),
+                    "DT_CONNECTION_CLOSED": row.get("DT_CONNECTION_CLOSED"),
+                },
+            )
+    except Exception as e:
+        LOGGER.exception("DB_LOG_WEBSOCKET_CONNECTION insert failed (id=%s): %s",
+                         WEBSOCKET_CONNECTION_ID, e)
+
 def DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE(MESSAGE_ID: int) -> None:
     msg = RECORDING_WEBSOCKET_MESSAGE_ARRAY[MESSAGE_ID]
-    with DB_ENGINE.begin() as CONN:
-        CONN.execute(
-            text("""
-                INSERT INTO ENGINE_DB_LOG_WEBSOCKET_MESSAGE (
-                    RECORDING_ID, MESSAGE_TYPE, AUDIO_FRAME_NO, DT_MESSAGE_RECEIVED, DT_MESSAGE_PROCESS_STARTED
-                )
-                VALUES (
-                    :RECORDING_ID, :MESSAGE_TYPE, :AUDIO_FRAME_NO, :DT_MESSAGE_RECEIVED, :DT_MESSAGE_PROCESS_STARTED
-                )
-            """),
-            {
-                "RECORDING_ID": msg["RECORDING_ID"],
-                "MESSAGE_TYPE": msg["MESSAGE_TYPE"],
-                "AUDIO_FRAME_NO": msg["AUDIO_FRAME_NO"],
-                "DT_MESSAGE_RECEIVED": msg["DT_MESSAGE_RECEIVED"],
-                "DT_MESSAGE_PROCESS_STARTED": msg["DT_MESSAGE_PROCESS_STARTED"],
-            },
+    try:
+        with get_engine().begin() as CONN:
+            CONN.execute(
+                text("""
+                    INSERT INTO ENGINE_DB_LOG_WEBSOCKET_MESSAGE (
+                        RECORDING_ID,
+                        MESSAGE_TYPE,
+                        AUDIO_FRAME_NO,
+                        DT_MESSAGE_RECEIVED,
+                        DT_MESSAGE_PROCESS_STARTED
+                    )
+                    VALUES (
+                        :RECORDING_ID,
+                        :MESSAGE_TYPE,
+                        :AUDIO_FRAME_NO,
+                        :DT_MESSAGE_RECEIVED,
+                        :DT_MESSAGE_PROCESS_STARTED
+                    )
+                """),
+                {
+                    "RECORDING_ID": msg.get("RECORDING_ID"),
+                    "MESSAGE_TYPE": msg.get("MESSAGE_TYPE"),
+                    "AUDIO_FRAME_NO": msg.get("AUDIO_FRAME_NO"),
+                    "DT_MESSAGE_RECEIVED": msg.get("DT_MESSAGE_RECEIVED"),
+                    "DT_MESSAGE_PROCESS_STARTED": msg.get("DT_MESSAGE_PROCESS_STARTED"),
+                },
+            )
+    except Exception as e:
+        LOGGER.exception("DB_LOG_WEBSOCKET_MESSAGE insert failed (mid=%s): %s",
+                         MESSAGE_ID, e)
+
+def DB_LOG_ENGINE_DB_LOG_STEPS(
+    STEP_NAME: str,
+    PYTHON_FUNCTION_NAME: str,
+    PYTHON_FILE_NAME: str,
+    RECORDING_ID: Optional[int] = None,
+    AUDIO_CHUNK_NO: Optional[int] = None,
+    FRAME_NO: Optional[int] = None,
+) -> None:
+    """
+    Insert a single step marker into ENGINE_DB_LOG_STEPS.
+    """
+    try:
+        with get_engine().begin() as CONN:
+            CONN.execute(
+                text("""
+                    INSERT INTO ENGINE_DB_LOG_STEPS (
+                        DT_ADDED,
+                        STEP_NAME,
+                        PYTHON_FUNCTION_NAME,
+                        PYTHON_FILE_NAME,
+                        RECORDING_ID,
+                        AUDIO_CHUNK_NO,
+                        FRAME_NO
+                    )
+                    VALUES (
+                        :DT_ADDED,
+                        :STEP_NAME,
+                        :PYTHON_FUNCTION_NAME,
+                        :PYTHON_FILE_NAME,
+                        :RECORDING_ID,
+                        :AUDIO_CHUNK_NO,
+                        :FRAME_NO
+                    )
+                """),
+                {
+                    "DT_ADDED": datetime.now(),
+                    "STEP_NAME": STEP_NAME,
+                    "PYTHON_FUNCTION_NAME": PYTHON_FUNCTION_NAME,
+                    "PYTHON_FILE_NAME": PYTHON_FILE_NAME,
+                    "RECORDING_ID": RECORDING_ID,
+                    "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
+                    "FRAME_NO": FRAME_NO,
+                },
+            )
+    except Exception as e:
+        LOGGER.exception(
+            "DB_LOG_ENGINE_DB_LOG_STEPS insert failed "
+            "(step=%s, fn=%s, file=%s, rid=%s, chunk=%s, frame=%s): %s",
+            STEP_NAME, PYTHON_FUNCTION_NAME, PYTHON_FILE_NAME,
+            RECORDING_ID, AUDIO_CHUNK_NO, FRAME_NO, e
         )

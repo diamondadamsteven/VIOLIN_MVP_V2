@@ -1,0 +1,6 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\diamo\\VIOLIN_MVP']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [56572] using WatchFiles
+INFO:     Started server process [53548]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

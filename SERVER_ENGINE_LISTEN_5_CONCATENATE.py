@@ -4,7 +4,6 @@ from datetime import datetime
 from io import BytesIO
 import wave
 import audioop
-import asyncio
 from typing import List
 
 from SERVER_ENGINE_APP_VARIABLES import (
@@ -12,9 +11,11 @@ from SERVER_ENGINE_APP_VARIABLES import (
     RECORDING_AUDIO_FRAME_ARRAY,
     RECORDING_AUDIO_CHUNK_ARRAY,
 )
+
 from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_LOG_FUNCTIONS,
     CONSOLE_LOG,
+    schedule_coro,   # ← loop-safe scheduler (now lives in APP_FUNCTIONS)
 )
 
 ORIG_SAMPLE_RATE = 44100   # assumption; adjust if your client sends a different rate
@@ -40,19 +41,21 @@ def _resample_pcm(pcm: bytes, from_rate: int, to_rate: int) -> bytes:
     converted, _ = audioop.ratecv(pcm, SAMPLE_WIDTH, CHANNELS, from_rate, to_rate, None)
     return converted
 
-@DB_LOG_FUNCTIONS()
 def SERVER_ENGINE_LISTEN_5_CONCATENATE() -> None:
     """
-    Step 1) For each chunk with DT_COMPLETE_FRAMES_RECEIVED set and DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK is null,
-            launch CONCATENATE_FRAMES_INTO_AN_AUDIO_CHUNK
+    Step 1) For each chunk with DT_COMPLETE_FRAMES_RECEIVED set and
+            DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK is null,
+            launch CONCATENATE_FRAMES_INTO_AN_AUDIO_CHUNK (asynchronously).
     """
     to_launch = []
     for rid, chunks in list(RECORDING_AUDIO_CHUNK_ARRAY.items()):
         for chno, ch in list(chunks.items()):
             if ch.get("DT_COMPLETE_FRAMES_RECEIVED") and ch.get("DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK") is None:
                 to_launch.append((rid, chno))
+
+    # Use loop-safe scheduler so this works whether we're on the main loop or a worker thread
     for rid, chno in to_launch:
-        asyncio.create_task(CONCATENATE_FRAMES_INTO_AN_AUDIO_CHUNK(RECORDING_ID=rid, AUDIO_CHUNK_NO=chno))
+        schedule_coro(CONCATENATE_FRAMES_INTO_AN_AUDIO_CHUNK(RECORDING_ID=rid, AUDIO_CHUNK_NO=chno))
 
 @DB_LOG_FUNCTIONS()
 async def CONCATENATE_FRAMES_INTO_AN_AUDIO_CHUNK(RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> None:

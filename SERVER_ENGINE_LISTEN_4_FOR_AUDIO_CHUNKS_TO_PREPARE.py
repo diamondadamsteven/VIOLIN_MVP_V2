@@ -1,4 +1,3 @@
-# SERVER_ENGINE_LISTEN_4_FOR_AUDIO_CHUNKS_TO_PREPARE.py
 from __future__ import annotations
 from datetime import datetime
 
@@ -9,9 +8,9 @@ from SERVER_ENGINE_APP_VARIABLES import (
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_LOG_FUNCTIONS,
+    DB_LOG_ENGINE_DB_RECORDING_AUDIO_CHUNK,
 )
 
-@DB_LOG_FUNCTIONS()
 def SERVER_ENGINE_LISTEN_4_FOR_AUDIO_CHUNKS_TO_PREPARE() -> None:
     """
     Step 1) If COMPOSE and there are no chunks with DT_COMPLETE_FRAMES_RECEIVED is null,
@@ -26,7 +25,6 @@ def SERVER_ENGINE_LISTEN_4_FOR_AUDIO_CHUNKS_TO_PREPARE() -> None:
         if mode != "COMPOSE":
             continue
 
-        # ensure dicts exist
         RECORDING_AUDIO_CHUNK_ARRAY.setdefault(rid, {})
 
         # Is there any chunk awaiting frames (DT_COMPLETE_FRAMES_RECEIVED is null)?
@@ -45,6 +43,7 @@ def SERVER_ENGINE_LISTEN_4_FOR_AUDIO_CHUNKS_TO_PREPARE() -> None:
             start_ms  = (current_no - 1) * dur_ms
             end_ms    = current_no * dur_ms - 1
 
+            # Seed chunk with defaults for all YN flags so DB logging won’t KeyError
             RECORDING_AUDIO_CHUNK_ARRAY[rid][current_no] = {
                 "RECORDING_ID": rid,
                 "AUDIO_CHUNK_NO": current_no,
@@ -53,10 +52,16 @@ def SERVER_ENGINE_LISTEN_4_FOR_AUDIO_CHUNKS_TO_PREPARE() -> None:
                 "END_MS": end_ms,
                 "MIN_AUDIO_STREAM_FRAME_NO": min_frame,
                 "MAX_AUDIO_STREAM_FRAME_NO": max_frame,
-                "YN_RUN_FFT": cfg.get("YN_RUN_FFT"),
+                "YN_RUN_FFT":   cfg.get("YN_RUN_FFT", "N"),
+                "YN_RUN_ONS":   cfg.get("YN_RUN_ONS", "N"),
+                "YN_RUN_PYIN":  cfg.get("YN_RUN_PYIN", "N"),
+                "YN_RUN_CREPE": cfg.get("YN_RUN_CREPE", "N"),
             }
             cfg["COMPOSE_CURRENT_AUDIO_CHUNK_NO"] = current_no + 1
             RECORDING_CONFIG_ARRAY[rid] = cfg
+
+            # OK to log immediately; the logger now uses .get() defaults for optional fields
+            DB_LOG_ENGINE_DB_RECORDING_AUDIO_CHUNK(rid, current_no)
 
     # Step 2: mark chunks complete when all frames arrive
     for rid, chunks in list(RECORDING_AUDIO_CHUNK_ARRAY.items()):
@@ -67,7 +72,6 @@ def SERVER_ENGINE_LISTEN_4_FOR_AUDIO_CHUNKS_TO_PREPARE() -> None:
             lo = int(ch["MIN_AUDIO_STREAM_FRAME_NO"])
             hi = int(ch["MAX_AUDIO_STREAM_FRAME_NO"])
             expected = hi - lo + 1
-            # Count received frames within range
             count = sum(1 for f in frames.keys() if lo <= int(f) <= hi)
             if count == expected:
                 ch["DT_COMPLETE_FRAMES_RECEIVED"] = now

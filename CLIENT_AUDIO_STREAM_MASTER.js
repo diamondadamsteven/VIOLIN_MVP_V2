@@ -289,37 +289,81 @@ async function SEND_FRAME_PAIR({ recordingId, frameNo, frameMs, bytes }) {
   WS.send(bytes);
 }
 
-async function WS_OPEN_WITH_TIMEOUT(url, timeoutMs) {
+// ========= UPDATED: resolves on onopen OR first banner message =========
+async function WS_OPEN_WITH_TIMEOUT(url, timeoutMs, { subprotocols } = {}) {
   return new Promise((resolve, reject) => {
     let opened = false;
     let ws;
+    let poll = null;
+
+    const finish = (ok, val) => {
+      if (opened) return;
+      opened = true;
+      try { clearTimeout(timer); } catch {}
+      try { if (poll) clearInterval(poll); } catch {}
+      try { if (ws) ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null; } catch {}
+      ok ? resolve(val) : reject(val);
+    };
+
     try {
-      ws = new WebSocket(url);
+      ws = subprotocols ? new WebSocket(url, subprotocols) : new WebSocket(url);
       ws.binaryType = 'arraybuffer';
     } catch (e) {
       return reject(e);
     }
 
+    // Poll readyState (RN sometimes drops onopen)
+    poll = setInterval(() => {
+      try {
+        if (ws && ws.readyState === 1) finish(true, ws);
+      } catch {}
+    }, 50);
+
     const timer = setTimeout(() => {
-      if (!opened) {
-        try { ws.close(); } catch {}
-        reject(new Error(`WS open timeout: ${url}`));
-      }
+      try { ws.close(); } catch {}
+      finish(false, new Error(`WS open timeout: ${url}`));
     }, timeoutMs);
 
     ws.onopen = () => {
-      opened = true;
-      clearTimeout(timer);
-      resolve(ws);
+      finish(true, ws);
     };
-    ws.onerror = (evt) => {
-      ERR('WS error during open', { url, evt });
+
+    ws.onmessage = (ev) => {
+      const txt = typeof ev?.data === 'string' ? ev.data : '';
+      // Accept either echo banner, stream banner, or any first text as proof of open.
+      if (txt.startsWith('echo-server')
+       || txt.startsWith('stream-server')
+       || txt.length > 0) {
+        finish(true, ws);
+      }
     };
-    ws.onclose = (evt) => {
-      if (!opened) ERR('WS closed before open', { url, code: evt.code, reason: evt.reason });
+
+    ws.onerror = () => { /* let timeout/onclose decide */ };
+
+    ws.onclose = () => {
+      if (!opened) finish(false, new Error(`WS closed before open: ${url}`));
     };
   });
 }
+
+
+// Retry wrapper for stream open
+async function WS_OPEN_WITH_RETRIES(url, timeoutMs, attempts = 2, backoffMs = 400) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await WS_OPEN_WITH_TIMEOUT(url, timeoutMs);
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) {
+        await new Promise(r => setTimeout(r, backoffMs * (i + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+// ======================================================================
 
 // Conductor countdown — non-blocking & visible even while frames stream
 function START_CONDUCTOR_COUNTDOWN(beats, bpm) {
@@ -361,7 +405,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
 
   const WS_URL = GET_WS_URL();
   const ECHO_URL = GET_WS_ECHO_URL();
-  if (!WS_URL || !ECHO_URL) {
+  if (!WS_URL) {
     STREAMING = false;
     MARK_UI_DIRTY();
     return;
@@ -404,24 +448,21 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   const AUDIO_STREAM_FILE_NAME = String(CLIENT_APP_VARIABLES.AUDIO_STREAM_FILE_NAME || '');
   LOG('Preflight echo connect');
 
-  // 1) Echo preflight (4s)
-  let echoWS = null;
+  // 1) Echo preflight — BEST EFFORT (do not abort if it fails)
   try {
-    echoWS = await WS_OPEN_WITH_TIMEOUT(GET_WS_ECHO_URL(), 4000);
-    LOG('Echo WS open ✓');
+    if (ECHO_URL) {
+      const echoWS = await WS_OPEN_WITH_TIMEOUT(ECHO_URL, 6000 /*, { subprotocols: ['v1'] } */);
+      LOG('Echo WS open ✓');
+      try { echoWS.close(); } catch {}
+    }
   } catch (e) {
-    ERR('Echo WS failed to open', String(e));
-    STREAMING = false;
-    MARK_UI_DIRTY();
-    return;
+    WARN('Echo WS failed (continuing to /ws/stream)', String(e));
   }
-  try { echoWS.close(); } catch {}
-  echoWS = null;
 
-  // 2) Real streaming WS (6s)
+  // 2) Real streaming WS (6s, with 2 attempts)
   LOG('WS → connecting (stream)', { WS_URL, RECORDING_ID, AUDIO_STREAM_FILE_NAME });
   try {
-    WS = await WS_OPEN_WITH_TIMEOUT(WS_URL, 6000);
+    WS = await WS_OPEN_WITH_RETRIES(WS_URL, 6000, 2, 500);
   } catch (e) {
     ERR('Stream WS failed to open', String(e));
     STREAMING = false;

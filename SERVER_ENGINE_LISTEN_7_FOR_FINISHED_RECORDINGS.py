@@ -12,10 +12,9 @@ from SERVER_ENGINE_APP_VARIABLES import (
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_LOG_FUNCTIONS,
-    CONSOLE_LOG,
+    CONSOLE_LOG
 )
 
-@DB_LOG_FUNCTIONS()
 def SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS() -> None:
     """
     Step 1) Find recordings where DT_RECORDING_STOP < 5-seconds-ago and there

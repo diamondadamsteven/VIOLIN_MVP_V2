@@ -10,19 +10,16 @@ from SERVER_ENGINE_APP_VARIABLES import (
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_LOG_FUNCTIONS,
+    DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE,
     DB_CONNECT,
     DB_EXEC_SP_SINGLE_ROW,
     DB_EXEC_SP_MULTIPLE_ROWS,
-    DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE,
-    DB_LOG_ENGINE_DB_RECORDING_CONFIG,
-    CONSOLE_LOG,
+    DB_LOG_ENGINE_DB_RECORDING_CONFIG
 )
 
-@DB_LOG_FUNCTIONS()
-async def SERVER_ENGINE_LISTEN_3A_FOR_START() -> None:
+def SERVER_ENGINE_LISTEN_3A_FOR_START() -> None:
     """
-    Step 1) Scan RECORDING_WEBSOCKET_MESSAGE_ARRAY where DT_MESSAGE_PROCESS_STARTED is null and MESSAGE_TYPE='START'
-            and kick off PROCESS_WEBSOCKET_MESSAGE_TYPE_START for each.
+    Scan for unprocessed START messages and queue async processing.
     """
     to_launch = []
     for mid, msg in list(RECORDING_WEBSOCKET_MESSAGE_ARRAY.items()):
@@ -30,63 +27,70 @@ async def SERVER_ENGINE_LISTEN_3A_FOR_START() -> None:
             to_launch.append(mid)
 
     for mid in to_launch:
-        asyncio.create_task(PROCESS_WEBSOCKET_MESSAGE_TYPE_START(MESSAGE_ID=mid))
+        asyncio.create_task(PROCESS_WEBSOCKET_MESSAGE_TYPE_START(mid))
+
 
 @DB_LOG_FUNCTIONS()
 async def PROCESS_WEBSOCKET_MESSAGE_TYPE_START(MESSAGE_ID: int) -> None:
     """
-    Step 1) Update DT_MESSAGE_PROCESS_STARTED
-    Step 2) Call DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE
-    Step 3) Insert into RECORDING_CONFIG_ARRAY: RECORDING_ID, WEBSOCKET_CONNECTION_ID(optional), DT_RECORDING_START, COMPOSE_CURRENT_AUDIO_CHUNK_NO = 1
-    Step 4) Call P_ENGINE_ALL_RECORDING_PARAMETERS_GET -> update VIOLINIST_ID, COMPOSE_PLAY_OR_PRACTICE, AUDIO_STREAM_FILE_NAME, AUDIO_STREAM_FRAME_SIZE_IN_MS
-    Step 5) If ... = "COMPOSE":
-        a) P_ENGINE_SONG_AUDIO_CHUNK_FOR_COMPOSE_GET -> update AUDIO_CHUNK_DURATION_IN_MS, CNT_FRAMES_PER_AUDIO_CHUNK, YN_RUN_FFT
-    Step 6) If ... in ("PLAY","PRACTICE"):
-        a) P_ENGINE_SONG_AUDIO_CHUNK_FOR_PLAY_AND_PRACTICE_GET -> seed RECORDING_AUDIO_CHUNK_ARRAY rows
+    PROCESS START:
+      1) Mark DT_MESSAGE_PROCESS_STARTED
+      2) Log message
+      3) Seed RECORDING_CONFIG_ARRAY (RECORDING_ID, CONNECTION_ID?, DT_RECORDING_START, COMPOSE_CURRENT_AUDIO_CHUNK_NO=1)
+      4) Load base params via P_ENGINE_ALL_RECORDING_PARAMETERS_GET
+      5) If COMPOSE: P_ENGINE_SONG_AUDIO_CHUNK_FOR_COMPOSE_GET → update cfg
+      6) If PLAY/PRACTICE: P_ENGINE_SONG_AUDIO_CHUNK_FOR_PLAY_AND_PRACTICE_GET → seed RECORDING_AUDIO_CHUNK_ARRAY
     """
     msg = RECORDING_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
     if not msg:
         return
 
+    # 1) mark started
     msg["DT_MESSAGE_PROCESS_STARTED"] = datetime.now()
+
+    # 2) db log receipt/start
     DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE(MESSAGE_ID)
 
-    RECORDING_ID = int(msg["RECORDING_ID"])
-    # Step 3: seed config
-    cfg = RECORDING_CONFIG_ARRAY.get(RECORDING_ID, {"RECORDING_ID": RECORDING_ID})
-    cfg.setdefault("DT_RECORDING_START", datetime.now())
-    cfg.setdefault("COMPOSE_CURRENT_AUDIO_CHUNK_NO", 1)
-    # WEBSOCKET_CONNECTION_ID can be set by caller elsewhere if known
-    RECORDING_CONFIG_ARRAY[RECORDING_ID] = cfg
+    rid = int(msg.get("RECORDING_ID") or 0)
 
-    # Step 4: load base parameters
+    # 3) seed config
+    cfg = RECORDING_CONFIG_ARRAY.get(rid, {"RECORDING_ID": rid})
+    # Connection id is optional — set by upstream if known
+    if "WEBSOCKET_CONNECTION_ID" in msg:
+        cfg["WEBSOCKET_CONNECTION_ID"] = msg["WEBSOCKET_CONNECTION_ID"]
+    cfg.setdefault("DT_RECORDING_START", datetime.now())
+    cfg["COMPOSE_CURRENT_AUDIO_CHUNK_NO"] = 1
+    RECORDING_CONFIG_ARRAY[rid] = cfg
+
+    # 4) load base parameters
     with DB_CONNECT() as conn:
-        row = DB_EXEC_SP_SINGLE_ROW(conn, "P_ENGINE_ALL_RECORDING_PARAMETERS_GET", RECORDING_ID=RECORDING_ID) or {}
+        row = DB_EXEC_SP_SINGLE_ROW(conn, "P_ENGINE_ALL_RECORDING_PARAMETERS_GET", RECORDING_ID=rid) or {}
     for k in ("VIOLINIST_ID", "COMPOSE_PLAY_OR_PRACTICE", "AUDIO_STREAM_FILE_NAME", "AUDIO_STREAM_FRAME_SIZE_IN_MS"):
         if k in row:
             cfg[k] = row[k]
-    RECORDING_CONFIG_ARRAY[RECORDING_ID] = cfg
+    RECORDING_CONFIG_ARRAY[rid] = cfg
 
-    # Step 5: compose seeding
     mode = str(cfg.get("COMPOSE_PLAY_OR_PRACTICE") or "").upper()
+
+    # 5) compose configuration
     if mode == "COMPOSE":
         with DB_CONNECT() as conn:
-            r = DB_EXEC_SP_SINGLE_ROW(conn, "P_ENGINE_SONG_AUDIO_CHUNK_FOR_COMPOSE_GET", RECORDING_ID=RECORDING_ID) or {}
+            r = DB_EXEC_SP_SINGLE_ROW(conn, "P_ENGINE_SONG_AUDIO_CHUNK_FOR_COMPOSE_GET", RECORDING_ID=rid) or {}
         for k in ("AUDIO_CHUNK_DURATION_IN_MS", "CNT_FRAMES_PER_AUDIO_CHUNK", "YN_RUN_FFT"):
             if k in r:
                 cfg[k] = r[k]
-        RECORDING_CONFIG_ARRAY[RECORDING_ID] = cfg
+        RECORDING_CONFIG_ARRAY[rid] = cfg
 
-    # Step 6: play/practice chunk map seeding
+    # 6) play/practice chunk plan
     elif mode in ("PLAY", "PRACTICE"):
         with DB_CONNECT() as conn:
-            rows = DB_EXEC_SP_MULTIPLE_ROWS(conn, "P_ENGINE_SONG_AUDIO_CHUNK_FOR_PLAY_AND_PRACTICE_GET", RECORDING_ID=RECORDING_ID) or []
+            rows = DB_EXEC_SP_MULTIPLE_ROWS(conn, "P_ENGINE_SONG_AUDIO_CHUNK_FOR_PLAY_AND_PRACTICE_GET", RECORDING_ID=rid) or []
         if rows:
-            RECORDING_AUDIO_CHUNK_ARRAY.setdefault(RECORDING_ID, {})
+            RECORDING_AUDIO_CHUNK_ARRAY.setdefault(rid, {})
             for rr in rows:
                 chno = int(rr["AUDIO_CHUNK_NO"])
-                RECORDING_AUDIO_CHUNK_ARRAY[RECORDING_ID][chno] = {
-                    "RECORDING_ID": RECORDING_ID,
+                RECORDING_AUDIO_CHUNK_ARRAY[rid][chno] = {
+                    "RECORDING_ID": rid,
                     "AUDIO_CHUNK_NO": chno,
                     "AUDIO_CHUNK_DURATION_IN_MS": rr["AUDIO_CHUNK_DURATION_IN_MS"],
                     "START_MS": rr["START_MS"],
@@ -98,9 +102,4 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_START(MESSAGE_ID: int) -> None:
                     "YN_RUN_PYIN": rr.get("YN_RUN_PYIN"),
                     "YN_RUN_CREPE": rr.get("YN_RUN_CREPE"),
                 }
-
-    # Optional: log initial config snapshot
-    try:
-        DB_LOG_ENGINE_DB_RECORDING_CONFIG(RECORDING_ID)
-    except Exception:
-        pass
+    DB_LOG_ENGINE_DB_RECORDING_CONFIG (RECORDING_ID=rid)

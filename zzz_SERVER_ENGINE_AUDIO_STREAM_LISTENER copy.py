@@ -28,19 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
 from starlette.types import ASGIApp, Scope, Receive, Send  # for logging WS Origin
 
-# Step-1 driver (loads DB config & watches frames → emits chunks → calls Step-2 + Step-3)
-from SERVER_ENGINE_AUDIO_STREAM_PROCESSOR_STEP_1_CONCATENATE import (
-    STEP_1_NEW_RECORDING_STARTED,
-    STEP_2_CREATE_AUDIO_CHUNKS,  # long-running
-)
 
-# Shared globals & helpers
-from SERVER_ENGINE_APP_VARIABLES import (
-    TEMP_RECORDING_AUDIO_DIR,
-    RECORDING_CONFIG_ARRAY,
-    RECORDING_AUDIO_FRAME_ARRAY,
-    PROJECT_ROOT_DIR,
-)
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_LOG_FUNCTIONS,  # <<< logging decorator
@@ -105,29 +93,6 @@ async def _log_routes_on_startup():
         except Exception:
             CONSOLE_LOG(PREFIX, "ROUTE", {"path": r.path})
 
-# ─────────────────────────────────────────────────────────────
-# Paths / runtime state
-# ─────────────────────────────────────────────────────────────
-@DB_LOG_FUNCTIONS()
-def CREATE_TEMP_AUDIO_DIR(RECORDING_ID: int) -> Path:
-    d = TEMP_RECORDING_AUDIO_DIR / str(RECORDING_ID)
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-@DB_LOG_FUNCTIONS()
-def STOP_MARKER_PATH(RECORDING_ID: int) -> Path:
-    return (TEMP_RECORDING_AUDIO_DIR / str(RECORDING_ID)) / "_STOP"
-
-@DB_LOG_FUNCTIONS()
-def FLUSH_MARKER_PATH(RECORDING_ID: int) -> Path:
-    return (TEMP_RECORDING_AUDIO_DIR / str(RECORDING_ID)) / "_FLUSH"
-
-# Per-recording state tracked by the listener
-ACTIVE_RECORDINGS: Dict[int, Dict[str, Any]] = {}
-# For each WebSocket, we keep a FIFO queue of pending TEXT FRAME metas
-PENDING_META_QUEUE: Dict[WebSocket, List[Dict[str, Any]]] = {}
-# Simple "expected next frame" counter used only to echo status back to the client
-NEXT_EXPECTED: Dict[int, int] = {}
 
 # ─────────────────────────────────────────────────────────────
 # Onsets & Frames Docker management (kept here; called at startup)

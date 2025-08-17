@@ -56,7 +56,6 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME(RECORDING_ID: int, AUDIO_CHU
 
 # ─────────────────────────────────────────────
 
-@DB_LOG_FUNCTIONS()
 def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_CHUNKS_TO_PROCESS() -> None:
     """
     Step 1) For chunks with DT_AUDIO_CHUNK_PREPARATION_COMPLETE not null and DT_START_AUDIO_CHUNK_PROCESS null,
@@ -93,7 +92,7 @@ async def PROCESS_THE_AUDIO_CHUNK(RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> Non
 
         # Determine next compose chunk number if needed
         with DB_CONNECT() as conn:
-            DB_EXEC_SP_NO_RESULT(conn, "P_ENGINE_SONG_AUDIO_CHUNK_NO_FOR_COMPOSE_GET", RECORDING_ID=RECORDING_ID)
+            DB_EXEC_SP_NO_RESULT(conn, "P_ENGINE_SONG_AUDIO_CHUNK_NO_FOR_COMPOSE_GET", RECORDING_ID=RECORDING_ID, AUDIO_CHUNK_NO=AUDIO_CHUNK_NO)
 
         # Update flags from cfg (if used downstream)
         ch["YN_RUN_ONS"] = ch.get("YN_RUN_ONS") or cfg.get("YN_RUN_ONS")
