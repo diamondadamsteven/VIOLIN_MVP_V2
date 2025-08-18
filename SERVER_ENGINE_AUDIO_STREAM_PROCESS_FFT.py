@@ -13,21 +13,40 @@ from __future__ import annotations
 
 import traceback
 from typing import Iterable, List, Tuple
+from datetime import datetime
+import inspect
+import os
 
 import builtins as _bi
 import numpy as np
 
 from SERVER_ENGINE_APP_VARIABLES import (
-    RECORDING_AUDIO_CHUNK_ARRAY,  # <-- added
+    RECORDING_AUDIO_CHUNK_ARRAY,
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
-    DB_CONNECT_CTX,
     DB_BULK_INSERT,
-    DB_LOG_FUNCTIONS,  # <-- logging decorator
+    DB_LOG_FUNCTIONS,
+    DB_LOG_ENGINE_DB_LOG_STEPS,   # enqueues & stamps DT_ADDED
+    schedule_coro,                # loop/thread safe
+    DB_CONNECT_CTX,
 )
 
 PREFIX = "FFT"
+
+# ─────────────────────────────────────────────────────────────
+# small helper to log a processing step
+# ─────────────────────────────────────────────────────────────
+def log_step(step: str, RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> None:
+    DB_LOG_ENGINE_DB_LOG_STEPS(
+        STEP_NAME=step,
+        PYTHON_FUNCTION_NAME=inspect.currentframe().f_back.f_code.co_name,
+        PYTHON_FILE_NAME=os.path.basename(__file__),
+        RECORDING_ID=RECORDING_ID,
+        AUDIO_CHUNK_NO=AUDIO_CHUNK_NO,
+        FRAME_NO=None,
+        DT_ADDED=datetime.now(),   # explicit stamp
+    )
 
 # ─────────────────────────────────────────────────────────────
 # DB bulk load
@@ -144,6 +163,7 @@ def SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(
       • SAMPLE_RATE_22050: sample rate for AUDIO_ARRAY_22050 (expected 22050)
     """
     try:
+        log_step("BEGIN", RECORDING_ID, AUDIO_CHUNK_NO)
         CONSOLE_LOG(PREFIX, "BEGIN", {
             "RECORDING_ID": int(RECORDING_ID),
             "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
@@ -152,38 +172,45 @@ def SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(
             "SAMPLES_22K": int(getattr(AUDIO_ARRAY_22050, "shape", [0])[0] or 0),
         })
 
-        rows = _compute_fft_rows(
-            AUDIO_ARRAY_22050=AUDIO_ARRAY_22050,
-            AUDIO_CHUNK_START_MS=int(AUDIO_CHUNK_START_MS),
-            SAMPLE_RATE_22050=int(SAMPLE_RATE_22050),
-        )
+        def _job():
+            rows = _compute_fft_rows(
+                AUDIO_ARRAY_22050=AUDIO_ARRAY_22050,
+                AUDIO_CHUNK_START_MS=int(AUDIO_CHUNK_START_MS),
+                SAMPLE_RATE_22050=int(SAMPLE_RATE_22050),
+            )
 
-        # NEW: stamp record count in memory for Step-2's DB_LOG_RECORDING_AUDIO_CHUNK
-        chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
-        ch = chunks.setdefault(int(AUDIO_CHUNK_NO), {"RECORDING_ID": int(RECORDING_ID), "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO)})
-        ch["FFT_RECORD_CNT"] = int(len(rows))
-
-        CONSOLE_LOG(PREFIX, "ROWS_COMPUTED", {"COUNT": len(rows)})
-        if not rows:
-            CONSOLE_LOG(PREFIX, "NO_ROWS_TO_INSERT", {
+            chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
+            ch = chunks.setdefault(int(AUDIO_CHUNK_NO), {
                 "RECORDING_ID": int(RECORDING_ID),
                 "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
             })
-            return
+            ch["FFT_RECORD_CNT"] = int(len(rows))
 
-        with DB_CONNECT_CTX() as conn:
-            _db_load_fft_rows(
-                conn=conn,
-                RECORDING_ID=int(RECORDING_ID),
-                AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
-                rows=rows,
-            )
+            CONSOLE_LOG(PREFIX, "ROWS_COMPUTED", {"COUNT": len(rows)})
+            if not rows:
+                CONSOLE_LOG(PREFIX, "NO_ROWS_TO_INSERT", {
+                    "RECORDING_ID": int(RECORDING_ID),
+                    "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
+                })
+                return
 
-        CONSOLE_LOG(PREFIX, "DB_INSERT_OK", {
-            "RECORDING_ID": int(RECORDING_ID),
-            "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
-            "ROW_COUNT": len(rows),
-        })
+            with DB_CONNECT_CTX() as conn:
+                _db_load_fft_rows(
+                    conn=conn,
+                    RECORDING_ID=int(RECORDING_ID),
+                    AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
+                    rows=rows,
+                )
+
+            CONSOLE_LOG(PREFIX, "DB_INSERT_OK", {
+                "RECORDING_ID": int(RECORDING_ID),
+                "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
+                "ROW_COUNT": len(rows),
+            })
+            log_step("DONE", RECORDING_ID, AUDIO_CHUNK_NO)
+
+        # run in loop-safe background
+        schedule_coro(asyncio.to_thread(_job))
 
     except Exception as exc:
         CONSOLE_LOG(PREFIX, "FATAL_ERROR", {

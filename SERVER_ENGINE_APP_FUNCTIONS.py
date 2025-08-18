@@ -566,11 +566,22 @@ def DB_EXEC_SP_NO_RESULT(conn, sp_name: str, **params) -> Optional[int]:
 # Queue-based logger APIs (enqueue; background writer performs the INSERTs)
 # -----------------------------------------------------------------------------
 
-# 1) FRAME
+# ... keep your imports and previous code above ...
+
+def _fire_and_forget(fn, *args, **kwargs):
+    """
+    Run a synchronous DB function off the event loop ASAP.
+    Works whether we're on the loop or in a worker thread.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(asyncio.to_thread(fn, *args, **kwargs))
+    except RuntimeError:
+        # we're in a non-async thread
+        threading.Thread(target=fn, args=args, kwargs=kwargs, daemon=True).start()
+
+# 1) FRAME (now fire-and-forget)
 def DB_LOG_ENGINE_DB_AUDIO_FRAME(RECORDING_ID: int, FRAME_NO: int) -> None:
-    """
-    Enqueue an audio-frame log using DT_FRAME_RECEIVED captured at receive time.
-    """
     cfg = RECORDING_CONFIG_ARRAY.get(RECORDING_ID, {}) or {}
     frame_ms = cfg.get("AUDIO_STREAM_FRAME_SIZE_IN_MS")  # allow NULL if missing
 
@@ -578,15 +589,113 @@ def DB_LOG_ENGINE_DB_AUDIO_FRAME(RECORDING_ID: int, FRAME_NO: int) -> None:
     frame_row = frame_map.get(FRAME_NO, {}) or {}
     dt_frame_received = frame_row.get("DT_FRAME_RECEIVED")
 
-    _logq_put({
-        "kind": "audio_frame",
-        "params": {
-            "RECORDING_ID": RECORDING_ID,
-            "FRAME_NO": FRAME_NO,
-            "AUDIO_STREAM_FRAME_SIZE_IN_MS": frame_ms,
-            "DT_FRAME_RECEIVED": dt_frame_received,
-        },
-    })
+    def _do():
+        with get_engine().begin() as CONN:
+            CONN.execute(
+                text("""
+                    INSERT INTO ENGINE_DB_LOG_AUDIO_FRAME
+                    (RECORDING_ID, FRAME_NO, AUDIO_STREAM_FRAME_SIZE_IN_MS, DT_FRAME_RECEIVED)
+                    VALUES (:RECORDING_ID, :FRAME_NO, :AUDIO_STREAM_FRAME_SIZE_IN_MS, :DT_FRAME_RECEIVED)
+                """),
+                {
+                    "RECORDING_ID": RECORDING_ID,
+                    "FRAME_NO": FRAME_NO,
+                    "AUDIO_STREAM_FRAME_SIZE_IN_MS": frame_ms,
+                    "DT_FRAME_RECEIVED": dt_frame_received,
+                },
+            )
+    _fire_and_forget(_do)
+
+# 2) WEBSOCKET MESSAGE (now fire-and-forget)
+def DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE(MESSAGE_ID: int) -> None:
+    msg = RECORDING_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID) or {}
+
+    def _do():
+        with get_engine().begin() as CONN:
+            CONN.execute(
+                text("""
+                    INSERT INTO ENGINE_DB_LOG_WEBSOCKET_MESSAGE (
+                        RECORDING_ID,
+                        MESSAGE_TYPE,
+                        AUDIO_FRAME_NO,
+                        DT_MESSAGE_RECEIVED,
+                        DT_MESSAGE_PROCESS_STARTED,
+                        WEBSOCKET_CONNECTION_ID
+                    )
+                    VALUES (
+                        :RECORDING_ID,
+                        :MESSAGE_TYPE,
+                        :AUDIO_FRAME_NO,
+                        :DT_MESSAGE_RECEIVED,
+                        :DT_MESSAGE_PROCESS_STARTED,
+                        :WEBSOCKET_CONNECTION_ID
+                    )
+                """),
+                {
+                    "RECORDING_ID": msg.get("RECORDING_ID"),
+                    "MESSAGE_TYPE": msg.get("MESSAGE_TYPE"),
+                    "AUDIO_FRAME_NO": msg.get("AUDIO_FRAME_NO"),
+                    "DT_MESSAGE_RECEIVED": msg.get("DT_MESSAGE_RECEIVED"),
+                    "DT_MESSAGE_PROCESS_STARTED": msg.get("DT_MESSAGE_PROCESS_STARTED"),
+                    "WEBSOCKET_CONNECTION_ID": msg.get("WEBSOCKET_CONNECTION_ID")
+                },
+            )
+    _fire_and_forget(_do)
+
+# 3) STEP LOGGER (unchanged signature; still uses named params)
+def DB_LOG_ENGINE_DB_LOG_STEPS(
+    DT_ADDED: datetime,
+    STEP_NAME: str,
+    PYTHON_FUNCTION_NAME: str,
+    PYTHON_FILE_NAME: str,
+    RECORDING_ID: Optional[int] = None,
+    AUDIO_CHUNK_NO: Optional[int] = None,
+    FRAME_NO: Optional[int] = None,
+) -> None:
+    try:
+        with get_engine().begin() as CONN:
+            CONN.execute(
+                text("""
+                    INSERT INTO ENGINE_DB_LOG_STEPS (
+                        DT_ADDED,
+                        STEP_NAME,
+                        PYTHON_FUNCTION_NAME,
+                        PYTHON_FILE_NAME,
+                        RECORDING_ID,
+                        AUDIO_CHUNK_NO,
+                        FRAME_NO
+                    )
+                    VALUES (
+                        :DT_ADDED,
+                        :STEP_NAME,
+                        :PYTHON_FUNCTION_NAME,
+                        :PYTHON_FILE_NAME,
+                        :RECORDING_ID,
+                        :AUDIO_CHUNK_NO,
+                        :FRAME_NO
+                    )
+                """),
+                {
+                    "DT_ADDED": DT_ADDED,
+                    "STEP_NAME": STEP_NAME,
+                    "PYTHON_FUNCTION_NAME": PYTHON_FUNCTION_NAME,
+                    "PYTHON_FILE_NAME": PYTHON_FILE_NAME,
+                    "RECORDING_ID": RECORDING_ID,
+                    "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
+                    "FRAME_NO": FRAME_NO,
+                },
+            )
+    except Exception as e:
+        LOGGER.exception(
+            "DB_LOG_ENGINE_DB_LOG_STEPS insert failed "
+            "(step=%s, fn=%s, file=%s, rid=%s, chunk=%s, frame=%s): %s",
+            STEP_NAME, PYTHON_FUNCTION_NAME, PYTHON_FILE_NAME,
+            RECORDING_ID, AUDIO_CHUNK_NO, FRAME_NO, e
+        )
+
+# ... keep the rest of your file as-is ...
+
+
 
 # 2) AUDIO CHUNK (unchanged; direct write, not queued — it’s much rarer & heavier)
 def DB_LOG_ENGINE_DB_RECORDING_AUDIO_CHUNK(RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> None:
@@ -671,6 +780,7 @@ def DB_LOG_ENGINE_DB_RECORDING_AUDIO_CHUNK(RECORDING_ID: int, AUDIO_CHUNK_NO: in
                 "VOLUME_10_MS_RECORD_CNT":                          ch.get("VOLUME_10_MS_RECORD_CNT"),
                 "VOLUME_1_MS_RECORD_CNT":                           ch.get("VOLUME_1_MS_RECORD_CNT"),
                 "DT_START_P_ENGINE_ALL_MASTER":                     ch.get("DT_START_P_ENGINE_ALL_MASTER"),
+
                 "P_ENGINE_ALL_MASTER_DURATION_IN_MS":               ch.get("P_ENGINE_ALL_MASTER_DURATION_IN_MS"),
                 "DT_ADDED": datetime.now(),
             },
@@ -773,43 +883,3 @@ def DB_LOG_ENGINE_DB_WEBSOCKET_CONNECTION(WEBSOCKET_CONNECTION_ID: int) -> None:
         LOGGER.exception("DB_LOG_WEBSOCKET_CONNECTION insert failed (id=%s): %s",
                          WEBSOCKET_CONNECTION_ID, e)
 
-# 5) WEBSOCKET MESSAGE — now ENQUEUE (uses DT_MESSAGE_RECEIVED)
-def DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE(MESSAGE_ID: int) -> None:
-    msg = RECORDING_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID, {}) or {}
-    _logq_put({
-        "kind": "ws_msg",
-        "params": {
-            "RECORDING_ID": msg.get("RECORDING_ID"),
-            "MESSAGE_TYPE": msg.get("MESSAGE_TYPE"),
-            "AUDIO_FRAME_NO": msg.get("AUDIO_FRAME_NO"),
-            "DT_MESSAGE_RECEIVED": msg.get("DT_MESSAGE_RECEIVED"),
-            "DT_MESSAGE_PROCESS_STARTED": msg.get("DT_MESSAGE_PROCESS_STARTED"),
-        }
-    })
-
-# 6) STEP LOGGER — now ENQUEUE and STAMP DT_ADDED at ENQUEUE TIME
-def DB_LOG_ENGINE_DB_LOG_STEPS(
-    STEP_NAME: str,
-    PYTHON_FUNCTION_NAME: str,
-    PYTHON_FILE_NAME: str,
-    RECORDING_ID: Optional[int] = None,
-    AUDIO_CHUNK_NO: Optional[int] = None,
-    FRAME_NO: Optional[int] = None,
-    DT_ADDED: Optional[datetime] = None,  # optional for callers; we stamp now if not provided
-) -> None:
-    """
-    Enqueue a single step marker into ENGINE_DB_LOG_STEPS.
-    DT_ADDED is captured when this function is called (execution time), not when inserted.
-    """
-    _logq_put({
-        "kind": "step",
-        "params": {
-            "DT_ADDED": DT_ADDED or datetime.now(),
-            "STEP_NAME": STEP_NAME,
-            "PYTHON_FUNCTION_NAME": PYTHON_FUNCTION_NAME,
-            "PYTHON_FILE_NAME": PYTHON_FILE_NAME,
-            "RECORDING_ID": RECORDING_ID,
-            "AUDIO_CHUNK_NO": AUDIO_CHUNK_NO,
-            "FRAME_NO": FRAME_NO,
-        }
-    })

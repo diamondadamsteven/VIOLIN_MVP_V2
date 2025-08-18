@@ -1,17 +1,21 @@
-# SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE.py
 # ----------------------------------------------------------------------
 # CREPE (torchcrepe) processing for a single audio chunk.
-#   • Input: 16 kHz mono float32 audio (from Step-2), plus AUDIO_CHUNK_START_MS
-#   • Run torchcrepe → per-10ms f0 + periodicity (confidence)
-#   • Convert RELATIVE times to ABSOLUTE using AUDIO_CHUNK_START_MS
-#   • Bulk insert rows into ENGINE_LOAD_HZ with SOURCE_METHOD='CREPE'
+#   • Stage-6 calls the async wrapper with (RECORDING_ID, AUDIO_CHUNK_NO)
+#   • Wrapper pulls audio_16k + start_ms from RECORDING_AUDIO_CHUNK_ARRAY
+#   • Runs the real worker off the event loop (asyncio.to_thread)
+#   • Worker computes 10 ms f0 series with torchcrepe at 16 kHz
+#   • Rows are converted to ABS times and bulk-inserted into ENGINE_LOAD_HZ
+#     (RECORDING_ID, AUDIO_CHUNK_NO, START_MS, END_MS, SOURCE_METHOD='CREPE', HZ, CONFIDENCE)
+#   • Stamps CREPE_RECORD_CNT and CREPE_DURATION_IN_MS back into the chunk dict
 # ----------------------------------------------------------------------
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+from datetime import datetime
 import traceback
-from typing import Any, Iterable, List, Tuple
+from typing import Iterable, List, Tuple, Optional
 
 import builtins as _bi
 import numpy as np
@@ -27,17 +31,29 @@ except Exception:  # pragma: no cover
     torchcrepe = None
 
 from SERVER_ENGINE_APP_VARIABLES import (
-    RECORDING_AUDIO_CHUNK_ARRAY,  # <-- added
+    RECORDING_AUDIO_CHUNK_ARRAY,
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_CONNECT_CTX,
     DB_BULK_INSERT,
-    DB_LOG_FUNCTIONS,  # <-- logging decorator
+    DB_LOG_FUNCTIONS,  # logging decorator
 )
 
 PREFIX = "CREPE"
 
+# ─────────────────────────────────────────────────────────────
+# Small helper: find the chunk dict (handles int/str keys)
+# ─────────────────────────────────────────────────────────────
+def _get_chunk(RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> Optional[dict]:
+    chunks = RECORDING_AUDIO_CHUNK_ARRAY.get(RECORDING_ID) or RECORDING_AUDIO_CHUNK_ARRAY.get(str(RECORDING_ID))
+    if not chunks:
+        return None
+    if AUDIO_CHUNK_NO in chunks:
+        return chunks[AUDIO_CHUNK_NO]
+    if str(AUDIO_CHUNK_NO) in chunks:
+        return chunks[str(AUDIO_CHUNK_NO)]
+    return None
 
 # ─────────────────────────────────────────────────────────────
 # DB loader (bulk insert)
@@ -48,7 +64,7 @@ def _db_load_hz_series(
     RECORDING_ID: int,
     AUDIO_CHUNK_NO: int,
     SOURCE_METHOD: str,
-    HZ_SERIES_ARRAY: Iterable[Tuple[int, int, float, float]],
+    rows_abs: Iterable[Tuple[int, int, float, float]],
 ) -> None:
     """
     Insert rows into ENGINE_LOAD_HZ:
@@ -64,13 +80,12 @@ def _db_load_hz_series(
         sql,
         (
             (RECORDING_ID, AUDIO_CHUNK_NO, s, e, SOURCE_METHOD, float(hz), float(conf))
-            for (s, e, hz, conf) in HZ_SERIES_ARRAY
+            for (s, e, hz, conf) in rows_abs
         ),
     )
 
-
 # ─────────────────────────────────────────────────────────────
-# CREPE core (relative series @ 10 ms hop)
+# CREPE core (relative series @ 10 ms hop) — pure compute
 # ─────────────────────────────────────────────────────────────
 @DB_LOG_FUNCTIONS()
 def _crepe_compute_relative_series(audio_16k: np.ndarray, sr: int = 16000) -> List[Tuple[int, int, float, float]]:
@@ -84,8 +99,8 @@ def _crepe_compute_relative_series(audio_16k: np.ndarray, sr: int = 16000) -> Li
         return []
     if audio_16k is None or getattr(audio_16k, "size", 0) == 0:
         return []
-    if sr != 16000:
-        CONSOLE_LOG(PREFIX, "BAD_INPUT_SAMPLE_RATE", {"sr": sr, "expected": 16000})
+    if int(sr) != 16000:
+        CONSOLE_LOG(PREFIX, "BAD_INPUT_SAMPLE_RATE", {"sr": int(sr), "expected": 16000})
         return []
 
     # Ensure mono float32
@@ -100,7 +115,7 @@ def _crepe_compute_relative_series(audio_16k: np.ndarray, sr: int = 16000) -> Li
     except Exception:
         sha1 = "sha1_err"
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch and torch.cuda.is_available() else "cpu"
     x = torch.tensor(audio_16k, dtype=torch.float32, device=device).unsqueeze(0)
 
     hop = 160  # 10 ms @ 16k
@@ -117,7 +132,7 @@ def _crepe_compute_relative_series(audio_16k: np.ndarray, sr: int = 16000) -> Li
     with torch.no_grad():
         f0, per = torchcrepe.predict(
             x,
-            sample_rate=sr,
+            sample_rate=int(sr),
             hop_length=hop,
             model="full",
             decoder=decoder_fn,
@@ -131,7 +146,7 @@ def _crepe_compute_relative_series(audio_16k: np.ndarray, sr: int = 16000) -> Li
     n = int(min(len(f0), len(per)))
 
     # Vectorized frame start times (ms, relative within chunk)
-    start_ms = np.round(np.arange(n, dtype=np.float64) * hop * 1000.0 / sr).astype(np.int64)
+    start_ms = np.round(np.arange(n, dtype=np.float64) * hop * 1000.0 / int(sr)).astype(np.int64)
 
     rows: List[Tuple[int, int, float, float]] = []
     for i in range(n):
@@ -153,74 +168,113 @@ def _crepe_compute_relative_series(audio_16k: np.ndarray, sr: int = 16000) -> Li
 
     return rows
 
-
 # ─────────────────────────────────────────────────────────────
-# PUBLIC ENTRY (called by Step-2)
+# Real worker (sync): compute + DB insert + stamp record count
 # ─────────────────────────────────────────────────────────────
 @DB_LOG_FUNCTIONS()
-def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
+def RUN_CREPE_REAL(
     RECORDING_ID: int,
     AUDIO_CHUNK_NO: int,
     AUDIO_CHUNK_START_MS: int,
     AUDIO_ARRAY_16000: np.ndarray,
     SAMPLE_RATE_16000: int,
-) -> None:
+) -> int:
     """
-    Called by Step-2 when YN_CREPE='Y'.
+    Returns number of rows inserted.
+    """
+    # Ensure chunk dict exists to stamp counts even on early exit
+    chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
+    ch = chunks.setdefault(int(AUDIO_CHUNK_NO), {
+        "RECORDING_ID": int(RECORDING_ID),
+        "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
+    })
 
-    Behavior:
-      • Run torchcrepe → relative (start_ms, end_ms, hz, conf)
-      • Offset to ABSOLUTE times using AUDIO_CHUNK_START_MS
-      • Bulk-insert rows into ENGINE_LOAD_HZ with SOURCE_METHOD='CREPE'
+    if torch is None or torchcrepe is None:
+        CONSOLE_LOG(PREFIX, "TORCHCREPE_UNAVAILABLE_SKIP")
+        ch["CREPE_RECORD_CNT"] = 0
+        return 0
+
+    CONSOLE_LOG(PREFIX, "PROCESS_BEGIN", {
+        "RECORDING_ID": int(RECORDING_ID),
+        "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
+        "START_MS": int(AUDIO_CHUNK_START_MS),
+        "LEN_16K": int(AUDIO_ARRAY_16000.shape[0]) if hasattr(AUDIO_ARRAY_16000, "shape") else None,
+        "SR_16K": int(SAMPLE_RATE_16000),
+    })
+
+    rel_rows = _crepe_compute_relative_series(
+        AUDIO_ARRAY_16000, sr=int(SAMPLE_RATE_16000)
+    )
+
+    ch["CREPE_RECORD_CNT"] = int(len(rel_rows))
+    if not rel_rows:
+        CONSOLE_LOG(PREFIX, "NO_ROWS")
+        return 0
+
+    base = int(AUDIO_CHUNK_START_MS)
+    abs_rows: List[Tuple[int, int, float, float]] = [
+        (base + s_rel, base + e_rel, hz, conf) for (s_rel, e_rel, hz, conf) in rel_rows
+    ]
+
+    with DB_CONNECT_CTX() as conn:
+        _db_load_hz_series(
+            conn=conn,
+            RECORDING_ID=int(RECORDING_ID),
+            AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
+            SOURCE_METHOD="CREPE",
+            rows_abs=abs_rows,
+        )
+
+    CONSOLE_LOG(PREFIX, "DB_INSERT_OK", {
+        "RECORDING_ID": int(RECORDING_ID),
+        "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
+        "ROW_COUNT": len(abs_rows),
+    })
+    return int(len(abs_rows))
+
+# ─────────────────────────────────────────────────────────────
+# PUBLIC ENTRY (Stage-6 calls this): wrapper that reads chunk data,
+# runs the real worker off-thread, and stamps duration.
+# ─────────────────────────────────────────────────────────────
+@DB_LOG_FUNCTIONS()
+async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> None:
     """
+    Wrapper used by PROCESS_THE_AUDIO_CHUNK in Stage-6.
+    Pulls AUDIO_ARRAY_16000 / SAMPLE_RATE_16000 / START_MS from the chunk dict,
+    then runs RUN_CREPE_REAL() in a worker thread. Stamps start/duration fields.
+    """
+    ch = _get_chunk(RECORDING_ID, AUDIO_CHUNK_NO)
+    if ch is None:
+        CONSOLE_LOG(PREFIX, "chunk_not_ready", {"rid": int(RECORDING_ID), "chunk": int(AUDIO_CHUNK_NO)})
+        return
+
+    audio_16k = ch.get("AUDIO_ARRAY_16000")
+    sr_16k    = int(ch.get("SAMPLE_RATE_16000") or 0)
+    start_ms  = int(ch.get("START_MS") or 0)
+
+    # Stamp start time on the chunk for DB logging in Step-2
+    ch["DT_START_CREPE"] = datetime.now()
+
+    if audio_16k is None or sr_16k != 16000:
+        # Nothing to do (log but don't crash)
+        CONSOLE_LOG(PREFIX, "crepe_missing_inputs", {
+            "rid": int(RECORDING_ID), "chunk": int(AUDIO_CHUNK_NO),
+            "has_audio": audio_16k is not None, "sr": sr_16k
+        })
+        ch["CREPE_RECORD_CNT"] = 0
+        ch["CREPE_DURATION_IN_MS"] = 0
+        return
+
+    t0 = datetime.now()
     try:
-        if torch is None or torchcrepe is None:
-            CONSOLE_LOG(PREFIX, "TORCHCREPE_UNAVAILABLE_SKIP")
-            # still stamp zero count for completeness
-            chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
-            ch = chunks.setdefault(int(AUDIO_CHUNK_NO), {"RECORDING_ID": int(RECORDING_ID), "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO)})
-            ch["CREPE_RECORD_CNT"] = 0
-            return
-
-        CONSOLE_LOG(PREFIX, "PROCESS_BEGIN", {
-            "RECORDING_ID": int(RECORDING_ID),
-            "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
-            "START_MS": int(AUDIO_CHUNK_START_MS),
-            "LEN_16K": int(AUDIO_ARRAY_16000.shape[0]) if hasattr(AUDIO_ARRAY_16000, "shape") else None,
-            "SR_16K": int(SAMPLE_RATE_16000),
-        })
-
-        rel_rows = _crepe_compute_relative_series(AUDIO_ARRAY_16000, sr=int(SAMPLE_RATE_16000))
-
-        # Stamp record count in shared in-memory state (even if zero)
-        chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
-        ch = chunks.setdefault(int(AUDIO_CHUNK_NO), {"RECORDING_ID": int(RECORDING_ID), "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO)})
-        ch["CREPE_RECORD_CNT"] = int(len(rel_rows))
-
-        if not rel_rows:
-            CONSOLE_LOG(PREFIX, "NO_ROWS")
-            return
-
-        base = int(AUDIO_CHUNK_START_MS)
-        abs_rows: List[Tuple[int, int, float, float]] = [
-            (base + s_rel, base + e_rel, hz, conf) for (s_rel, e_rel, hz, conf) in rel_rows
-        ]
-
-        with DB_CONNECT_CTX() as conn:
-            _db_load_hz_series(
-                conn=conn,
-                RECORDING_ID=int(RECORDING_ID),
-                AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
-                SOURCE_METHOD="CREPE",
-                HZ_SERIES_ARRAY=abs_rows,
-            )
-
-        CONSOLE_LOG(PREFIX, "DB_INSERT_OK", {
-            "RECORDING_ID": int(RECORDING_ID),
-            "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
-            "ROW_COUNT": len(abs_rows),
-        })
-
+        count = await asyncio.to_thread(
+            RUN_CREPE_REAL,
+            int(RECORDING_ID),
+            int(AUDIO_CHUNK_NO),
+            int(start_ms),
+            audio_16k,
+            int(sr_16k),
+        )
     except Exception as exc:
         CONSOLE_LOG(PREFIX, "FATAL_ERROR", {
             "ERROR": _bi.str(exc),
@@ -228,3 +282,8 @@ def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
             "RECORDING_ID": int(RECORDING_ID),
             "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
         })
+        count = 0
+
+    elapsed_ms = max(1, int((datetime.now() - t0).total_seconds() * 1000))
+    ch["CREPE_DURATION_IN_MS"] = elapsed_ms
+    ch["CREPE_RECORD_CNT"] = int(count or 0)

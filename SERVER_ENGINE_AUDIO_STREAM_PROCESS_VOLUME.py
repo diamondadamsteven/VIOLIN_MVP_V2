@@ -16,19 +16,19 @@
 from __future__ import annotations
 
 import math
-import time  # <-- NEW
+import time
 import traceback
 from typing import Iterable, List, Tuple
 
 import builtins as _bi
 import numpy as np
 
-from SERVER_ENGINE_APP_VARIABLES import RECORDING_AUDIO_CHUNK_ARRAY  # <-- NEW
+from SERVER_ENGINE_APP_VARIABLES import RECORDING_AUDIO_CHUNK_ARRAY
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_CONNECT_CTX,
     DB_BULK_INSERT,
-    DB_LOG_FUNCTIONS,  # <-- add decorator
+    DB_LOG_FUNCTIONS,
 )
 
 PREFIX = "VOLUME"
@@ -45,10 +45,6 @@ def _db_load_volume_aggregate_row(
     avg_rms: float,
     avg_db: float,
 ) -> None:
-    """
-    ENGINE_LOAD_VOLUME:
-      (RECORDING_ID, AUDIO_CHUNK_NO, START_MS, VOLUME, VOLUME_IN_DB)
-    """
     sql = """
       INSERT INTO ENGINE_LOAD_VOLUME
       (RECORDING_ID, AUDIO_CHUNK_NO, START_MS, VOLUME, VOLUME_IN_DB)
@@ -68,10 +64,6 @@ def _db_load_volume_10ms_series(
     AUDIO_CHUNK_NO: int,
     rows_10ms: Iterable[Tuple[int, int, float, float]],
 ) -> None:
-    """
-    ENGINE_LOAD_VOLUME_10_MS:
-      (RECORDING_ID, AUDIO_CHUNK_NO, START_MS, END_MS, VOLUME, VOLUME_IN_DB)
-    """
     rows_10ms = list(rows_10ms)
     if not rows_10ms:
         return
@@ -98,15 +90,6 @@ def _rms_series(
     base_ms: int,
     end_span_ms: int,
 ) -> List[Tuple[int, int, float, float]]:
-    """
-    Generic RMS time series:
-      • hop_ms: step between frames (ms)
-      • win_ms: window length (ms)
-      • base_ms: absolute offset to add to frame start
-      • end_span_ms: END_MS = START_MS + end_span_ms
-      • center=False (no padding)
-    Returns: [(START_MS_ABS, END_MS_ABS, RMS, DB), ...]
-    """
     if sr <= 0 or audio.size == 0:
         return []
 
@@ -138,9 +121,6 @@ def _rms_series(
 
 @DB_LOG_FUNCTIONS()
 def _aggregate_from_series(series: List[Tuple[int, int, float, float]]) -> Tuple[float, float]:
-    """
-    Average RMS over frames; convert to dB with epsilon.
-    """
     if not series:
         return 0.0, -120.0
     rms_vals = np.array([v for (_, _, v, _) in series], dtype=np.float64)
@@ -159,21 +139,9 @@ def SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME(
     AUDIO_ARRAY_22050: np.ndarray,
     SAMPLE_RATE_22050: int,
 ) -> None:
-    """
-    Inputs (from Step-2):
-      • RECORDING_ID, AUDIO_CHUNK_NO
-      • AUDIO_CHUNK_START_MS: absolute start (ms) for this chunk
-      • AUDIO_ARRAY_22050: mono float32 audio at 22,050 Hz (required)
-      • SAMPLE_RATE_22050: must be 22050
-
-    Inserts:
-      • ENGINE_LOAD_VOLUME (aggregate from 1 ms RMS)
-      • ENGINE_LOAD_VOLUME_10_MS (10 ms RMS series)
-    """
     try:
-        # Ensure per-chunk dict exists for metric stamping
-        chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})  # <-- NEW
-        ch = chunks.setdefault(int(AUDIO_CHUNK_NO), {                           # <-- NEW
+        chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
+        ch = chunks.setdefault(int(AUDIO_CHUNK_NO), {
             "RECORDING_ID": int(RECORDING_ID),
             "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
         })
@@ -202,51 +170,25 @@ def SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME(
             "SAMPLES": int(audio.shape[0]),
         })
 
-        # 1 ms RMS (for aggregate); END_MS == START_MS
-        series_1ms = _rms_series(
-            audio=audio, sr=22050,
-            hop_ms=1, win_ms=2,
-            base_ms=base_ms, end_span_ms=0,
-        )
+        # 1 ms RMS (for aggregate)
+        series_1ms = _rms_series(audio, 22050, hop_ms=1, win_ms=2, base_ms=base_ms, end_span_ms=0)
         avg_rms, avg_db = _aggregate_from_series(series_1ms)
 
-        # 10 ms RMS series; END_MS = START_MS + 9
-        series_10ms = _rms_series(
-            audio=audio, sr=22050,
-            hop_ms=10, win_ms=20,
-            base_ms=base_ms, end_span_ms=9,
-        )
+        # 10 ms RMS series
+        series_10ms = _rms_series(audio, 22050, hop_ms=10, win_ms=20, base_ms=base_ms, end_span_ms=9)
 
-        # Stamp record counts in memory (available for Step-2 logging)
-        ch["VOLUME_1_MS_RECORD_CNT"] = int(len(series_1ms))        # <-- NEW
-        ch["VOLUME_10_MS_RECORD_CNT"] = int(len(series_10ms))      # <-- NEW
+        # Stamp counts
+        ch["VOLUME_1_MS_RECORD_CNT"] = int(len(series_1ms))
+        ch["VOLUME_10_MS_RECORD_CNT"] = int(len(series_10ms))
 
         with DB_CONNECT_CTX() as conn:
-            # Time the 1-ms aggregate insert
-            t1 = time.perf_counter()                                # <-- NEW
-            _db_load_volume_aggregate_row(
-                conn=conn,
-                RECORDING_ID=int(RECORDING_ID),
-                AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
-                AUDIO_CHUNK_START_MS=base_ms,
-                avg_rms=avg_rms,
-                avg_db=avg_db,
-            )
-            ch["VOLUME_1_MS_DURATION_IN_MS"] = int(                 # <-- NEW
-                round((time.perf_counter() - t1) * 1000)
-            )
+            t1 = time.perf_counter()
+            _db_load_volume_aggregate_row(conn, RECORDING_ID, AUDIO_CHUNK_NO, base_ms, avg_rms, avg_db)
+            ch["VOLUME_1_MS_DURATION_IN_MS"] = int(round((time.perf_counter() - t1) * 1000))
 
-            # Time the 10-ms series bulk insert
-            t10 = time.perf_counter()                               # <-- NEW
-            _db_load_volume_10ms_series(
-                conn=conn,
-                RECORDING_ID=int(RECORDING_ID),
-                AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
-                rows_10ms=series_10ms,
-            )
-            ch["VOLUME_10_MS_DURATION_IN_MS"] = int(                # <-- NEW
-                round((time.perf_counter() - t10) * 1000)
-            )
+            t10 = time.perf_counter()
+            _db_load_volume_10ms_series(conn, RECORDING_ID, AUDIO_CHUNK_NO, series_10ms)
+            ch["VOLUME_10_MS_DURATION_IN_MS"] = int(round((time.perf_counter() - t10) * 1000))
 
         CONSOLE_LOG(PREFIX, "DB_INSERT_OK", {
             "RECORDING_ID": int(RECORDING_ID),

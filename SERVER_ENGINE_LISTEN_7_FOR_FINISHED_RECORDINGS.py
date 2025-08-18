@@ -1,7 +1,6 @@
 # SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS.py
 from __future__ import annotations
 from datetime import datetime, timedelta
-import asyncio
 
 from SERVER_ENGINE_APP_VARIABLES import (
     RECORDING_CONFIG_ARRAY,
@@ -12,7 +11,8 @@ from SERVER_ENGINE_APP_VARIABLES import (
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_LOG_FUNCTIONS,
-    CONSOLE_LOG
+    CONSOLE_LOG,
+    schedule_coro,  # <— use loop-safe scheduler (works from threads)
 )
 
 def SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS() -> None:
@@ -27,7 +27,8 @@ def SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS() -> None:
             continue
         has_chunks = bool(RECORDING_AUDIO_CHUNK_ARRAY.get(rid))
         if not has_chunks:
-            asyncio.create_task(RECORDING_FINISHED(RECORDING_ID=rid))
+            # SAFE from worker threads; schedules on main loop
+            schedule_coro(RECORDING_FINISHED(RECORDING_ID=rid))
 
 @DB_LOG_FUNCTIONS()
 async def RECORDING_FINISHED(RECORDING_ID: int) -> None:
@@ -48,3 +49,5 @@ async def RECORDING_FINISHED(RECORDING_ID: int) -> None:
     cid = cfg.get("WEBSOCKET_CONNECTION_ID")
     if cid:
         RECORDING_WEBSOCKET_CONNECTION_ARRAY.pop(cid, None)
+
+    CONSOLE_LOG("LISTEN_7", "recording_finished_cleanup_done", {"rid": int(RECORDING_ID)})

@@ -1,7 +1,7 @@
 // CLIENT_AUDIO_STREAM_MASTER.js
 // WebSocket audio streaming client for VIOLIN_MVP
-// Protocol per frame: send TEXT meta (JSON) then BINARY audio bytes.
-// Fields now: RECORDING_ID, FRAME_NO, FRAME_DURATION_IN_MS, BYTES_LEN.
+// Protocol per frame: send TEXT meta (JSON) then BINARY (or base64-on-Android) audio bytes.
+// Fields now: MESSAGE_TYPE, RECORDING_ID, FRAME_NO, FRAME_DURATION_IN_MS, BYTES_LEN.
 
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -278,7 +278,7 @@ async function SEND_FRAME_PAIR({ recordingId, frameNo, frameMs, bytes }) {
   if (!WS || WS.readyState !== 1) return;
 
   const header = {
-    type: 'FRAME',
+    MESSAGE_TYPE: 'FRAME',
     RECORDING_ID: String(recordingId),
     FRAME_NO: String(frameNo), // send as string
     FRAME_DURATION_IN_MS: frameMs,
@@ -481,7 +481,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
         ? evt.data
         : new TextDecoder().decode(evt.data);
       const msg = JSON_PARSE_SAFE(raw) || {};
-      if (msg.type === 'ACK') {
+      if (msg.MESSAGE_TYPE === 'ACK') {
         const missing = Array.isArray(msg.MISSING_FRAMES) ? msg.MISSING_FRAMES : [];
         if (missing.length) LOG('Resend requested', { missing });
         for (const m of missing) {
@@ -508,7 +508,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   };
 
   // Send START
-  WS_SEND_JSON({ type: 'START', RECORDING_ID, AUDIO_STREAM_FILE_NAME });
+  WS_SEND_JSON({ MESSAGE_TYPE: 'START', RECORDING_ID, AUDIO_STREAM_FILE_NAME });
 
   const MS_PER_BEAT = 60000 / Math.max(1, bpm);
   COUNTDOWN_REMAINING_MS = Math.max(0, Math.round(countdownBeats * MS_PER_BEAT));
@@ -612,7 +612,7 @@ export async function STOP_STREAMING_WS() {
   try {
     if (WS && WS.readyState === 1) {
       const RECORDING_ID = String(CLIENT_APP_VARIABLES.RECORDING_ID || '');
-      WS_SEND_JSON({ type: 'STOP', RECORDING_ID });
+      WS_SEND_JSON({ MESSAGE_TYPE: 'STOP', RECORDING_ID });
     }
   } catch {}
 

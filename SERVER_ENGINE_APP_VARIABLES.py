@@ -15,11 +15,12 @@ WEBSOCKET_LISTENER = FastAPI(title="VIOLIN_MVP Audio Stream WS Listener", versio
 
 # Paths
 PROJECT_ROOT_DIR = Path(__file__).resolve().parent
+PROJECT_RECORDINGS_DIR = PROJECT_ROOT_DIR.parent / (PROJECT_ROOT_DIR.name + "_RECORDINGS")
 
-TEMP_RECORDING_AUDIO_DIR = PROJECT_ROOT_DIR / "RECORDING_AUDIO_TEMP"
+TEMP_RECORDING_AUDIO_DIR = PROJECT_RECORDINGS_DIR / "RECORDING_AUDIO_TEMP"
 TEMP_RECORDING_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
-RECORDING_AUDIO_DIR = PROJECT_ROOT_DIR / "RECORDING_AUDIO"
+RECORDING_AUDIO_DIR = PROJECT_RECORDINGS_DIR / "RECORDING_AUDIO"
 RECORDING_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 OAF_IMAGE = os.getenv("OAF_IMAGE", "violin/oaf:latest")
@@ -124,6 +125,7 @@ class RECORDING_WEBSOCKET_MESSAGE_DICT(TypedDict):
     AUDIO_FRAME_NO: NotRequired[Optional[int]]  # If this is a FRAME message
     DT_MESSAGE_RECEIVED: datetime.datetime  # when message was received
     DT_MESSAGE_PROCESS_STARTED: NotRequired[Optional[datetime.datetime]]
+    WEBSOCKET_CONNECTION_ID: NotRequired[Optional[int]]
     
  
 class RECORDING_WEBSOCKET_CONNECTION_DICT(TypedDict):

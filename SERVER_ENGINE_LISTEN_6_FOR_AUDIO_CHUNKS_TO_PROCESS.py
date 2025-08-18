@@ -1,8 +1,9 @@
-# SERVER_ENGINE_LISTEN_6_FOR_AUDIO_CHUNKS_TO_PROCESS.py
 from __future__ import annotations
 from datetime import datetime
 import asyncio
 from typing import Optional
+
+import numpy as np  # for PCM→float decoding
 
 from SERVER_ENGINE_APP_VARIABLES import (
     RECORDING_CONFIG_ARRAY,
@@ -15,85 +16,52 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_EXEC_SP_SINGLE_ROW,
     DB_LOG_ENGINE_DB_RECORDING_AUDIO_CHUNK,
     CONSOLE_LOG,
-    schedule_coro
+    schedule_coro,
 )
+
+# Analyzer entries
+from SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE import SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE  # async wrapper
+from SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT   import SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT
+from SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS   import SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS
+from SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN  import SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN
+from SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME import SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME
+
 
 # ─────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────
 def _get_chunk(RECORDING_ID: int, AUDIO_CHUNK_NO: int):
-    """Return chunk dict regardless of int/str key, or None if not present yet."""
-    chunks = RECORDING_AUDIO_CHUNK_ARRAY.get(RECORDING_ID)
-    if chunks is None:
-        chunks = RECORDING_AUDIO_CHUNK_ARRAY.get(str(RECORDING_ID))
-        if chunks is None:
-            return None
+    """
+    Return the chunk dict regardless of int/str key, or None if not present.
+    """
+    chunks = RECORDING_AUDIO_CHUNK_ARRAY.get(RECORDING_ID) \
+             or RECORDING_AUDIO_CHUNK_ARRAY.get(str(RECORDING_ID))
+    if not chunks:
+        return None
+    return chunks.get(AUDIO_CHUNK_NO) or chunks.get(str(AUDIO_CHUNK_NO))
 
-    if AUDIO_CHUNK_NO in chunks:
-        return chunks[AUDIO_CHUNK_NO]
-    if str(AUDIO_CHUNK_NO) in chunks:
-        return chunks[str(AUDIO_CHUNK_NO)]
-    return None
 
-# ─────────────────────────────────────────────
-# Lightweight placeholder analyzers
-# (Replace these with your real implementations)
-# ─────────────────────────────────────────────
-def _stamp_start(ch, key):
-    ch[key] = datetime.now()
+def _pcm16_to_float32_array(pcm: Optional[bytes]) -> Optional[np.ndarray]:
+    """
+    Decode mono PCM16 (little-endian) bytes → float32 in [-1, 1].
+    Returns None if pcm is falsy.
+    """
+    if not pcm:
+        return None
+    try:
+        arr = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+        return arr
+    except Exception:
+        return None
 
-def _finish_duration(ch, key_duration_ms: str, rec_count_key: Optional[str] = None):
-    ch[key_duration_ms] = 1  # placeholder 1ms
-    if rec_count_key:
-        ch[rec_count_key] = 0
-
-async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(RECORDING_ID: int, AUDIO_CHUNK_NO: int):
-    ch = _get_chunk(RECORDING_ID, AUDIO_CHUNK_NO)
-    if ch is None:
-        CONSOLE_LOG("STAGE6", "chunk_not_ready", {"rid": int(RECORDING_ID), "chunk": AUDIO_CHUNK_NO, "stage": "FFT"})
-        return
-    _stamp_start(ch, "DT_START_FFT")
-    _finish_duration(ch, "FFT_DURATION_IN_MS", "FFT_RECORD_CNT")
-
-async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS(RECORDING_ID: int, AUDIO_CHUNK_NO: int):
-    ch = _get_chunk(RECORDING_ID, AUDIO_CHUNK_NO)
-    if ch is None:
-        CONSOLE_LOG("STAGE6", "chunk_not_ready", {"rid": int(RECORDING_ID), "chunk": AUDIO_CHUNK_NO, "stage": "ONS"})
-        return
-    _stamp_start(ch, "DT_START_ONS")
-    _finish_duration(ch, "ONS_DURATION_IN_MS", "ONS_RECORD_CNT")
-
-async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(RECORDING_ID: int, AUDIO_CHUNK_NO: int):
-    ch = _get_chunk(RECORDING_ID, AUDIO_CHUNK_NO)
-    if ch is None:
-        CONSOLE_LOG("STAGE6", "chunk_not_ready", {"rid": int(RECORDING_ID), "chunk": AUDIO_CHUNK_NO, "stage": "PYIN"})
-        return
-    _stamp_start(ch, "DT_START_PYIN")
-    _finish_duration(ch, "PYIN_DURATION_IN_MS", "PYIN_RECORD_CNT")
-
-async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(RECORDING_ID: int, AUDIO_CHUNK_NO: int):
-    ch = _get_chunk(RECORDING_ID, AUDIO_CHUNK_NO)
-    if ch is None:
-        CONSOLE_LOG("STAGE6", "chunk_not_ready", {"rid": int(RECORDING_ID), "chunk": AUDIO_CHUNK_NO, "stage": "CREPE"})
-        return
-    _stamp_start(ch, "DT_START_CREPE")
-    _finish_duration(ch, "CREPE_DURATION_IN_MS", "CREPE_RECORD_CNT")
-
-async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME(RECORDING_ID: int, AUDIO_CHUNK_NO: int):
-    ch = _get_chunk(RECORDING_ID, AUDIO_CHUNK_NO)
-    if ch is None:
-        CONSOLE_LOG("STAGE6", "chunk_not_ready", {"rid": int(RECORDING_ID), "chunk": AUDIO_CHUNK_NO, "stage": "VOLUME"})
-        return
-    _stamp_start(ch, "DT_START_VOLUME")
-    _finish_duration(ch, "VOLUME_10_MS_DURATION_IN_MS", "VOLUME_10_MS_RECORD_CNT")
-    _finish_duration(ch, "VOLUME_1_MS_DURATION_IN_MS", "VOLUME_1_MS_RECORD_CNT")
 
 # ─────────────────────────────────────────────
-
+# Scanner entry
+# ─────────────────────────────────────────────
 def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_CHUNKS_TO_PROCESS() -> None:
     """
-    Step 1) For chunks with DT_AUDIO_CHUNK_PREPARATION_COMPLETE not null and DT_START_AUDIO_CHUNK_PROCESS null,
-            launch PROCESS_THE_AUDIO_CHUNK
+    Step 1) For chunks with DT_AUDIO_CHUNK_PREPARATION_COMPLETE not null and
+            DT_START_AUDIO_CHUNK_PROCESS null, launch PROCESS_THE_AUDIO_CHUNK.
     """
     to_launch = []
     for rid, chunks in list(RECORDING_AUDIO_CHUNK_ARRAY.items()):
@@ -104,33 +72,63 @@ def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_CHUNKS_TO_PROCESS() -> None:
         schedule_coro(PROCESS_THE_AUDIO_CHUNK(RECORDING_ID=rid, AUDIO_CHUNK_NO=chno))
 
 
+# ─────────────────────────────────────────────
+# Orchestrator for a single chunk
+# ─────────────────────────────────────────────
 @DB_LOG_FUNCTIONS()
 async def PROCESS_THE_AUDIO_CHUNK(RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> None:
     """
-    Implements Steps 1–13 from your spec.
+    Implements Steps 1–13 and explicitly waits for
+    FFT, ONS, PYIN, CREPE, VOLUME to finish before calling P_ENGINE_ALL_MASTER.
     """
     ch = _get_chunk(RECORDING_ID, AUDIO_CHUNK_NO)
     if ch is None:
-        CONSOLE_LOG("STAGE6", "chunk_not_ready_at_process_entry", {"rid": int(RECORDING_ID), "chunk": AUDIO_CHUNK_NO})
+        CONSOLE_LOG("STAGE6", "chunk_not_ready_at_process_entry", {
+            "rid": int(RECORDING_ID), "chunk": int(AUDIO_CHUNK_NO)
+        })
         return
 
-    cfg = RECORDING_CONFIG_ARRAY.get(RECORDING_ID, {})
+    cfg  = RECORDING_CONFIG_ARRAY.get(RECORDING_ID, {}) or {}
     mode = str(cfg.get("COMPOSE_PLAY_OR_PRACTICE") or "").upper()
+
+    # Prepared inputs from Stage-5 (CONCATENATE)
+    start_ms = int(ch.get("START_MS") or 0)
+
+    # Prefer arrays if present; otherwise decode PCM16 bytes on-the-fly.
+    audio_22k = ch.get("AUDIO_ARRAY_22050")
+    sr_22k    = int(ch.get("SAMPLE_RATE_22050") or 22050)
+    if audio_22k is None:
+        audio_22k = _pcm16_to_float32_array(ch.get("AUDIO_CHUNK_DATA_22050"))
+        if audio_22k is not None:
+            ch["AUDIO_ARRAY_22050"] = audio_22k
+            ch["SAMPLE_RATE_22050"] = 22050
+
+    audio_16k = ch.get("AUDIO_ARRAY_16000")
+    sr_16k    = int(ch.get("SAMPLE_RATE_16000") or 16000)
+    if audio_16k is None:
+        audio_16k = _pcm16_to_float32_array(ch.get("AUDIO_CHUNK_DATA_16K"))
+        if audio_16k is not None:
+            ch["AUDIO_ARRAY_16000"] = audio_16k
+            ch["SAMPLE_RATE_16000"] = 16000
+
+    # Step 1) mark process start
     ch["DT_START_AUDIO_CHUNK_PROCESS"] = datetime.now()
 
-    # Step 2 & 3 & 4–7 per mode/flags
-    if mode == "COMPOSE":
-        if str(cfg.get("YN_RUN_FFT") or "").upper() == "Y":
-            await SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(RECORDING_ID, AUDIO_CHUNK_NO)
-            with DB_CONNECT_CTX() as conn:
-                DB_EXEC_SP_NO_RESULT(conn, "P_ENGINE_ALL_METHOD_FFT",
-                                     RECORDING_ID=RECORDING_ID, AUDIO_CHUNK_NO=AUDIO_CHUNK_NO)
-        else:
-            with DB_CONNECT_CTX() as conn:
-                DB_EXEC_SP_NO_RESULT(conn, "P_ENGINE_ALL_METHOD_COMPOSE_DONT_RUN_FFT",
-                                     RECORDING_ID=RECORDING_ID, AUDIO_CHUNK_NO=AUDIO_CHUNK_NO)
+    # Step 2–3) FFT scheduling (mode-aware). We'll run the DB FFT aggregator AFTER gather().
+    tasks: list[asyncio.Future] = []
+    compose_run_fft = False
 
-        # Determine next compose chunk number if needed
+    if mode == "COMPOSE":
+        if str(cfg.get("YN_RUN_FFT") or "").upper() == "Y" and isinstance(audio_22k, np.ndarray):
+            ch["DT_START_FFT"] = datetime.now()
+            tasks.append(asyncio.to_thread(
+                SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT,
+                int(RECORDING_ID), int(AUDIO_CHUNK_NO),
+                int(start_ms),
+                audio_22k, int(sr_22k),
+            ))
+            compose_run_fft = True
+        # Per-chunk flags for ONS/PYIN/CREPE
         with DB_CONNECT_CTX() as conn:
             row = DB_EXEC_SP_SINGLE_ROW(
                 conn,
@@ -138,37 +136,91 @@ async def PROCESS_THE_AUDIO_CHUNK(RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> Non
                 RECORDING_ID=int(RECORDING_ID),
                 AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
             ) or {}
-
-        # Update the chunk flags from the SP row
         ch["YN_RUN_ONS"]   = row.get("YN_RUN_ONS")
         ch["YN_RUN_PYIN"]  = row.get("YN_RUN_PYIN")
         ch["YN_RUN_CREPE"] = row.get("YN_RUN_CREPE")
 
     else:  # PLAY or PRACTICE
-        if str(ch.get("YN_RUN_FFT") or "").upper() == "Y":
-            await SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(RECORDING_ID, AUDIO_CHUNK_NO)
+        if str(ch.get("YN_RUN_FFT") or "").upper() == "Y" and isinstance(audio_22k, np.ndarray):
+            ch["DT_START_FFT"] = datetime.now()
+            tasks.append(asyncio.to_thread(
+                SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT,
+                int(RECORDING_ID), int(AUDIO_CHUNK_NO),
+                int(start_ms),
+                audio_22k, int(sr_22k),
+            ))
 
-    # Steps 4–7: schedule analyzers BUT await them to avoid chunk-deletion races
-    tasks = []
-    if str(ch.get("YN_RUN_ONS") or cfg.get("YN_RUN_ONS") or "").upper() == "Y":
-        tasks.append(asyncio.create_task(SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS(RECORDING_ID, AUDIO_CHUNK_NO)))
-    if str(ch.get("YN_RUN_PYIN") or cfg.get("YN_RUN_PYIN") or "").upper() == "Y":
-        tasks.append(asyncio.create_task(SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(RECORDING_ID, AUDIO_CHUNK_NO)))
-    if str(ch.get("YN_RUN_CREPE") or cfg.get("YN_RUN_CREPE") or "").upper() == "Y":
-        tasks.append(asyncio.create_task(SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(RECORDING_ID, AUDIO_CHUNK_NO)))
-    tasks.append(asyncio.create_task(SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME(RECORDING_ID, AUDIO_CHUNK_NO)))
+    # Steps 4–7) Launch analyzers; collect awaitables
 
+    # ONS (16 kHz)
+    if str(ch.get("YN_RUN_ONS") or cfg.get("YN_RUN_ONS") or "").upper() == "Y" and isinstance(audio_16k, np.ndarray):
+        ch["DT_START_ONS"] = datetime.now()
+        tasks.append(asyncio.to_thread(
+            SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS,
+            int(RECORDING_ID), int(AUDIO_CHUNK_NO),
+            int(start_ms),
+            audio_16k, int(sr_16k),
+        ))
+
+    # pYIN (22.05 kHz)
+    if str(ch.get("YN_RUN_PYIN") or cfg.get("YN_RUN_PYIN") or "").upper() == "Y" and isinstance(audio_22k, np.ndarray):
+        ch["DT_START_PYIN"] = datetime.now()
+        tasks.append(asyncio.to_thread(
+            SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN,
+            int(RECORDING_ID), int(AUDIO_CHUNK_NO),
+            int(start_ms),
+            audio_22k, int(sr_22k),
+        ))
+
+    # CREPE (16 kHz) — async wrapper reads audio from the chunk
+    if str(ch.get("YN_RUN_CREPE") or cfg.get("YN_RUN_CREPE") or "").upper() == "Y" and isinstance(audio_16k, np.ndarray):
+        ch["DT_START_CREPE"] = datetime.now()
+        tasks.append(asyncio.create_task(
+            SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(int(RECORDING_ID), int(AUDIO_CHUNK_NO))
+        ))
+
+    # VOLUME (always, if 22.05 kHz is available)
+    if isinstance(audio_22k, np.ndarray):
+        ch["DT_START_VOLUME"] = datetime.now()
+        tasks.append(asyncio.to_thread(
+            SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME,
+            int(RECORDING_ID), int(AUDIO_CHUNK_NO),
+            int(start_ms),
+            audio_22k, int(sr_22k),
+        ))
+    else:
+        CONSOLE_LOG("STAGE6", "volume_skipped_no_22k_audio", {
+            "rid": int(RECORDING_ID), "chunk": int(AUDIO_CHUNK_NO)
+        })
+
+    # Step 8) Wait for ALL analyzers to complete
     if tasks:
-        await asyncio.gather(*tasks)
+        try:
+            await asyncio.gather(*tasks)
+        except Exception as e:
+            CONSOLE_LOG("STAGE6", "analyzer_gather_error", {
+                "rid": int(RECORDING_ID),
+                "chunk": int(AUDIO_CHUNK_NO),
+                "err": str(e),
+            })
 
-    # Step 8) wait-until-all-finished (done by gather)
-    # Step 9)
+    # (COMPOSE only) Now that FFT rows exist, call the appropriate FFT aggregator SP.
+    if mode == "COMPOSE":
+        with DB_CONNECT_CTX() as conn:
+            if compose_run_fft:
+                DB_EXEC_SP_NO_RESULT(
+                    conn, "P_ENGINE_ALL_METHOD_FFT",
+                    RECORDING_ID=int(RECORDING_ID), AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO)
+                )
+            else:
+                DB_EXEC_SP_NO_RESULT(
+                    conn, "P_ENGINE_ALL_METHOD_COMPOSE_DONT_RUN_FFT",
+                    RECORDING_ID=int(RECORDING_ID), AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO)
+                )
+
+    # Step 9) P_ENGINE_ALL_MASTER (runs **after** analyzers are done)
     ch["DT_START_P_ENGINE_ALL_MASTER"] = datetime.now()
-
-    cfg = RECORDING_CONFIG_ARRAY.get(int(RECORDING_ID), {})
-    violinist_id = cfg.get("VIOLINIST_ID")
-    mode         = (cfg.get("COMPOSE_PLAY_OR_PRACTICE") or "").upper()
-
+    violinist_id = (cfg or {}).get("VIOLINIST_ID")
     with DB_CONNECT_CTX() as conn:
         DB_EXEC_SP_NO_RESULT(
             conn,
@@ -179,26 +231,25 @@ async def PROCESS_THE_AUDIO_CHUNK(RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> Non
             AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
         )
 
-    # Step 11) end
+    # Step 11) End
     ch["DT_END_AUDIO_CHUNK_PROCESS"] = datetime.now()
 
     # Step 12) DB log the chunk snapshot
     try:
-        DB_LOG_ENGINE_DB_RECORDING_AUDIO_CHUNK(RECORDING_ID, AUDIO_CHUNK_NO)
+        DB_LOG_ENGINE_DB_RECORDING_AUDIO_CHUNK(int(RECORDING_ID), int(AUDIO_CHUNK_NO))
     except Exception:
         pass
 
-    # Step 13) remove from array to free memory
+    # Step 13) Remove chunk from memory to free resources
     try:
-        # Resolve the exact key we used (int or str) before deleting
-        chunks = RECORDING_AUDIO_CHUNK_ARRAY.get(RECORDING_ID) or RECORDING_AUDIO_CHUNK_ARRAY.get(str(RECORDING_ID))
+        chunks = RECORDING_AUDIO_CHUNK_ARRAY.get(RECORDING_ID) \
+                 or RECORDING_AUDIO_CHUNK_ARRAY.get(str(RECORDING_ID))
         if chunks is not None:
             if AUDIO_CHUNK_NO in chunks:
                 del chunks[AUDIO_CHUNK_NO]
             elif str(AUDIO_CHUNK_NO) in chunks:
                 del chunks[str(AUDIO_CHUNK_NO)]
             if not chunks:
-                # delete the outer map if empty
                 if RECORDING_ID in RECORDING_AUDIO_CHUNK_ARRAY:
                     del RECORDING_AUDIO_CHUNK_ARRAY[RECORDING_ID]
                 elif str(RECORDING_ID) in RECORDING_AUDIO_CHUNK_ARRAY:

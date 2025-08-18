@@ -5,11 +5,16 @@
 #   • Produce (START_MS, END_MS, HZ, CONFIDENCE) relative @ ~10 ms
 #   • Offset by AUDIO_CHUNK_START_MS to ABS times
 #   • Bulk insert into ENGINE_LOAD_HZ with SOURCE_METHOD='PYIN'
+#   • Non-blocking compute/insert using schedule_coro(asyncio.to_thread(...))
 # ----------------------------------------------------------------------
 
 from __future__ import annotations
 
+from datetime import datetime
 import traceback
+import inspect
+import os
+import asyncio
 from typing import Iterable, List, Tuple
 
 import builtins as _bi
@@ -20,15 +25,31 @@ try:
 except Exception:  # pragma: no cover
     librosa = None  # type: ignore
 
-from SERVER_ENGINE_APP_VARIABLES import RECORDING_AUDIO_CHUNK_ARRAY  # <-- NEW
+from SERVER_ENGINE_APP_VARIABLES import RECORDING_AUDIO_CHUNK_ARRAY
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_CONNECT_CTX,
     DB_BULK_INSERT,
-    DB_LOG_FUNCTIONS,  # <-- add decorator
+    DB_LOG_FUNCTIONS,
+    DB_LOG_ENGINE_DB_LOG_STEPS,   # enqueues & stamps DT_ADDED
+    schedule_coro,                # loop/thread safe
 )
 
 PREFIX = "PYIN"
+
+# ─────────────────────────────────────────────────────────────
+# small helper to log a processing step (with DT_ADDED)
+# ─────────────────────────────────────────────────────────────
+def log_step(step: str, RECORDING_ID: int, AUDIO_CHUNK_NO: int) -> None:
+    DB_LOG_ENGINE_DB_LOG_STEPS(
+        STEP_NAME=step,
+        PYTHON_FUNCTION_NAME=inspect.currentframe().f_back.f_code.co_name,
+        PYTHON_FILE_NAME=os.path.basename(__file__),
+        RECORDING_ID=int(RECORDING_ID),
+        AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
+        FRAME_NO=None,
+        DT_ADDED=datetime.now(),
+    )
 
 # ─────────────────────────────────────────────────────────────
 # DB bulk insert
@@ -158,17 +179,22 @@ def SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
       • Bulk insert into ENGINE_LOAD_HZ with SOURCE_METHOD='PYIN'
     """
     try:
+        log_step("BEGIN", RECORDING_ID, AUDIO_CHUNK_NO)
+
         # Ensure a chunk map exists for stamping counts
         chunks = RECORDING_AUDIO_CHUNK_ARRAY.setdefault(int(RECORDING_ID), {})
-        ch = chunks.setdefault(int(AUDIO_CHUNK_NO), {"RECORDING_ID": int(RECORDING_ID), "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO)})
+        ch = chunks.setdefault(int(AUDIO_CHUNK_NO), {
+            "RECORDING_ID": int(RECORDING_ID),
+            "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
+        })
 
         if not isinstance(AUDIO_ARRAY_22050, np.ndarray) or AUDIO_ARRAY_22050.size == 0:
             CONSOLE_LOG(PREFIX, "EMPTY_AUDIO")
-            ch["PYIN_RECORD_CNT"] = 0  # <-- NEW
+            ch["PYIN_RECORD_CNT"] = 0
             return
         if int(SAMPLE_RATE_22050) != 22050:
             CONSOLE_LOG(PREFIX, "UNEXPECTED_SR", {"got": int(SAMPLE_RATE_22050), "expected": 22050})
-            ch["PYIN_RECORD_CNT"] = 0  # <-- NEW
+            ch["PYIN_RECORD_CNT"] = 0
             return
 
         CONSOLE_LOG(PREFIX, "BEGIN", {
@@ -179,34 +205,42 @@ def SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
             "SAMPLES": int(AUDIO_ARRAY_22050.shape[0]),
         })
 
-        rows_rel = _pyin_relative_series(AUDIO_ARRAY_22050.astype(np.float32, copy=False), sr=22050)
-        if not rows_rel:
-            CONSOLE_LOG(PREFIX, "NO_ROWS")
-            ch["PYIN_RECORD_CNT"] = 0  # <-- NEW
-            return
-
-        base = int(AUDIO_CHUNK_START_MS)
-        rows_abs: List[Tuple[int, int, float, float]] = [
-            (base + s_rel, base + e_rel, hz, conf) for (s_rel, e_rel, hz, conf) in rows_rel
-        ]
-
-        # NEW: stamp PYIN row count in memory for Step-2's DB_LOG_RECORDING_AUDIO_CHUNK
-        ch["PYIN_RECORD_CNT"] = int(len(rows_abs))  # <-- NEW
-
-        with DB_CONNECT_CTX() as conn:
-            _db_load_hz_series(
-                conn=conn,
-                RECORDING_ID=int(RECORDING_ID),
-                AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
-                SOURCE_METHOD="PYIN",
-                rows=rows_abs,
+        def _job():
+            rows_rel = _pyin_relative_series(
+                AUDIO_ARRAY_22050.astype(np.float32, copy=False),
+                sr=22050
             )
+            if not rows_rel:
+                CONSOLE_LOG(PREFIX, "NO_ROWS")
+                ch["PYIN_RECORD_CNT"] = 0
+                return
 
-        CONSOLE_LOG(PREFIX, "DB_INSERT_OK", {
-            "RECORDING_ID": int(RECORDING_ID),
-            "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
-            "ROW_COUNT": len(rows_abs),
-        })
+            base = int(AUDIO_CHUNK_START_MS)
+            rows_abs: List[Tuple[int, int, float, float]] = [
+                (base + s_rel, base + e_rel, hz, conf) for (s_rel, e_rel, hz, conf) in rows_rel
+            ]
+
+            # stamp count for Step-2 DB logging
+            ch["PYIN_RECORD_CNT"] = int(len(rows_abs))
+
+            with DB_CONNECT_CTX() as conn:
+                _db_load_hz_series(
+                    conn=conn,
+                    RECORDING_ID=int(RECORDING_ID),
+                    AUDIO_CHUNK_NO=int(AUDIO_CHUNK_NO),
+                    SOURCE_METHOD="PYIN",
+                    rows=rows_abs,
+                )
+
+            CONSOLE_LOG(PREFIX, "DB_INSERT_OK", {
+                "RECORDING_ID": int(RECORDING_ID),
+                "AUDIO_CHUNK_NO": int(AUDIO_CHUNK_NO),
+                "ROW_COUNT": len(rows_abs),
+            })
+            log_step("DONE", RECORDING_ID, AUDIO_CHUNK_NO)
+
+        # Offload compute + DB to a background worker safely
+        schedule_coro(asyncio.to_thread(_job))
 
     except Exception as exc:
         CONSOLE_LOG(PREFIX, "FATAL_ERROR", {

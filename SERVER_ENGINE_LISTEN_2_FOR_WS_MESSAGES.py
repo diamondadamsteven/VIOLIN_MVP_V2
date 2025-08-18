@@ -15,6 +15,7 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_LOG_FUNCTIONS,
     DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE,
     CONSOLE_LOG,
+    DB_LOG_ENGINE_DB_WEBSOCKET_CONNECTION
 )
 
 # --- Internal State
@@ -90,6 +91,8 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(ws: WebSocket, WEBSOCKET_CONNEC
             if raw.get("type") == "websocket.disconnect":
                 if WEBSOCKET_CONNECTION_ID in RECORDING_WEBSOCKET_CONNECTION_ARRAY:
                     RECORDING_WEBSOCKET_CONNECTION_ARRAY[WEBSOCKET_CONNECTION_ID]["DT_CONNECTION_CLOSED"] = datetime.now()
+                    DB_LOG_ENGINE_DB_WEBSOCKET_CONNECTION(WEBSOCKET_CONNECTION_ID=WEBSOCKET_CONNECTION_ID)
+
                 break
 
             now = datetime.now()
@@ -124,6 +127,7 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(ws: WebSocket, WEBSOCKET_CONNEC
                     "MESSAGE_TYPE": mtype,
                     "AUDIO_FRAME_NO": frame_no,
                     "DT_MESSAGE_PROCESS_STARTED": None,
+                    "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID
                 }
                 _persist_message_fire_and_forget(mid)
 
