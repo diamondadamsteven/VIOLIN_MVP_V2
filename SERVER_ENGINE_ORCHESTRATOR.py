@@ -17,13 +17,11 @@ from SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES    import SERVER_ENGINE_LISTEN_2_FOR
 from SERVER_ENGINE_LISTEN_3A_FOR_START import SERVER_ENGINE_LISTEN_3A_FOR_START
 from SERVER_ENGINE_LISTEN_3B_FOR_FRAMES import SERVER_ENGINE_LISTEN_3B_FOR_FRAMES
 from SERVER_ENGINE_LISTEN_3C_FOR_STOP import SERVER_ENGINE_LISTEN_3C_FOR_STOP
-from SERVER_ENGINE_LISTEN_4_FOR_AUDIO_CHUNKS_TO_PREPARE import SERVER_ENGINE_LISTEN_4_FOR_AUDIO_CHUNKS_TO_PREPARE
-from SERVER_ENGINE_LISTEN_5_CONCATENATE import SERVER_ENGINE_LISTEN_5_CONCATENATE
-from SERVER_ENGINE_LISTEN_6_FOR_AUDIO_CHUNKS_TO_PROCESS import SERVER_ENGINE_LISTEN_6_FOR_AUDIO_CHUNKS_TO_PROCESS
+from SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS import SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS
 from SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS import SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS
 
 from SERVER_ENGINE_APP_FUNCTIONS import (
-    DB_LOG_FUNCTIONS,
+    ENGINE_DB_LOG_FUNCTIONS_INS,
     CONSOLE_LOG,
     DB_ENGINE_STARTUP,
     DB_ENGINE_SHUTDOWN,
@@ -194,7 +192,7 @@ def _spawn_non_blocking(fn, name: str):
     # Use the loop-safe scheduler from APP_FUNCTIONS
     schedule_coro(_runner())
 
-@DB_LOG_FUNCTIONS()
+@ENGINE_DB_LOG_FUNCTIONS_INS()
 async def _engine_orchestrator():
     while True:
         try:
@@ -204,9 +202,7 @@ async def _engine_orchestrator():
             await _maybe_await(SERVER_ENGINE_LISTEN_3C_FOR_STOP())    # O(1)
 
             # Heavy stages -> spawn safely (handles sync/async, deduped)
-            _spawn_non_blocking(SERVER_ENGINE_LISTEN_4_FOR_AUDIO_CHUNKS_TO_PREPARE, "prep")
-            _spawn_non_blocking(SERVER_ENGINE_LISTEN_5_CONCATENATE,                   "concat")
-            _spawn_non_blocking(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_CHUNKS_TO_PROCESS,  "process")
+            _spawn_non_blocking(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS,      "finish")
             _spawn_non_blocking(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS,      "finish")
 
         except Exception as e:

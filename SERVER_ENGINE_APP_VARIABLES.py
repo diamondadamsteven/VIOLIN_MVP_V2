@@ -10,6 +10,8 @@ import datetime  # for datetime.datetime
 import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+import numpy as np
+from numpy.typing import NDArray
 
 WEBSOCKET_LISTENER = FastAPI(title="VIOLIN_MVP Audio Stream WS Listener", version="1.4.0")
 
@@ -33,128 +35,109 @@ OAF_PORT = int(os.getenv("OAF_PORT", "9077"))
 # TypedDicts
 # ─────────────────────────────────────────────────────────────
 
-class RECORDING_AUDIO_FRAME_DICT(TypedDict):
+class ENGINE_DB_LOG_RECORDING_CONFIG_DICT(TypedDict):
     RECORDING_ID: Required[int]           # bigint
-    FRAME_NO: Required[int]               # int
-    DT_FRAME_RECEIVED: NotRequired[Optional[datetime.datetime]]
-    AUDIO_FRAME_DATA: Optional[bytes] 
-    # DT_FRAME_CONCATENATED_TO_AUDIO_CHUNK: NotRequired[Optional[datetime.datetime]]
-    #AUDIO_CHUNK_NO: NotRequired[Optional[int]]
+    DT_RECORDING_START: NotRequired[Optional[datetime.datetime]]
+    COMPOSE_PLAY_OR_PRACTICE: NotRequired[Optional[str]]
+    AUDIO_STREAM_FILE_NAME: NotRequired[Optional[str]]
+    COMPOSE_YN_RUN_FFT: NotRequired[Optional[str]]
+    WEBSOCKET_CONNECTION_ID: Optional[int]
+    
+class ENGINE_DB_LOG_WEBSOCKET_MESSAGE_DICT(TypedDict):
+    RECORDING_ID: Optional[int]
+    MESSAGE_TYPE: NotRequired[Optional[str]]
+    AUDIO_FRAME_NO: Optional[int]
+    DT_MESSAGE_RECEIVED: NotRequired[Optional[datetime.datetime]]
+    DT_MESSAGE_PROCESS_QUEDED_TO_START: NotRequired[Optional[datetime.datetime]]
+    DT_MESSAGE_PROCESS_STARTED: NotRequired[Optional[datetime.datetime]]
+    WEBSOCKET_CONNECTION_ID: Optional[int]
+    MESSAGE_ID: Optional[int]
 
-class RECORDING_AUDIO_CHUNK_DICT(TypedDict):
-    # Required
-    RECORDING_ID: Required[int]           # bigint
-    AUDIO_CHUNK_NO: Required[int]         # int
-    AUDIO_CHUNK_DURATION_IN_MS: Required[int]
-    START_MS: Required[int]
-    END_MS: Required[int]
-    MIN_AUDIO_STREAM_FRAME_NO: Required[int]
-    MAX_AUDIO_STREAM_FRAME_NO: Required[int]
-    AUDIO_CHUNK_DATA_16K: Optional[bytes]       # ← if truly needed
-    AUDIO_CHUNK_DATA_22050: Optional[bytes]
 
-    # Optional flags
+class ENGINE_DB_LOG_WEBSOCKET_CONNECTION_DICT(TypedDict):
+    WEBSOCKET_CONNECTION_ID: Optional[int]
+    CLIENT_HOST_IP_ADDRESS: NotRequired[Optional[str]]
+    CLIENT_PORT: NotRequired[Optional[str]]
+    CLIENT_HEADERS: NotRequired[Optional[str]]
+    DT_CONNECTION_REQUEST: NotRequired[Optional[datetime.datetime]]
+    DT_CONNECTION_ACCEPTED: NotRequired[Optional[datetime.datetime]]
+    DT_CONNECTION_CLOSED: NotRequired[Optional[datetime.datetime]]
+    DT_WEBSOCKET_DISCONNECT_EVENT: NotRequired[Optional[datetime.datetime]]
+
+
+class WEBSOCKET_AUDIO_FRAME_DICT(TypedDict):
+    RECORDING_ID: Optional[int]
+    AUDIO_FRAME_NO: Optional[int]
+    # --- memory-only payload (do NOT persist) ---
+    AUDIO_FRAME_BYTES: NotRequired[bytes]
+    AUDIO_ARRAY_16000: NotRequired[NDArray[np.float32]]       # mono float32 @ 16k
+    AUDIO_ARRAY_22050: NotRequired[NDArray[np.float32]]       # mono float32 @ 22.05k
+
+class ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_DICT(TypedDict):
+    RECORDING_ID: Optional[int]
+    AUDIO_FRAME_NO: Optional[int]
+    START_MS: Optional[int]
+    END_MS: Optional[int]
+
+    # --- memory-only payload (do NOT persist) ---
+    AUDIO_FRAME_SIZE_BYTES: NotRequired[int]
+    AUDIO_FRAME_ENCODING: NotRequired[Literal["raw", "pcm16", "base64", "hex"]]
+    AUDIO_FRAME_SHA256_HEX: NotRequired[str]
     YN_RUN_FFT: NotRequired[Optional[str]]
     YN_RUN_ONS: NotRequired[Optional[str]]
     YN_RUN_PYIN: NotRequired[Optional[str]]
     YN_RUN_CREPE: NotRequired[Optional[str]]
+    DT_FRAME_RECEIVED: NotRequired[Optional[datetime.datetime]]
+    DT_FRAME_PAIRED_WITH_WEBSOCKETS_METADATA: NotRequired[Optional[datetime.datetime]]
+    DT_FRAME_DECODED_FROM_BASE64_TO_BYTES: NotRequired[Optional[datetime.datetime]]
 
-    # Optional timing/metrics
-    DT_COMPLETE_FRAMES_RECEIVED: NotRequired[Optional[datetime.datetime]]
-    DT_START_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK: NotRequired[Optional[datetime.datetime]]
-    DT_COMPLETE_FRAMES_CONCATENATED_INTO_AUDIO_CHUNK: NotRequired[Optional[datetime.datetime]]
-    DT_AUDIO_CHUNK_CONVERTED_TO_WAV: NotRequired[Optional[datetime.datetime]]
-    DT_AUDIO_CHUNK_WAV_SAVED_TO_FILE: NotRequired[Optional[datetime.datetime]]
-    DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_16K: NotRequired[Optional[datetime.datetime]]
-    DT_AUDIO_CHUNK_CONVERTED_TO_SAMPLE_RATE_22050: NotRequired[Optional[datetime.datetime]]
-    DT_AUDIO_CHUNK_PREPARATION_COMPLETE: NotRequired[Optional[datetime.datetime]]
-    DT_START_AUDIO_CHUNK_PROCESS: NotRequired[Optional[datetime.datetime]]
-    DT_END_AUDIO_CHUNK_PROCESS: NotRequired[Optional[datetime.datetime]]
+    DT_FRAME_DECODED_FROM_BYTES_INTO_AUDIO_SAMPLES: NotRequired[Optional[datetime.datetime]]
+    DT_FRAME_RESAMPLED_TO_44100: NotRequired[Optional[datetime.datetime]]
 
+    DT_FRAME_CONVERTED_TO_PCM16_WITH_SAMPLE_RATE_44100: NotRequired[Optional[datetime.datetime]]
+    DT_FRAME_APPENDED_TO_RAW_FILE: NotRequired[Optional[datetime.datetime]]
+    DT_FRAME_RESAMPLED_TO_16000: NotRequired[Optional[datetime.datetime]]
+    DT_FRAME_RESAMPLED_22050: NotRequired[Optional[datetime.datetime]]
+    DT_PROCESSING_START: NotRequired[Optional[datetime.datetime]]
+    DT_PROCESSING_END: NotRequired[Optional[datetime.datetime]]
     DT_START_FFT: NotRequired[Optional[datetime.datetime]]
-    FFT_DURATION_IN_MS: NotRequired[Optional[int]]
-    FFT_RECORD_CNT: NotRequired[Optional[int]]
-
+    DT_END_FFT: NotRequired[Optional[datetime.datetime]]
     DT_START_ONS: NotRequired[Optional[datetime.datetime]]
-    ONS_DURATION_IN_MS: NotRequired[Optional[int]]
-    ONS_RECORD_CNT: NotRequired[Optional[int]]
-
+    DT_SEND_ONS: NotRequired[Optional[datetime.datetime]]
     DT_START_PYIN: NotRequired[Optional[datetime.datetime]]
-    PYIN_DURATION_IN_MS: NotRequired[Optional[int]]
-    PYIN_RECORD_CNT: NotRequired[Optional[int]]
-
+    DT_END_PYIN: NotRequired[Optional[datetime.datetime]]
     DT_START_CREPE: NotRequired[Optional[datetime.datetime]]
-    CREPE_DURATION_IN_MS: NotRequired[Optional[int]]
-    CREPE_RECORD_CNT: NotRequired[Optional[int]]
-
-    DT_START_VOLUME: NotRequired[Optional[datetime.datetime]]
-    VOLUME_10_MS_DURATION_IN_MS: NotRequired[Optional[int]]
-    VOLUME_1_MS_DURATION_IN_MS: NotRequired[Optional[int]]
-    VOLUME_10_MS_RECORD_CNT: NotRequired[Optional[int]]
-    VOLUME_1_MS_RECORD_CNT: NotRequired[Optional[int]]
-
-    DT_START_P_ENGINE_ALL_MASTER: NotRequired[Optional[datetime.datetime]]
-    P_ENGINE_ALL_MASTER_DURATION_IN_MS: NotRequired[Optional[int]]
-    DT_ADDED: NotRequired[Optional[datetime.datetime]]
-
-    # TOTAL_PROCESSING_DURATION_IN_MS: NotRequired[Optional[int]]
-
-class RECORDING_CONFIG_DICT(TypedDict):
-    # Required id; the rest can be filled in as we learn them
-    RECORDING_ID: Required[int]           # bigint
-    WEBSOCKET_CONNECTION_ID: NotRequired[Optional[int]]
-    DT_RECORDING_START: NotRequired[Optional[datetime.datetime]]
-    DT_RECORDING_STOP: NotRequired[Optional[datetime.datetime]]
-
-    VIOLINIST_ID: NotRequired[Optional[int]]
-    COMPOSE_PLAY_OR_PRACTICE: NotRequired[Optional[str]]
-    AUDIO_STREAM_FILE_NAME: NotRequired[Optional[str]]
-    AUDIO_STREAM_FRAME_SIZE_IN_MS: NotRequired[Optional[int]]
-
-    AUDIO_CHUNK_DURATION_IN_MS: NotRequired[Optional[int]]
-    CNT_FRAMES_PER_AUDIO_CHUNK: NotRequired[Optional[int]]
-    YN_RUN_FFT: NotRequired[Optional[str]]
-    COMPOSE_CURRENT_AUDIO_CHUNK_NO: NotRequired[Optional[int]]
+    DT_END_CREPE: NotRequired[Optional[datetime.datetime]]
+    DT_START_VOLUME_1_MS: NotRequired[Optional[datetime.datetime]]
+    DT_END_VOLUME_1_MS: NotRequired[Optional[datetime.datetime]]
+    DT_START_VOLUME_10_MS: NotRequired[Optional[datetime.datetime]]
+    DT_END_VOLUME_10_MS: NotRequired[Optional[datetime.datetime]]
+    FFT_RECORD_CNT: Optional[int]
+    ONS_RECORD_CNT: Optional[int]
+    PYIN_RECORD_CNT: Optional[int]
+    CREPE_RECORD_CNT: Optional[int]
+    VOLUME_1_MS_RECORD_CNT: Optional[int]
+    VOLUME_10_MS_RECORD_CNT: Optional[int]
 
 
-class RECORDING_WEBSOCKET_MESSAGE_DICT(TypedDict):
-    # Identity
-    MESSAGE_ID: int
-    RECORDING_ID: int
-    MESSAGE_TYPE: str                # e.g. "START", "STOP", "FRAME", "CHUNK"
-    AUDIO_FRAME_NO: NotRequired[Optional[int]]  # If this is a FRAME message
-    DT_MESSAGE_RECEIVED: datetime.datetime  # when message was received
-    DT_MESSAGE_PROCESS_STARTED: NotRequired[Optional[datetime.datetime]]
-    WEBSOCKET_CONNECTION_ID: NotRequired[Optional[int]]
-    
- 
-class RECORDING_WEBSOCKET_CONNECTION_DICT(TypedDict):
-    # Identity
-    WEBSOCKET_CONNECTION_ID: int                        # bigint, unique per connection (incrementing or timestamp-based)
-    # RECORDING_ID: NotRequired[Optional[int]]  # If this WS is bound to a recording (set after START)
-    CLIENT_HOST_IP_ADDRESS: NotRequired[Optional[str]]   # ws.client.host
-    CLIENT_PORT: NotRequired[Optional[int]]   # ws.client.port
-    CLIENT_HEADERS: NotRequired[Dict[str, str]]  # optional: origin, user-agent, etc.
-
-    # Lifecycle
-    DT_CONNECTION_REQUEST: datetime.datetime  # when client attempted connection
-    DT_CONNECTION_ACCEPTED: NotRequired[Optional[datetime.datetime]]  # when ws.accept() succeeded
-    DT_CONNECTION_CLOSED: NotRequired[Optional[datetime.datetime]]    # when disconnect/close occurred
+class ENGINE_DB_LOG_STEPS_DICT(TypedDict):
+    STEP_NAME: NotRequired[Optional[str]]
+    PYTHON_FUNCTION_NAME: NotRequired[Optional[str]]
+    PYTHON_FILE_NAME: NotRequired[Optional[str]]
+    RECORDING_ID: Optional[int]
+    AUDIO_CHUNK_NO: Optional[int]
+    FRAME_NO: Optional[int]
+    DT_STEP_CALLED: NotRequired[Optional[datetime.datetime]]
+    STEP_ID: Optional[int]
 
 # ─────────────────────────────────────────────────────────────
 # Global in-memory stores
 # ─────────────────────────────────────────────────────────────
 # One config per Websocket Connection (bigint)
-RECORDING_WEBSOCKET_MESSAGE_ARRAY: Dict[int, RECORDING_WEBSOCKET_MESSAGE_DICT] = {}
+ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY: Dict[int, ENGINE_DB_LOG_RECORDING_CONFIG_DICT] = {}  #int = RECORDING_ID
+ENGINE_DB_LOG_STEPS_ARRAY: Dict[int, ENGINE_DB_LOG_STEPS_DICT] = {}  #int = STEP_ID
+ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY: Dict[int, Dict[int, ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_DICT]] = {}  #int = RECORDING_ID, AUDIO_FRAME_NO
+ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY: Dict[int, ENGINE_DB_LOG_WEBSOCKET_CONNECTION_DICT] = {}  #int = WEBSOCKET_CONNECTION_ID
+ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY: Dict[int, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_DICT] = {}  #int = MESSAGE_ID
+WEBSOCKET_AUDIO_FRAME_ARRAY: Dict[int, Dict[int, WEBSOCKET_AUDIO_FRAME_DICT]] = {}  #int = RECORDING_ID, AUDIO_FRAME_NO
 
-# One per Websocket Connection 
-RECORDING_WEBSOCKET_CONNECTION_ARRAY: Dict[int, RECORDING_WEBSOCKET_CONNECTION_DICT] = {}
-
-# One config per recording_id (bigint)
-RECORDING_CONFIG_ARRAY: Dict[int, RECORDING_CONFIG_DICT] = {}
-
-# Many chunks per recording_id: access via RECORDING_AUDIO_CHUNK_ARRAY[RECORDING_ID][AUDIO_CHUNK_NO]
-RECORDING_AUDIO_CHUNK_ARRAY: Dict[int, Dict[int, RECORDING_AUDIO_CHUNK_DICT]] = {}
-
-# Many frames per recording_id: access via RECORDING_AUDIO_FRAME_ARRAY[RECORDING_ID][FRAME_NO]
-RECORDING_AUDIO_FRAME_ARRAY: Dict[int, Dict[int, RECORDING_AUDIO_FRAME_DICT]] = {}

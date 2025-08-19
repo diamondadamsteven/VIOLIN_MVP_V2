@@ -91,6 +91,62 @@ function MARK_UI_DIRTY() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Backend helpers (generic /INSERT_TABLE/{table})
+// ─────────────────────────────────────────────────────────────
+function _backendBase() {
+  const base = String(CLIENT_APP_VARIABLES.BACKEND_URL || '').replace(/\/+$/, '');
+  return base || null;
+}
+function INSERT_TABLE(table, rowOrRows) {
+  try {
+    const base = _backendBase();
+    if (!base) return;
+    const url = `${base}/INSERT_TABLE/${encodeURIComponent(table)}`;
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify(rowOrRows),
+    }).catch(() => {});
+  } catch {}
+}
+
+// Convenience specific loggers (all non-blocking)
+function LOG_CLIENT_CONN_OPEN({ recordingId }) {
+  INSERT_TABLE('CLIENT_DB_LOG_WEBSOCKET_CONNECTION', {
+    RECORDING_ID: String(recordingId),
+    DT_WEBSOCKET_OPEN_REQUEST_SENT: new Date().toISOString(),
+  });
+}
+function LOG_CLIENT_CONN_BANNER({ recordingId, banner }) {
+  INSERT_TABLE('CLIENT_DB_LOG_WEBSOCKET_CONNECTION', {
+    RECORDING_ID: String(recordingId),
+    DT_SERVER_CONFIRMATION_TEXT_RECEIVED: new Date().toISOString(),
+    SERVER_CONFIRMATION_TEXT: String(banner ?? ''),
+  });
+}
+function LOG_CLIENT_MESSAGE({ recordingId, type, frameNo }) {
+  INSERT_TABLE('CLIENT_DB_LOG_WEBSOCKET_MESSAGE', {
+    RECORDING_ID: String(recordingId),
+    MESSAGE_TYPE: String(type),
+    AUDIO_FRAME_NO: frameNo != null ? Number(frameNo) : null,
+    DT_MESSAGE_SENT: new Date().toISOString(),
+  });
+}
+function LOG_CLIENT_FRAME({ recordingId, frameNo, frameMs }) {
+  const n = Number(frameNo);
+  const startMs = (n - 1) * Number(frameMs);
+  const endMs = startMs + Number(frameMs);
+  INSERT_TABLE('CLIENT_DB_LOG_WEBSOCKET_AUDIO_FRAME', {
+    RECORDING_ID: String(recordingId),
+    AUDIO_FRAME_NO: n,
+    START_MS: startMs,
+    END_MS: endMs,
+    DT_FRAME_SENT: new Date().toISOString(),
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
 // URL helpers
 // ─────────────────────────────────────────────────────────────
 function _baseHost() {
@@ -137,7 +193,7 @@ function GET_HEALTH_URL() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Frame size is now set dynamically (from DB via CLIENT_APP_VARIABLES)
+// Frame size (from DB via CLIENT_APP_VARIABLES)
 const FRAME_MS = Number(CLIENT_APP_VARIABLES.AUDIO_STREAM_FRAME_SIZE_IN_MS) || 250;
 const RESEND_BUFFER_SIZE = 128;
 const SEND_SLACK_MS = 15;
@@ -145,7 +201,7 @@ const SEND_SLACK_MS = 15;
 let WS = null;
 let STREAMING = false;
 
-let FRAME_NO = 1;                 // frames start at 1; no 0/negatives sent
+let FRAME_NO = 1;
 let COUNTDOWN_REMAINING_MS = 0;
 let BOUNDARY_SENT = false;
 
@@ -154,8 +210,11 @@ let _rec = null;                 // Audio.Recording
 let _isChunking = false;         // guard against overlap
 let _nextTimeout = null;         // handle for setTimeout chain
 
-// ── Conductor UI countdown timer (non-blocking)
+// Conductor UI countdown timer
 let _countdownTimer = null;
+
+// Banner guard (log once)
+let _bannerLogged = false;
 
 // Resend buffer
 const RESEND_BUFFER = new Map();
@@ -198,7 +257,7 @@ function BASE64_TO_BYTES(b64) {
   return bytes;
 }
 
-// JSON parse that preserves large IDs as strings for logging clarity
+// JSON safe parse
 function JSON_PARSE_SAFE(raw) {
   try {
     return JSON.parse(raw, (k, v) => (k === 'RECORDING_ID' ? String(v) : v));
@@ -207,7 +266,7 @@ function JSON_PARSE_SAFE(raw) {
   }
 }
 
-// NEW: micro-chunk using the single active recorder, race-safe with STOP
+// NEW: micro-chunk using single active recorder, race-safe with STOP
 async function RECORD_MICRO_CHUNK(ms) {
   LOG('Start function CLIENT_AUDIO_STREAM_MASTER.RECORD_MICRO_CHUNK');
   if (_isChunking) {
@@ -222,28 +281,21 @@ async function RECORD_MICRO_CHUNK(ms) {
       await _rec.startAsync();
     }
 
-    // Capture the recorder reference used for this slice
     const recRef = _rec;
-
-    // Wait for the slice to elapse
     await new Promise((r) => setTimeout(r, ms));
 
-    // If stop was pressed during the wait, or the recorder changed, bail
     if (!STREAMING) return null;
     if (!recRef || recRef !== _rec) return null;
 
-    // Stop current slice and get URI
     try {
       await recRef.stopAndUnloadAsync();
     } catch (e) {
-      // If it was already stopped elsewhere, just bail
       WARN('stopAndUnloadAsync failed (likely due to STOP race); ignoring.', String(e));
       return null;
     }
     const uri = recRef.getURI();
     LOG('Recorded micro-chunk', { uri });
 
-    // Immediately start the next slice if we're still streaming and the active recorder is still this one
     if (STREAMING && recRef === _rec) {
       _rec = new Audio.Recording();
       await _rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
@@ -287,9 +339,21 @@ async function SEND_FRAME_PAIR({ recordingId, frameNo, frameMs, bytes }) {
 
   WS_SEND_JSON(header);
   WS.send(bytes);
+
+  // Client-side DB logs (non-blocking)
+  LOG_CLIENT_MESSAGE({
+    recordingId: recordingId,
+    type: 'FRAME',
+    frameNo: frameNo,
+  });
+  LOG_CLIENT_FRAME({
+    recordingId: recordingId,
+    frameNo: frameNo,
+    frameMs: frameMs,
+  });
 }
 
-// ========= UPDATED: resolves on onopen OR first banner message =========
+// ========= resolves on onopen OR first banner message =========
 async function WS_OPEN_WITH_TIMEOUT(url, timeoutMs, { subprotocols } = {}) {
   return new Promise((resolve, reject) => {
     let opened = false;
@@ -331,9 +395,7 @@ async function WS_OPEN_WITH_TIMEOUT(url, timeoutMs, { subprotocols } = {}) {
     ws.onmessage = (ev) => {
       const txt = typeof ev?.data === 'string' ? ev.data : '';
       // Accept either echo banner, stream banner, or any first text as proof of open.
-      if (txt.startsWith('echo-server')
-       || txt.startsWith('stream-server')
-       || txt.length > 0) {
+      if (txt.startsWith('echo-server') || txt.startsWith('stream-server') || txt.length > 0) {
         finish(true, ws);
       }
     };
@@ -345,7 +407,6 @@ async function WS_OPEN_WITH_TIMEOUT(url, timeoutMs, { subprotocols } = {}) {
     };
   });
 }
-
 
 // Retry wrapper for stream open
 async function WS_OPEN_WITH_RETRIES(url, timeoutMs, attempts = 2, backoffMs = 400) {
@@ -401,7 +462,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   LOG('Start function CLIENT_AUDIO_STREAM_MASTER.START_STREAMING_WS', { FRAME_MS });
   if (STREAMING) return;
   STREAMING = true;
-  MARK_UI_DIRTY(); // force buttons to update immediately (Stop only)
+  MARK_UI_DIRTY();
 
   const WS_URL = GET_WS_URL();
   const ECHO_URL = GET_WS_ECHO_URL();
@@ -448,10 +509,14 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   const AUDIO_STREAM_FILE_NAME = String(CLIENT_APP_VARIABLES.AUDIO_STREAM_FILE_NAME || '');
   LOG('Preflight echo connect');
 
+  // Log open request (client-side)
+  _bannerLogged = false;
+  LOG_CLIENT_CONN_OPEN({ recordingId: RECORDING_ID });
+
   // 1) Echo preflight — BEST EFFORT (do not abort if it fails)
   try {
     if (ECHO_URL) {
-      const echoWS = await WS_OPEN_WITH_TIMEOUT(ECHO_URL, 6000 /*, { subprotocols: ['v1'] } */);
+      const echoWS = await WS_OPEN_WITH_TIMEOUT(ECHO_URL, 6000);
       LOG('Echo WS open ✓');
       try { echoWS.close(); } catch {}
     }
@@ -475,6 +540,15 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
       const isText = typeof evt.data === 'string';
       const payload = isText ? evt.data : '<binary>';
       LOG('WS onmessage', { preview: String(payload).slice(0, 200) });
+
+      // Log the very first banner text we receive from server (once)
+      if (isText && !_bannerLogged) {
+        _bannerLogged = true;
+        LOG_CLIENT_CONN_BANNER({
+          recordingId: RECORDING_ID,
+          banner: String(payload),
+        });
+      }
     } catch {}
     try {
       const raw = typeof evt.data === 'string'
@@ -509,6 +583,11 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
 
   // Send START
   WS_SEND_JSON({ MESSAGE_TYPE: 'START', RECORDING_ID, AUDIO_STREAM_FILE_NAME });
+  LOG_CLIENT_MESSAGE({
+    recordingId: RECORDING_ID,
+    type: 'START',
+    frameNo: null,
+  });
 
   const MS_PER_BEAT = 60000 / Math.max(1, bpm);
   COUNTDOWN_REMAINING_MS = Math.max(0, Math.round(countdownBeats * MS_PER_BEAT));
@@ -539,7 +618,6 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
     try {
       const uri = await RECORD_MICRO_CHUNK(FRAME_MS);
       if (!uri) {
-        // Busy or race/stop; finally will ARM_NEXT() once.
         return;
       }
 
@@ -551,15 +629,14 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
           COUNTDOWN_REMAINING_MS -= FRAME_MS;
           LOG('Countdown chunk discarded', { COUNTDOWN_REMAINING_MS });
           if (COUNTDOWN_REMAINING_MS <= 0) {
-            // Countdown finished at this frame boundary; next chunk becomes frame #1
             BOUNDARY_SENT = true;
             FRAME_NO = 1;
             LOG('Countdown finished; next chunk will be frame #1');
           }
           try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
-          return; // finally will ARM_NEXT()
+          return;
         } else {
-          BOUNDARY_SENT = true; // (in case countdownBeats was 0)
+          BOUNDARY_SENT = true;
         }
       }
 
@@ -613,6 +690,11 @@ export async function STOP_STREAMING_WS() {
     if (WS && WS.readyState === 1) {
       const RECORDING_ID = String(CLIENT_APP_VARIABLES.RECORDING_ID || '');
       WS_SEND_JSON({ MESSAGE_TYPE: 'STOP', RECORDING_ID });
+      LOG_CLIENT_MESSAGE({
+        recordingId: RECORDING_ID,
+        type: 'STOP',
+        frameNo: null,
+      });
     }
   } catch {}
 

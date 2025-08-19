@@ -7,14 +7,16 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import WebSocket
 
-from SERVER_ENGINE_APP_VARIABLES import RECORDING_WEBSOCKET_CONNECTION_ARRAY
+from SERVER_ENGINE_APP_VARIABLES import (
+    ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY,
+)  # in-memory store
 from SERVER_ENGINE_APP_FUNCTIONS import (
-    DB_LOG_FUNCTIONS,
-    DB_LOG_ENGINE_DB_WEBSOCKET_CONNECTION,
+    DB_INSERT_TABLE,   # generic, allowlisted insert
     CONSOLE_LOG,
 )
 
 _NEXT_CONN_ID = 1
+
 
 def _alloc_conn_id() -> int:
     """Monotonic in-process connection id."""
@@ -22,6 +24,7 @@ def _alloc_conn_id() -> int:
     cid = _NEXT_CONN_ID
     _NEXT_CONN_ID += 1
     return cid
+
 
 def _requested_subprotocols(ws: WebSocket) -> List[str]:
     """Parse Sec-WebSocket-Protocol request header, if any."""
@@ -33,12 +36,14 @@ def _requested_subprotocols(ws: WebSocket) -> List[str]:
         pass
     return []
 
+
 def _choose_subprotocol(requested: List[str]) -> Optional[str]:
     """
     Very simple policy: echo back the first requested protocol.
     Adjust here if you want to enforce a whitelist.
     """
     return requested[0] if requested else None
+
 
 async def SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS(ws: WebSocket) -> int:
     """
@@ -58,14 +63,19 @@ async def SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS(ws: WebSocket) -> int:
     # --- Gather metadata (best effort; avoid raising)
     try:
         client_host = getattr(ws.client, "host", None)
-        client_port = getattr(ws.client, "port", None)
+        client_port_raw = getattr(ws.client, "port", None)
+        client_port = str(client_port_raw) if client_port_raw is not None else None  # TypedDict expects str
     except Exception:
-        client_host = client_port = None
+        client_host = None
+        client_port = None
 
     try:
         headers_dict: Dict[str, str] = dict(ws.headers) if ws.headers else {}
+        # TypedDict wants Optional[str]; keep JSON-safe text for DB
+        import json as _json
+        headers_str = _json.dumps(headers_dict, ensure_ascii=True)
     except Exception:
-        headers_dict = {}
+        headers_str = None
 
     scope = getattr(ws, "scope", {}) or {}
     path = scope.get("path")
@@ -78,32 +88,31 @@ async def SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS(ws: WebSocket) -> int:
 
     # --- Allocate id & store
     conn_id = _alloc_conn_id()
+    now = datetime.now()
     row: Dict[str, Any] = {
+        # Columns defined for ENGINE_DB_LOG_WEBSOCKET_CONNECTION
         "WEBSOCKET_CONNECTION_ID": conn_id,
         "CLIENT_HOST_IP_ADDRESS": client_host,
         "CLIENT_PORT": client_port,
-        "CLIENT_HEADERS": headers_dict,
+        "CLIENT_HEADERS": headers_str,
+        "DT_CONNECTION_REQUEST": now,
+        "DT_CONNECTION_ACCEPTED": now,
+        "DT_CONNECTION_CLOSED": None,
+        # Helpful extras (kept in memory only; filtered out by DB_INSERT_TABLE)
         "CLIENT_REQUESTED_SUBPROTOCOLS": requested,
         "SERVER_ACCEPTED_SUBPROTOCOL": chosen,
         "URL_SCHEME": scheme,
         "URL_PATH": path,
         "URL_QUERY_STRING": query_string,
-        "DT_CONNECTION_REQUEST": datetime.now(),
-        "DT_CONNECTION_ACCEPTED": datetime.now(),
-        "DT_CONNECTION_CLOSED": None,
     }
-    RECORDING_WEBSOCKET_CONNECTION_ARRAY[conn_id] = row
 
-    # --- DB log (don’t let logging kill the WS): offload to a thread
-    async def _persist():
-        try:
-            await asyncio.to_thread(DB_LOG_ENGINE_DB_WEBSOCKET_CONNECTION, conn_id)
-        except Exception as e:
-            row["DB_LOG_ERROR"] = str(e)
-            CONSOLE_LOG("WS_CONN_DB", "Insert failed", {"conn_id": conn_id, "error": str(e)})
+    # Save full row in the in-memory array
+    ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY[conn_id] = row
 
+    # --- Persist to DB using the generic allowlisted path (fire-and-forget)
+    # DB_INSERT_TABLE offloads by default; no need to wrap in create_task
     try:
-        asyncio.create_task(_persist())
+        DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_CONNECTION", row, fire_and_forget=True)
     except Exception as e:
         row["DB_LOG_ERROR"] = f"schedule_failed: {e}"
         CONSOLE_LOG("WS_CONN_DB", "Schedule failed", {"conn_id": conn_id, "error": str(e)})

@@ -1,181 +1,234 @@
 # SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES.py
 from __future__ import annotations
+
 import asyncio
 import json
-import base64
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from hashlib import sha256
+from typing import Any, Dict, List, Optional
+
 from fastapi import WebSocket, WebSocketDisconnect
 
 from SERVER_ENGINE_APP_VARIABLES import (
-    RECORDING_WEBSOCKET_MESSAGE_ARRAY,
-    RECORDING_WEBSOCKET_CONNECTION_ARRAY,
+    ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY,
+    ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY,
+    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY,  # metadata only (no bytes)
+    WEBSOCKET_AUDIO_FRAME_ARRAY,                # raw bytes only (volatile)
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
-    DB_LOG_FUNCTIONS,
-    DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE,
+    DB_INSERT_TABLE,   # allowlisted insert; supports fire_and_forget=True
     CONSOLE_LOG,
-    DB_LOG_ENGINE_DB_WEBSOCKET_CONNECTION
 )
 
-# --- Internal State
-_PENDING_FRAME_META: Dict[int, List[Dict[str, Any]]] = {}
-_NEXT_MSG_ID = 1
+# ──────────────────────────────────────────────────────────────
+# Internal state
+# ──────────────────────────────────────────────────────────────
+# Per-connection FIFO: TEXT “FRAME” announces (RECORDING_ID, AUDIO_FRAME_NO)
+# -> the *next* BINARY message is paired with the oldest announce
+_PENDING_BY_CONN: Dict[int, List[Dict[str, Any]]] = {}
 
+_NEXT_MSG_ID = 1
 def _alloc_msg_id() -> int:
-    """Allocate a sequential message ID."""
     global _NEXT_MSG_ID
     mid = _NEXT_MSG_ID
     _NEXT_MSG_ID += 1
     return mid
 
-def _maybe_decode_audio(payload: Dict[str, Any]) -> Optional[bytes]:
-    """
-    Try to extract audio bytes from a FRAME payload.
-    Supported encodings: base64, hex, raw bytes.
-    """
-    if "AUDIO_FRAME_BASE64" in payload and payload["AUDIO_FRAME_BASE64"]:
-        try:
-            return base64.b64decode(payload["AUDIO_FRAME_BASE64"])
-        except Exception:
-            return None
-    if "AUDIO_FRAME_HEX" in payload and payload["AUDIO_FRAME_HEX"]:
-        try:
-            return bytes.fromhex(payload["AUDIO_FRAME_HEX"])
-        except Exception:
-            return None
-    if "AUDIO_FRAME_BYTES" in payload and isinstance(payload["AUDIO_FRAME_BYTES"], (bytes, bytearray)):
-        return bytes(payload["AUDIO_FRAME_BYTES"])
-    return None
 
-async def _persist_message_async(message_id: int) -> None:
-    """
-    Off-WS-path persistence to DB for a message already stored in memory.
-    Uses a background thread to avoid blocking the event loop.
-    """
+# ──────────────────────────────────────────────────────────────
+# Tiny helpers (1-responsibility each)
+# ──────────────────────────────────────────────────────────────
+def _persist_message(row: Dict[str, Any]) -> None:
+    """Fire-and-forget DB insert of a websocket message row."""
     try:
-        await asyncio.to_thread(DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE, message_id)
+        DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_MESSAGE", row, fire_and_forget=True)
     except Exception as e:
-        # Keep the WS loop resilient; note to console.
-        CONSOLE_LOG("DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE", "failed",
-                    {"mid": message_id, "err": str(e)})
+        CONSOLE_LOG("DB_INSERT_MESSAGE", "schedule_failed", {"err": str(e), "row_keys": list(row.keys())})
 
-def _persist_message_fire_and_forget(message_id: int) -> None:
+
+def _save_bytes_and_metadata(
+    recording_id: int,
+    audio_frame_no: int,
+    raw_bytes: bytes,
+    dt_received: datetime,
+    websocket_connection_id: int,
+) -> Dict[str, Any]:
     """
-    Schedule DB persistence without awaiting (fire-and-forget).
-    Safe to call from inside the WS receive loop.
+    1) Store raw bytes in the volatile cache (WEBSOCKET_AUDIO_FRAME_ARRAY)
+    2) Build/update the durable metadata map (ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY)
+    3) Persist ONLY metadata to DB
     """
+    # 1) volatile audio bytes
+    frames_for_rec = WEBSOCKET_AUDIO_FRAME_ARRAY.setdefault(recording_id, {})
+    frames_for_rec[audio_frame_no] = {
+        "RECORDING_ID": recording_id,
+        "AUDIO_FRAME_NO": audio_frame_no,
+        "AUDIO_FRAME_BYTES": raw_bytes,
+    }
+
+    # 2) durable metadata
+    meta_row = {
+        "RECORDING_ID": recording_id,
+        "AUDIO_FRAME_NO": audio_frame_no,
+        "START_MS": None,
+        "END_MS": None,
+        "DT_FRAME_RECEIVED": dt_received,
+        "DT_FRAME_PAIRED_WITH_WEBSOCKETS_METADATA": dt_received,
+        "AUDIO_FRAME_SIZE_BYTES": len(raw_bytes),
+        "AUDIO_FRAME_ENCODING": "raw",
+        "AUDIO_FRAME_SHA256_HEX": sha256(raw_bytes).hexdigest(),
+        "WEBSOCKET_CONNECTION_ID": websocket_connection_id,  # ignored by DB if not allowlisted
+    }
+    meta_map = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY.setdefault(recording_id, {})
+    meta_map[audio_frame_no] = meta_row
+
+    # 3) persist metadata (never the bytes)
     try:
-        asyncio.create_task(_persist_message_async(message_id))
-    except Exception:
-        # If no running loop (unlikely inside FastAPI), ignore.
-        pass
+        DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME", meta_row, fire_and_forget=True)
+    except Exception as e:
+        CONSOLE_LOG("DB_INSERT_AUDIO_META", "schedule_failed", {
+            "rec_id": recording_id, "frame_no": audio_frame_no, "err": str(e)
+        })
+
+    return meta_row
 
 
+# ──────────────────────────────────────────────────────────────
+# Main receive loop
+# ──────────────────────────────────────────────────────────────
 async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(ws: WebSocket, WEBSOCKET_CONNECTION_ID: int) -> None:
     """
-    Receive loop for websocket messages:
-      • TEXT frame with MESSAGE_TYPE=FRAME queues metadata for the next BINARY frame.
-      • TEXT frame with MESSAGE_TYPE=STOP closes the socket.
-      • BINARY frame is paired with pending FRAME metadata (or saved as raw if no meta).
-      • Every message stored in memory is also persisted to DB off the WS path.
-      • Clean exit on disconnect.
+    Contract:
+      • TEXT with MESSAGE_TYPE=FRAME arrives first → we queue its (recording_id, frame_no) as an “announce”
+      • The *next* BINARY frame is paired with the oldest announce
+      • Non-FRAME TEXT gets logged/persisted (e.g., START/STOP/etc.)
+      • STOP → socket closed + connection row stamped
+      • All DB writes are fire-and-forget to keep the loop snappy
     """
-    _PENDING_FRAME_META[WEBSOCKET_CONNECTION_ID] = []
+    _PENDING_BY_CONN[WEBSOCKET_CONNECTION_ID] = []
 
     try:
         while True:
             raw = await ws.receive()
-
-            # --- Disconnect event
-            if raw.get("type") == "websocket.disconnect":
-                if WEBSOCKET_CONNECTION_ID in RECORDING_WEBSOCKET_CONNECTION_ARRAY:
-                    RECORDING_WEBSOCKET_CONNECTION_ARRAY[WEBSOCKET_CONNECTION_ID]["DT_CONNECTION_CLOSED"] = datetime.now()
-                    DB_LOG_ENGINE_DB_WEBSOCKET_CONNECTION(WEBSOCKET_CONNECTION_ID=WEBSOCKET_CONNECTION_ID)
-
-                break
-
             now = datetime.now()
 
-            # --- TEXT MESSAGE
-            if raw.get("text") is not None:
+            # ── Disconnect
+            if raw.get("type") == "websocket.disconnect":
+                conn = ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY.get(WEBSOCKET_CONNECTION_ID)
+                if conn is not None:
+                    conn["DT_CONNECTION_CLOSED"] = now
+                    try:
+                        DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_CONNECTION", conn, fire_and_forget=True)
+                    except Exception as e:
+                        CONSOLE_LOG("WS_CONN_DB", "close_insert_failed", {
+                            "conn_id": WEBSOCKET_CONNECTION_ID, "err": str(e)
+                        })
+                break
+
+            # ── TEXT
+            text = raw.get("text")
+            if text is not None:
                 try:
-                    payload = json.loads(raw["text"])
+                    payload = json.loads(text)
                 except Exception:
-                    payload = {"MESSAGE_TYPE": "TEXT", "TEXT": raw["text"]}
+                    payload = {"MESSAGE_TYPE": "TEXT", "TEXT": text}
 
-                mtype = str(payload.get("MESSAGE_TYPE") or payload.get("type", "")).upper()
+                message_type = str(payload.get("MESSAGE_TYPE") or payload.get("type", "")).upper()
                 recording_id = int(payload.get("RECORDING_ID") or 0)
-                frame_no = payload.get("AUDIO_FRAME_NO") or payload.get("FRAME_NO")
-                frame_no = int(frame_no) if frame_no is not None else None
+                audio_frame_no = payload.get("AUDIO_FRAME_NO") or payload.get("FRAME_NO")
+                audio_frame_no = int(audio_frame_no) if audio_frame_no is not None else None
 
-                if mtype == "FRAME":
-                    # Queue FRAME metadata until paired with BINARY
-                    _PENDING_FRAME_META[WEBSOCKET_CONNECTION_ID].append({
+                if message_type == "FRAME":
+                    # queue the announce; the next BINARY will consume this
+                    _PENDING_BY_CONN[WEBSOCKET_CONNECTION_ID].append({
                         "RECORDING_ID": recording_id,
-                        "AUDIO_FRAME_NO": frame_no,
+                        "AUDIO_FRAME_NO": audio_frame_no,
                         "DT_MESSAGE_RECEIVED": now,
                     })
                     continue
 
-                # Normal non-frame message → log + persist
-                mid = _alloc_msg_id()
-                RECORDING_WEBSOCKET_MESSAGE_ARRAY[mid] = {
-                    "MESSAGE_ID": mid,
+                # normal (non-FRAME) control/message → log & persist
+                msg_id = _alloc_msg_id()
+                msg_row = {
+                    "MESSAGE_ID": msg_id,
                     "DT_MESSAGE_RECEIVED": now,
                     "RECORDING_ID": recording_id,
-                    "MESSAGE_TYPE": mtype,
-                    "AUDIO_FRAME_NO": frame_no,
+                    "MESSAGE_TYPE": message_type or "TEXT",
+                    "AUDIO_FRAME_NO": audio_frame_no,
                     "DT_MESSAGE_PROCESS_STARTED": None,
-                    "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID
+                    "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,
                 }
-                _persist_message_fire_and_forget(mid)
+                ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[msg_id] = msg_row
+                _persist_message(msg_row)
 
-                # Stop request → close socket and exit
-                if mtype == "STOP":
+                if message_type == "STOP":
+                    # graceful close
                     try:
                         await ws.close()
                     except Exception:
                         pass
-                    if WEBSOCKET_CONNECTION_ID in RECORDING_WEBSOCKET_CONNECTION_ARRAY:
-                        RECORDING_WEBSOCKET_CONNECTION_ARRAY[WEBSOCKET_CONNECTION_ID]["DT_CONNECTION_CLOSED"] = now
+                    conn = ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY.get(WEBSOCKET_CONNECTION_ID)
+                    if conn is not None:
+                        conn["DT_CONNECTION_CLOSED"] = now
+                        try:
+                            DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_CONNECTION", conn, fire_and_forget=True)
+                        except Exception as e:
+                            CONSOLE_LOG("WS_CONN_DB", "close_insert_failed", {
+                                "conn_id": WEBSOCKET_CONNECTION_ID, "err": str(e)
+                            })
                     break
 
-            # --- BINARY MESSAGE (audio frame data)
+            # ── BINARY (audio payload)
             elif raw.get("bytes") is not None:
-                b = raw["bytes"]
-                if _PENDING_FRAME_META[WEBSOCKET_CONNECTION_ID]:
-                    meta = _PENDING_FRAME_META[WEBSOCKET_CONNECTION_ID].pop(0)
-                    mid = _alloc_msg_id()
-                    RECORDING_WEBSOCKET_MESSAGE_ARRAY[mid] = {
-                        "MESSAGE_ID": mid,
-                        "DT_MESSAGE_RECEIVED": meta["DT_MESSAGE_RECEIVED"],
-                        "RECORDING_ID": int(meta["RECORDING_ID"] or 0),
-                        "MESSAGE_TYPE": "FRAME",
-                        "AUDIO_FRAME_NO": int(meta["AUDIO_FRAME_NO"] or 0),
-                        "DT_MESSAGE_PROCESS_STARTED": None,
-                        "AUDIO_FRAME_BYTES": b,
-                    }
-                else:
-                    # orphaned binary frame
-                    mid = _alloc_msg_id()
-                    RECORDING_WEBSOCKET_MESSAGE_ARRAY[mid] = {
-                        "MESSAGE_ID": mid,
-                        "DT_MESSAGE_RECEIVED": now,
-                        "RECORDING_ID": 0,
-                        "MESSAGE_TYPE": "FRAME",
-                        "AUDIO_FRAME_NO": 0,
-                        "DT_MESSAGE_PROCESS_STARTED": None,
-                        "AUDIO_FRAME_BYTES": b,
-                    }
-                _persist_message_fire_and_forget(mid)
+                raw_bytes: bytes = raw["bytes"]
 
-            # --- PING / keepalive / other control frames
+                if _PENDING_BY_CONN[WEBSOCKET_CONNECTION_ID]:
+                    announce = _PENDING_BY_CONN[WEBSOCKET_CONNECTION_ID].pop(0)
+                    recording_id = int(announce.get("RECORDING_ID") or 0)
+                    audio_frame_no = int(announce.get("AUDIO_FRAME_NO") or 0)
+                    dt_received = announce.get("DT_MESSAGE_RECEIVED", now)
+                else:
+                    # orphaned audio (no announce)
+                    recording_id = 0
+                    audio_frame_no = 0
+                    dt_received = now
+
+                # log the FRAME message itself
+                msg_id = _alloc_msg_id()
+                frame_msg_row = {
+                    "MESSAGE_ID": msg_id,
+                    "DT_MESSAGE_RECEIVED": dt_received,
+                    "RECORDING_ID": recording_id,
+                    "MESSAGE_TYPE": "FRAME",
+                    "AUDIO_FRAME_NO": audio_frame_no,
+                    "DT_MESSAGE_PROCESS_STARTED": None,
+                    "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,
+                }
+                ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[msg_id] = frame_msg_row
+                _persist_message(frame_msg_row)
+
+                # store raw bytes + metadata (and persist metadata)
+                _save_bytes_and_metadata(
+                    recording_id=recording_id,
+                    audio_frame_no=audio_frame_no,
+                    raw_bytes=raw_bytes,
+                    dt_received=dt_received,
+                    websocket_connection_id=WEBSOCKET_CONNECTION_ID,
+                )
+
+            # ── Other WS control frames (ignore)
             else:
-                pass
+                continue
 
     except WebSocketDisconnect:
-        if WEBSOCKET_CONNECTION_ID in RECORDING_WEBSOCKET_CONNECTION_ARRAY:
-            RECORDING_WEBSOCKET_CONNECTION_ARRAY[WEBSOCKET_CONNECTION_ID]["DT_CONNECTION_CLOSED"] = datetime.now()
+        conn = ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY.get(WEBSOCKET_CONNECTION_ID)
+        if conn is not None:
+            conn["DT_CONNECTION_CLOSED"] = datetime.now()
+            try:
+                DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_CONNECTION", conn, fire_and_forget=True)
+            except Exception as e:
+                CONSOLE_LOG("WS_CONN_DB", "close_insert_failed", {
+                    "conn_id": WEBSOCKET_CONNECTION_ID, "err": str(e)
+                })
     finally:
-        _PENDING_FRAME_META.pop(WEBSOCKET_CONNECTION_ID, None)
+        _PENDING_BY_CONN.pop(WEBSOCKET_CONNECTION_ID, None)

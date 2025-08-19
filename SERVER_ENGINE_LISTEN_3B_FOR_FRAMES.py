@@ -1,115 +1,256 @@
+# SERVER_ENGINE_LISTEN_3B_FOR_FRAMES.py
 from __future__ import annotations
+
 from datetime import datetime
-import os
+from pathlib import Path
+from hashlib import sha256
 import inspect
-import base64  # for Android RN base64 payloads
+import os
+from typing import Optional
+
+import numpy as np
+
+# Prefer polyphase resampling; fall back to librosa; last resort: linear
+try:
+    from scipy.signal import resample_poly  # type: ignore
+except Exception:  # pragma: no cover
+    resample_poly = None
+try:
+    import librosa  # type: ignore
+except Exception:  # pragma: no cover
+    librosa = None  # type: ignore
 
 from SERVER_ENGINE_APP_VARIABLES import (
-    RECORDING_WEBSOCKET_MESSAGE_ARRAY,
-    RECORDING_AUDIO_FRAME_ARRAY,
+    ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY,       # message rows
+    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY,   # metadata-only (no bytes)
+    WEBSOCKET_AUDIO_FRAME_ARRAY,                 # volatile bytes/arrays
+    TEMP_RECORDING_AUDIO_DIR,                    # for raw archive
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
-    DB_LOG_FUNCTIONS,
-    DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE,   # enqueues persist
-    DB_LOG_ENGINE_DB_AUDIO_FRAME,         # enqueues persist
-    DB_LOG_ENGINE_DB_LOG_STEPS,           # accepts DT_ADDED
-    schedule_coro,                        # loop/thread-safe scheduler
+    DB_INSERT_TABLE,                 # allowlisted insert, fire-and-forget
+    #DB_LOG_ENGINE_DB_LOG_STEPS,      # accepts DT_ADDED
+    schedule_coro,                   # loop/thread-safe scheduler
+    CONSOLE_LOG,
 )
 
-def _log_step(step: str, *, rid: int | None = None, fno: int | None = None) -> None:
-    """
-    Stamp DT_ADDED at call-time for precise step timing and enqueue the insert.
-    """
-    fn_name = "PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME"
+# ---------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------
+TRANSPORT_SR = 44100         # Treat incoming transport bytes as PCM16 @ 44.1k
+FRAME_MS     = 100           # Each websocket AUDIO_FRAME_NO spans 100 ms
+
+# ---------------------------------------------------------------------
+# Step logging (stamps DT_ADDED at call-time)
+# ---------------------------------------------------------------------
+# def _log_step(step: str, *, rid: int | None = None, fno: int | None = None) -> None:
+#     """Insert a one-line step with a real-time timestamp for traceability."""
+#     fn_name = "PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME"
+#     try:
+#         frame = inspect.currentframe()
+#         if frame and frame.f_back:
+#             fn_name = frame.f_back.f_code.co_name
+#     except Exception:
+#         pass
+
+#     DB_LOG_ENGINE_DB_LOG_STEPS(
+#         DT_ADDED=datetime.now(),
+#         STEP_NAME=step,
+#         PYTHON_FUNCTION_NAME=fn_name,
+#         PYTHON_FILE_NAME=os.path.basename(__file__),
+#         RECORDING_ID=rid,
+#         AUDIO_CHUNK_NO=None,
+#         FRAME_NO=fno,
+#     )
+
+# ---------------------------------------------------------------------
+# Audio helpers (no external deps required for core path)
+# ---------------------------------------------------------------------
+def pcm16le_bytes_to_float32_mono(pcm: Optional[bytes]) -> Optional[np.ndarray]:
+    """Decode little-endian PCM16 bytes → float32 mono in [-1, 1]."""
+    if not pcm:
+        return None
     try:
-        frame = inspect.currentframe()
-        if frame and frame.f_back:
-            fn_name = frame.f_back.f_code.co_name
+        return np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
     except Exception:
-        pass
+        return None
 
-    DB_LOG_ENGINE_DB_LOG_STEPS(
-        DT_ADDED=datetime.now(),
-        STEP_NAME=step,
-        PYTHON_FUNCTION_NAME=fn_name,
-        PYTHON_FILE_NAME=os.path.basename(__file__),
-        RECORDING_ID=rid,
-        AUDIO_CHUNK_NO=None,
-        FRAME_NO=fno,
-    )
+def float32_to_pcm16le_bytes(x: np.ndarray) -> bytes:
+    """Clamp float32 [-1,1] → PCM16 (little-endian) bytes."""
+    x = np.clip(x, -1.0, 1.0).astype(np.float32, copy=False)
+    return (x * 32767.0).astype("<i2", copy=False).tobytes()
 
+def resample_best(x: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
+    """
+    Resample with best available method:
+      1) polyphase (scipy.signal.resample_poly) with AA filtering
+      2) librosa.resample('kaiser_best')
+      3) linear interpolation (no AA) as a last resort
+    """
+    if src_sr == dst_sr:
+        return x.astype(np.float32, copy=False)
+
+    # 1) Polyphase (preferred)
+    if resample_poly is not None:
+        from math import gcd
+        g = gcd(dst_sr, src_sr)
+        up, down = dst_sr // g, src_sr // g
+        return resample_poly(x.astype(np.float32, copy=False), up, down).astype(np.float32, copy=False)
+
+    # 2) Librosa (good quality)
+    if librosa is not None:
+        return librosa.resample(
+            x.astype(np.float32, copy=False),
+            orig_sr=src_sr, target_sr=dst_sr, res_type="kaiser_best"
+        ).astype(np.float32, copy=False)
+
+    # 3) Linear fallback
+    n_out = int(round(len(x) * (dst_sr / float(src_sr))))
+    if n_out <= 1 or len(x) == 0:
+        return np.zeros((0,), dtype=np.float32)
+    xp = np.linspace(0.0, 1.0, num=len(x), endpoint=False, dtype=np.float64)
+    fp = x.astype(np.float32, copy=False)
+    x_new = np.linspace(0.0, 1.0, num=n_out, endpoint=False, dtype=np.float64)
+    return np.interp(x_new, xp, fp).astype(np.float32, copy=False)
+
+# ---------------------------------------------------------------------
+# Scanner: queue unprocessed FRAME messages
+# ---------------------------------------------------------------------
 def SERVER_ENGINE_LISTEN_3B_FOR_FRAMES() -> None:
     """
-    Scan for unprocessed FRAME messages and queue async processing.
+    Find messages where DT_MESSAGE_PROCESS_QUEDED_TO_START is null and MESSAGE_TYPE='FRAME',
+    timestamp the queueing, and schedule processing.
     """
     to_launch = []
-    for mid, msg in list(RECORDING_WEBSOCKET_MESSAGE_ARRAY.items()):
-        # Expect MESSAGE_TYPE (renamed from 'type')
-        if msg.get("DT_MESSAGE_PROCESS_STARTED") is None and str(msg.get("MESSAGE_TYPE", "")).upper() == "FRAME":
-            to_launch.append(mid)
+    for MESSAGE_ID, ROW in list(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.items()):
+        if ROW.get("DT_MESSAGE_PROCESS_QUEDED_TO_START") is None and str(ROW.get("MESSAGE_TYPE", "")).upper() == "FRAME":
+            to_launch.append(MESSAGE_ID)
 
-    for mid in to_launch:
-        schedule_coro(PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME(mid))
+    for MESSAGE_ID in to_launch:
+        MSG = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
+        if MSG is None:
+            continue
+        MSG["DT_MESSAGE_PROCESS_QUEDED_TO_START"] = datetime.now()
+        schedule_coro(PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME(MESSAGE_ID))
 
-@DB_LOG_FUNCTIONS()
+# ---------------------------------------------------------------------
+# Worker: process a single FRAME message
+# ---------------------------------------------------------------------
 async def PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME(MESSAGE_ID: int) -> None:
     """
     PROCESS FRAME:
       1) Mark DT_MESSAGE_PROCESS_STARTED
-      2) Log the message (queued, non-blocking)
-      3) Decode Android base64 if needed; insert into RECORDING_AUDIO_FRAME_ARRAY
-      4) Log AUDIO_FRAME (queued, non-blocking)
-      5) Delete message entry
+      2) Persist the message row (best-effort)
+      3) Read AUDIO_FRAME_BYTES from WEBSOCKET_AUDIO_FRAME_ARRAY (volatile)
+      4) Upsert metadata-only frame row and persist (best-effort)
+      5) Append PCM16@44.1k to raw archive (best effort)
+      6) Create analyzer arrays (16k & 22.05k) via high-quality resample
+      7) Delete the message entry
     """
-    _log_step("Begin", rid=MESSAGE_ID, fno=None)
+    #_log_step("Begin", rid=MESSAGE_ID, fno=None)
 
-    msg = RECORDING_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
-    if not msg:
+    MSG = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
+    if MSG is None:
         return
 
     # 1) mark started
-    msg["DT_MESSAGE_PROCESS_STARTED"] = datetime.now()
+    MSG["DT_MESSAGE_PROCESS_STARTED"] = datetime.now()
 
-    # 2) websocket-message log
-    DB_LOG_ENGINE_DB_WEBSOCKET_MESSAGE(MESSAGE_ID)
-
-    # 3) persist frame (in-memory), decoding base64 string if present (Android RN)
-    rid = int(msg.get("RECORDING_ID") or 0)
-    fno = int(msg.get("AUDIO_FRAME_NO") or 0)
-    dt_received = msg.get("DT_MESSAGE_RECEIVED")
-    audio_bytes = msg.get("AUDIO_FRAME_BYTES")  # may be bytes OR base64 str
-
-    # Normalize to raw bytes:
-    if isinstance(audio_bytes, str):
-        try:
-            # Some RN Android stacks send raw binary frames as base64 text.
-            audio_bytes = base64.b64decode(audio_bytes, validate=False)
-        except Exception:
-            # If decode fails, leave as-is; downstream will handle/skip safely.
-            pass
-    elif isinstance(audio_bytes, memoryview):
-        audio_bytes = audio_bytes.tobytes()
-    elif isinstance(audio_bytes, bytearray):
-        audio_bytes = bytes(audio_bytes)
-
-    _log_step("Here 2", rid=rid, fno=fno)
-
-    RECORDING_AUDIO_FRAME_ARRAY.setdefault(rid, {})
-    RECORDING_AUDIO_FRAME_ARRAY[rid][fno] = {
-        "RECORDING_ID": rid,
-        "FRAME_NO": fno,
-        "DT_FRAME_RECEIVED": dt_received if isinstance(dt_received, datetime) else datetime.now(),
-        "AUDIO_FRAME_DATA": audio_bytes,  # always bytes when possible
-    }
-
-    _log_step("Here 3", rid=rid, fno=fno)
-
-    # 4) audio-frame log
-    DB_LOG_ENGINE_DB_AUDIO_FRAME(rid, fno)
-
-    # 5) remove message
+    # 2) persist message (allowlisted insert; safe no-op if extra keys)
     try:
-        del RECORDING_WEBSOCKET_MESSAGE_ARRAY[MESSAGE_ID]
-        _log_step("Here 4", rid=rid, fno=fno)
+        DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_MESSAGE", MSG, fire_and_forget=True)
+    except Exception as e:
+        CONSOLE_LOG("DB_INSERT_MESSAGE", "schedule_failed", {"mid": MESSAGE_ID, "err": str(e)})
+
+    # ---- Identify the recording/frame
+    RECORDING_ID        = int(MSG.get("RECORDING_ID") or 0)
+    AUDIO_FRAME_NO      = int(MSG.get("AUDIO_FRAME_NO") or 0)
+    DT_MESSAGE_RECEIVED = MSG.get("DT_MESSAGE_RECEIVED")
+
+    if not isinstance(DT_MESSAGE_RECEIVED, datetime):
+        DT_MESSAGE_RECEIVED = datetime.now()
+
+    # 3) get raw bytes from the volatile store (NOT from the message row)
+    WEBSOCKET_AUDIO_FRAME_RECORD = WEBSOCKET_AUDIO_FRAME_ARRAY.setdefault(RECORDING_ID, {})
+    FRAME_ENTRY = WEBSOCKET_AUDIO_FRAME_RECORD.get(AUDIO_FRAME_NO, {})
+    AUDIO_FRAME_BYTES = FRAME_ENTRY.get("AUDIO_FRAME_BYTES")  # may be None if something went wrong
+    #_log_step("FetchedFrameBytes", rid=RECORDING_ID, fno=AUDIO_FRAME_NO)
+
+    # 4) upsert metadata-only row (durable) and persist
+    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY.setdefault(RECORDING_ID, {})
+    FRAME_RECORD = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD.get(
+        AUDIO_FRAME_NO,
+        {"RECORDING_ID": RECORDING_ID, "AUDIO_FRAME_NO": AUDIO_FRAME_NO},
+    )
+
+    # Absolute timing for transport frame
+    START_MS = FRAME_MS * max(AUDIO_FRAME_NO - 1, 0)
+    END_MS   = START_MS + (FRAME_MS - 1)
+    FRAME_RECORD.setdefault("START_MS", START_MS)
+    FRAME_RECORD.setdefault("END_MS", END_MS)
+
+    # Timestamps
+    FRAME_RECORD.setdefault("DT_FRAME_RECEIVED", DT_MESSAGE_RECEIVED)
+    FRAME_RECORD.setdefault("DT_FRAME_PAIRED_WITH_WEBSOCKETS_METADATA", datetime.now())
+
+    # Size/encoding/hash (only if we have raw bytes)
+    if AUDIO_FRAME_BYTES is not None:
+        FRAME_RECORD["AUDIO_FRAME_SIZE_BYTES"] = len(AUDIO_FRAME_BYTES)
+        FRAME_RECORD["AUDIO_FRAME_ENCODING"]   = "pcm16"  # treating transport as PCM16
+        FRAME_RECORD["AUDIO_FRAME_SHA256_HEX"] = sha256(AUDIO_FRAME_BYTES).hexdigest()
+
+    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD[AUDIO_FRAME_NO] = FRAME_RECORD
+    # _log_step("UpsertMeta", rid=RECORDING_ID, fno=AUDIO_FRAME_NO)
+
+    try:
+        DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME", FRAME_RECORD, fire_and_forget=True)
+    except Exception as e:
+        CONSOLE_LOG("DB_INSERT_AUDIO_META", "schedule_failed", {"rid": RECORDING_ID, "frame_no": AUDIO_FRAME_NO, "err": str(e)})
+
+    # 5) Append to 44.1k raw archive and 6) create analyzer arrays
+    if AUDIO_FRAME_BYTES is not None:
+        # Decode transport bytes → float32@TRANSPORT_SR
+        X_FLOAT = pcm16le_bytes_to_float32_mono(AUDIO_FRAME_BYTES)
+        FRAME_RECORD["DT_FRAME_DECODED_FROM_BYTES_INTO_AUDIO_SAMPLES"] = datetime.now()
+        if X_FLOAT is not None:
+            # Ensure 44.1k anchor
+            X_441 = resample_best(X_FLOAT, TRANSPORT_SR, 44100)
+            FRAME_RECORD["DT_FRAME_RESAMPLED_TO_44100"] = datetime.now()
+
+            # 5) Append to single raw file per recording (best-effort)
+            try:
+                REC_DIR = (TEMP_RECORDING_AUDIO_DIR / str(RECORDING_ID))
+                REC_DIR.mkdir(parents=True, exist_ok=True)
+                RAW_PATH: Path = REC_DIR / f"recording_{RECORDING_ID}.pcm16.44100.raw"
+                with RAW_PATH.open("ab") as fh:
+                    fh.write(float32_to_pcm16le_bytes(X_441))
+                FRAME_RECORD["DT_FRAME_CONVERTED_TO_PCM16_WITH_SAMPLE_RATE_44100"] = datetime.now()
+                FRAME_RECORD["DT_FRAME_APPENDED_TO_RAW_FILE"] = datetime.now()
+                ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD[AUDIO_FRAME_NO] = FRAME_RECORD
+            except Exception as e:
+                CONSOLE_LOG("RAW_APPEND", "failed", {"rid": RECORDING_ID, "frame_no": AUDIO_FRAME_NO, "err": str(e)})
+
+            # 6) Analyzer arrays (float32 mono), stored only in the volatile store
+            try:
+                WEBSOCKET_AUDIO_FRAME_RECORD[AUDIO_FRAME_NO] = WEBSOCKET_AUDIO_FRAME_RECORD.get(AUDIO_FRAME_NO, {})
+                WEBSOCKET_AUDIO_FRAME_RECORD[AUDIO_FRAME_NO]["AUDIO_ARRAY_16000"] = resample_best(X_441, 44100, 16000)
+                FRAME_RECORD["DT_FRAME_RESAMPLED_TO_16000"] = datetime.now()
+            except Exception as e:
+                CONSOLE_LOG("RESAMPLE_16K", "failed", {"rid": RECORDING_ID, "frame_no": AUDIO_FRAME_NO, "err": str(e)})
+
+            try:
+                WEBSOCKET_AUDIO_FRAME_RECORD[AUDIO_FRAME_NO] = WEBSOCKET_AUDIO_FRAME_RECORD.get(AUDIO_FRAME_NO, {})
+                WEBSOCKET_AUDIO_FRAME_RECORD[AUDIO_FRAME_NO]["AUDIO_ARRAY_22050"] = resample_best(X_441, 44100, 22050)
+                FRAME_RECORD["DT_FRAME_RESAMPLED_22050"] = datetime.now()
+            except Exception as e:
+                CONSOLE_LOG("RESAMPLE_22K", "failed", {"rid": RECORDING_ID, "frame_no": AUDIO_FRAME_NO, "err": str(e)})
+
+            # Free the transport bytes
+            WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO].pop("AUDIO_FRAME_BYTES", None)
+
+
+    # 7) remove the original message row now that we've captured bytes + meta
+    try:
+        del ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[MESSAGE_ID]
+        # _log_step("MessageDeleted", rid=RECORDING_ID, fno=AUDIO_FRAME_NO)
     except KeyError:
         pass
