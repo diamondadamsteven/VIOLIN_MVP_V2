@@ -25,6 +25,7 @@ from SERVER_ENGINE_APP_VARIABLES import (
     ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY,   # metadata-only (no bytes)
     WEBSOCKET_AUDIO_FRAME_ARRAY,                 # volatile bytes/arrays
     TEMP_RECORDING_AUDIO_DIR,                    # for raw archive
+    ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_INSERT_TABLE,                 # allowlisted insert, fire-and-forget
@@ -197,6 +198,13 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME(MESSAGE_ID: int) -> None:
         FRAME_RECORD["AUDIO_FRAME_SIZE_BYTES"] = len(AUDIO_FRAME_BYTES)
         FRAME_RECORD["AUDIO_FRAME_ENCODING"]   = "pcm16"  # treating transport as PCM16
         FRAME_RECORD["AUDIO_FRAME_SHA256_HEX"] = sha256(AUDIO_FRAME_BYTES).hexdigest()
+
+    if ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["COMPOSE_PLAY_OR_PRACTICE"] == "COMPOSE":
+        FRAME_RECORD["YN_RUN_CREPE"] = "Y"
+        FRAME_RECORD["YN_RUN_PYIN"] = "Y"
+        if ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["COMPOSE_YN_FFT"] == "Y":
+            FRAME_RECORD["YN_RUN_FFT"] = "Y"
+            FRAME_RECORD["YN_RUN_ONS"] = "Y"    
 
     ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD[AUDIO_FRAME_NO] = FRAME_RECORD
     # _log_step("UpsertMeta", rid=RECORDING_ID, fno=AUDIO_FRAME_NO)

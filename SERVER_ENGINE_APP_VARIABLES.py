@@ -98,6 +98,7 @@ class ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_DICT(TypedDict):
     DT_FRAME_APPENDED_TO_RAW_FILE: NotRequired[Optional[datetime.datetime]]
     DT_FRAME_RESAMPLED_TO_16000: NotRequired[Optional[datetime.datetime]]
     DT_FRAME_RESAMPLED_22050: NotRequired[Optional[datetime.datetime]]
+    DT_PROCESSING_QUEDED_TO_START: NotRequired[Optional[datetime.datetime]]
     DT_PROCESSING_START: NotRequired[Optional[datetime.datetime]]
     DT_PROCESSING_END: NotRequired[Optional[datetime.datetime]]
     DT_START_FFT: NotRequired[Optional[datetime.datetime]]
