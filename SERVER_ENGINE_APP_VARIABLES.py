@@ -1,6 +1,9 @@
 # SERVER_ENGINE_APP_VARIABLES.py
 from pathlib import Path
-from typing import Dict, Optional
+from typing import TypedDict, NotRequired, Optional, Dict, Any, List, Literal
+# or just:
+# from typing import Literal
+
 try:
     from typing import TypedDict, Required, NotRequired  # py3.11+
 except ImportError:  # pragma: no cover
@@ -38,6 +41,9 @@ OAF_PORT = int(os.getenv("OAF_PORT", "9077"))
 class ENGINE_DB_LOG_RECORDING_CONFIG_DICT(TypedDict):
     RECORDING_ID: Required[int]           # bigint
     DT_RECORDING_START: NotRequired[Optional[datetime.datetime]]
+    DT_RECORDING_END: NotRequired[Optional[datetime.datetime]]
+    DT_RECORDING_DATA_QUEDED_FOR_PURGING: NotRequired[Optional[datetime.datetime]] 
+    DT_RECORDING_DATA_PURGED: NotRequired[Optional[datetime.datetime]] 
     COMPOSE_PLAY_OR_PRACTICE: NotRequired[Optional[str]]
     AUDIO_STREAM_FILE_NAME: NotRequired[Optional[str]]
     COMPOSE_YN_RUN_FFT: NotRequired[Optional[str]]

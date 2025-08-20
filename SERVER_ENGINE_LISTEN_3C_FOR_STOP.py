@@ -69,7 +69,7 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_STOP(MESSAGE_ID: int) -> None:
 
     # 4) stamp recording stop and persist
     if RECORDING_ID in ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY:
-        ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["DT_RECORDING_STOP"] = datetime.now()
+        ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["DT_RECORDING_END"] = datetime.now()
         DB_INSERT_TABLE("ENGINE_DB_LOG_RECORDING_CONFIG", ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID], fire_and_forget=True)
 
     # 5) remove the STOP message (optional; keeps memory tidy)

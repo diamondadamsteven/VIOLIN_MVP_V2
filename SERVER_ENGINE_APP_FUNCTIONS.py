@@ -163,7 +163,7 @@ def _make_insert_sql(table: str, cols: Iterable[str]) -> str:
     return f"INSERT INTO {t} ({cols_sql}) VALUES ({vals_sql})"
 
 # -----------------------------------------------------------------------------
-# Fire-and-forget helper
+# fire_and_forget helper
 # -----------------------------------------------------------------------------
 def _fire_and_forget(fn, *args, **kwargs):
     """Run a synchronous DB function off the event loop ASAP."""
@@ -503,7 +503,7 @@ def DB_PING(iterations: int = 50) -> Dict[str, float]:
 
 def DB_BENCHMARK_INSERT(table: str, row: Mapping[str, Any], n: int = 50, warmup: int = 5) -> Dict[str, float]:
     """
-    Measure single-row insert latency using the same generic path (no fire-and-forget).
+    Measure single-row insert latency using the same generic path (no fire_and_forget).
     Useful to see actual end-to-end timing including SQLAlchemy/pyodbc.
     """
     # Warmups (ignored)
@@ -654,7 +654,7 @@ def ENGINE_DB_LOG_FUNCTIONS_INS(level=logging.INFO, *, defer_ws_db_io: bool = Tr
                 "END_MS": ctx.get("END_MS"),
             }
             try:
-                DB_INSERT_TABLE(_ERROR_TABLE, row, fire-and-forget=True)  # type: ignore[arg-type]
+                DB_INSERT_TABLE(_ERROR_TABLE, row, fire_and_forget=True)  # type: ignore[arg-type]
             except Exception:
                 try:
                     CONSOLE_LOG("ENGINE_DB_LOG_FUNCTIONS_INS", "ERROR_TABLE_INSERT_FAILED", {
