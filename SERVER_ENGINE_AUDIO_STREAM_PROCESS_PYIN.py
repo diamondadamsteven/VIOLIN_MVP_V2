@@ -85,14 +85,11 @@ def _pyin_relative_rows(audio_22050: np.ndarray, sample_rate: int = 22050) -> Li
     hop_length = max(1, int(round(sample_rate * 0.010)))  # typically 221
     frame_length = max(hop_length * 4, 2048)
 
-    try:
-        f0, voiced_flag, voiced_prob = librosa.pyin(
-            y=audio_22050, sr=sample_rate,
-            frame_length=frame_length, hop_length=hop_length, center=True
-        )
-    except Exception as exc:
-        CONSOLE_LOG(PREFIX, "PYIN_FAILED", {"err": str(exc)})
-        return []
+    # Let exceptions bubble to the decorated caller (no local try/except)
+    f0, voiced_flag, voiced_prob = librosa.pyin(
+        y=audio_22050, sr=sample_rate,
+        frame_length=frame_length, hop_length=hop_length, center=True
+    )
 
     rows_rel: List[HZRow] = []
     for i, (hz, voiced_ok, confidence) in enumerate(zip(f0, voiced_flag, voiced_prob)):

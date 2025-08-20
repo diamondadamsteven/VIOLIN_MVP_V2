@@ -36,27 +36,19 @@ APP = FastAPI(title="VIOLIN_MVP Audio Stream WS Orchestrator", version="1.1.1")
 # -----------------------------
 # Helpers
 # -----------------------------
+@ENGINE_DB_LOG_FUNCTIONS_INS()
 async def websocket_send_json(ws: WebSocket, payload: Dict[str, Any]):
     """Safe JSON send that won’t raise if the client has gone away."""
     if ws.client_state == WebSocketState.CONNECTED:
-        try:
-            await ws.send_text(json.dumps(payload))
-        except WebSocketDisconnect:
-            return
+        await ws.send_text(json.dumps(payload))
 
 def _ws_peer(ws: WebSocket):
-    try:
-        return {"host": getattr(ws.client, "host", None), "port": getattr(ws.client, "port", None)}
-    except Exception:
-        return {"host": None, "port": None}
+    return {"host": getattr(ws.client, "host", None), "port": getattr(ws.client, "port", None)}
 
 def _requested_subprotocols(ws: WebSocket) -> List[str]:
-    try:
-        h = dict(ws.headers) if ws.headers else {}
-        if "sec-websocket-protocol" in h:
-            return [s.strip() for s in h["sec-websocket-protocol"].split(",") if s.strip()]
-    except Exception:
-        pass
+    h = dict(ws.headers) if ws.headers else {}
+    if "sec-websocket-protocol" in h:
+        return [s.strip() for s in h["sec-websocket-protocol"].split(",") if s.strip()]
     return []
 
 def _choose_subprotocol(requested: List[str]) -> Optional[str]:
@@ -66,45 +58,41 @@ def _choose_subprotocol(requested: List[str]) -> Optional[str]:
 # Small HTTP utilities
 # -----------------------------
 @APP.get("/health")
+@ENGINE_DB_LOG_FUNCTIONS_INS()
 async def health():
     return {"ok": True, "mode": "websocket", "oaf_port": OAF_PORT}
 
 @APP.get("/routes")
+@ENGINE_DB_LOG_FUNCTIONS_INS()
 async def list_routes():
     """Quick visibility into registered routes, including websocket ones."""
     out = []
     for r in APP.router.routes:
-        try:
-            kind = r.__class__.__name__
-            path = getattr(r, "path", None)
-            methods = list(getattr(r, "methods", []) or [])
-            name = getattr(r, "name", None)
-            out.append({"kind": kind, "path": path, "methods": methods, "name": name})
-        except Exception:
-            pass
+        kind = r.__class__.__name__
+        path = getattr(r, "path", None)
+        methods = list(getattr(r, "methods", []) or [])
+        name = getattr(r, "name", None)
+        out.append({"kind": kind, "path": path, "methods": methods, "name": name})
     return out
 
 # -----------------------------
 # WS: /ws/stream
 # -----------------------------
 @APP.websocket("/ws/stream")
+@ENGINE_DB_LOG_FUNCTIONS_INS()
 async def ws_stream(ws: WebSocket):
     # Print BEFORE any DB work so we know the route fired
     CONSOLE_LOG("WS/STREAM", "incoming", {"peer": _ws_peer(ws)})
 
     # Accept & register
     conn_id = await SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS(ws)
-    try:
-        await SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(ws, WEBSOCKET_CONNECTION_ID=conn_id)
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        await websocket_send_json(ws, {"type": "ERROR", "reason": str(e)})
+    await SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(ws, WEBSOCKET_CONNECTION_ID=conn_id)
 
 # -----------------------------
 # WS: /ws/echo
 # -----------------------------
 @APP.websocket("/ws/echo")
+@ENGINE_DB_LOG_FUNCTIONS_INS()
 async def ws_echo(ws: WebSocket):
     CONSOLE_LOG("WS/ECHO", "incoming", {"peer": _ws_peer(ws)})
     req = _requested_subprotocols(ws)
@@ -115,45 +103,28 @@ async def ws_echo(ws: WebSocket):
     else:
         await ws.accept()
 
-    try:
-        await ws.send_text("echo-server: connected")
-    except WebSocketDisconnect:
-        CONSOLE_LOG("WS/ECHO", "client disconnected before banner", {"peer": _ws_peer(ws)})
-        return
+    await ws.send_text("echo-server: connected")
 
-    try:
-        while True:
-            try:
-                msg = await ws.receive_text()
-            except WebSocketDisconnect:
-                CONSOLE_LOG("WS/ECHO", "client disconnect", {"peer": _ws_peer(ws)})
-                break
-            try:
-                await ws.send_text(f"echo:{msg}")
-            except WebSocketDisconnect:
-                CONSOLE_LOG("WS/ECHO", "send after close", {"peer": _ws_peer(ws)})
-                break
-    except Exception as e:
-        CONSOLE_LOG("WS/ECHO", "error", {"peer": _ws_peer(ws), "err": str(e)})
+    while True:
+        msg = await ws.receive_text()
+        await ws.send_text(f"echo:{msg}")
 
 @APP.websocket("/ws/stream_raw")
+@ENGINE_DB_LOG_FUNCTIONS_INS()
 async def ws_stream_raw(ws: WebSocket):
     # No DB, no imports—just accept and keep open
-    try:
-        await ws.accept()
-        # tiny ping so client knows it opened
-        await ws.send_text("raw-ok")
-        # echo loop
-        while True:
-            msg = await ws.receive()
-            if msg.get("type") == "websocket.disconnect":
-                break
-            if msg.get("text") is not None:
-                await ws.send_text(f"echo:{msg['text']}")
-            elif msg.get("bytes") is not None:
-                await ws.send_bytes(msg["bytes"])
-    except WebSocketDisconnect:
-        pass
+    await ws.accept()
+    # tiny ping so client knows it opened
+    await ws.send_text("raw-ok")
+    # echo loop
+    while True:
+        msg = await ws.receive()
+        if msg.get("type") == "websocket.disconnect":
+            break
+        if msg.get("text") is not None:
+            await ws.send_text(f"echo:{msg['text']}")
+        elif msg.get("bytes") is not None:
+            await ws.send_bytes(msg["bytes"])
 
 # ── Orchestrator: tick all scanners in-process so arrays are shared ─────────────
 TICK_MS = 50  # ~20Hz
@@ -195,25 +166,24 @@ def _spawn_non_blocking(fn, name: str):
 @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def _engine_orchestrator():
     while True:
-        try:
-            # Small, non-blocking passes inline
-            await _maybe_await(SERVER_ENGINE_LISTEN_3A_FOR_START())   # O(1)
-            await _maybe_await(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES())  # O(1)
-            await _maybe_await(SERVER_ENGINE_LISTEN_3C_FOR_STOP())    # O(1)
+        # Small, non-blocking passes inline
+        await _maybe_await(SERVER_ENGINE_LISTEN_3A_FOR_START())   # O(1)
+        await _maybe_await(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES())  # O(1)
+        await _maybe_await(SERVER_ENGINE_LISTEN_3C_FOR_STOP())    # O(1)
 
-            # Heavy stages -> spawn safely (handles sync/async, deduped)
-            _spawn_non_blocking(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS,      "finish")
-            _spawn_non_blocking(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS,      "finish")
+        # Heavy stages -> spawn safely (handles sync/async, deduped)
+        _spawn_non_blocking(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS, "finish")
+        _spawn_non_blocking(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS,     "finish")
 
-        except Exception as e:
-            CONSOLE_LOG("ENGINE_ORCHESTRATOR_ERROR", str(e))
         await asyncio.sleep(TICK_MS / 1000)
 
 @APP.on_event("shutdown")
+@ENGINE_DB_LOG_FUNCTIONS_INS()
 async def _shutdown():
     DB_ENGINE_SHUTDOWN()
 
 @APP.on_event("startup")
+@ENGINE_DB_LOG_FUNCTIONS_INS()
 async def _startup():
     # capture and share the main loop for schedule_coro
     ASYNC_SET_MAIN_LOOP(asyncio.get_running_loop())

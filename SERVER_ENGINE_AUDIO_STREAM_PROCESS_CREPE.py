@@ -68,10 +68,8 @@ def _pcm16_to_float32_array(pcm: Optional[bytes]) -> Optional[np.ndarray]:
     """Decode mono PCM16 (little-endian) bytes → float32 in [-1, 1]."""
     if not pcm:
         return None
-    try:
-        return np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-    except Exception:
-        return None
+    # removed local try/except; let decorator capture errors upstream
+    return np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
 
 # ─────────────────────────────────────────────────────────────
 # PUBLIC ENTRY: per-frame analyzer
@@ -93,10 +91,7 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
     SAMPLE_RATE = 16000
     HOP = 160                # 10 ms @ 16 kHz for CREPE
     ANALYSIS_HOP_MS = 10     # CREPE hop size
-    #TRANSPORT_FRAME_MS = 100 # each websocket AUDIO_FRAME_NO spans 100 ms
 
-    # --- metadata row (assumed to exist)
-    # Use existing START_MS if present; else derive from 100 ms transport frame index
     START_MS = 100 * (AUDIO_FRAME_NO - 1) 
 
     # Stamp start
@@ -120,17 +115,13 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
         ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_CREPE"] = datetime.now()
         return 0
 
-    # Ensure mono float32
     if isinstance(AUDIO_16000, np.ndarray) and AUDIO_16000.ndim > 1:
         AUDIO_16000 = np.mean(AUDIO_16000, axis=1).astype("float32")
     else:
         AUDIO_16000 = AUDIO_16000.astype("float32", copy=False)
 
-    # Fingerprint (debug)
-    try:
-        audio_sha1 = hashlib.sha1(AUDIO_16000.tobytes()).hexdigest()[:12]
-    except Exception:
-        audio_sha1 = "sha1_err"
+    # removed local try/except; let errors surface to decorator
+    audio_sha1 = hashlib.sha1(AUDIO_16000.tobytes()).hexdigest()[:12]
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     x = torch.tensor(AUDIO_16000, dtype=torch.float32, device=device).unsqueeze(0)
@@ -163,7 +154,6 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
     per = per.squeeze(0).detach().cpu().numpy()
     n = int(min(len(f0), len(per)))
 
-    # Build rows (absolute ms)
     rows: List[Tuple[int, int, float, float]] = []
     if n > 0:
         rel_starts = np.arange(n, dtype=np.int64) * ANALYSIS_HOP_MS

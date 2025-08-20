@@ -4,7 +4,7 @@
 #   • Input: mono float32 audio at ~22.05 kHz (AUDIO_ARRAY_22050)
 #   • Transport frame timing: START_MS = 100 * (AUDIO_FRAME_NO - 1)
 #   • 100 ms Hann window / 100 ms hop
-#   • Per-frame max-normalized magnitudes
+#   • Per-window max-normalized magnitudes
 #   • Bulk insert -> ENGINE_LOAD_FFT (keyed by RECORDING_ID, AUDIO_FRAME_NO)
 # ----------------------------------------------------------------------
 
@@ -20,15 +20,16 @@ from SERVER_ENGINE_APP_VARIABLES import (
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_BULK_INSERT,
-    ENGINE_DB_LOG_FUNCTIONS_INS,  # logging decorator
+    ENGINE_DB_LOG_FUNCTIONS_INS,  # centralized Start/End/Error logging
     DB_CONNECT_CTX,
 )
 
 PREFIX = "FFT"
 
-# Row shape matches ENGINE_LOAD_FFT (excluding RECORDING_ID, AUDIO_FRAME_NO which are added at insert)
+# Row shape matches ENGINE_LOAD_FFT (excluding RECORDING_ID/AUDIO_FRAME_NO, added at insert)
 # (START_MS, END_MS, FFT_BUCKET_NO, HZ_START, HZ_END, FFT_BUCKET_SIZE_IN_HZ, FFT_VALUE)
 FFTRow = Tuple[int, int, int, float, float, float, float]
+
 
 # ─────────────────────────────────────────────────────────────
 # DB bulk load (frame-keyed)
@@ -66,11 +67,12 @@ def ENGINE_LOAD_FFT_INS(
                 hz_end,
                 fft_bucket_size_in_hz,
                 fft_value,
-                SAMPLE_RATE
+                SAMPLE_RATE,
             )
             for (start_ms, end_ms, fft_bucket_no, hz_start, hz_end, fft_bucket_size_in_hz, fft_value) in rows
         ),
     )
+
 
 # ─────────────────────────────────────────────────────────────
 # Core FFT (100 ms window/hop, max-normalized)
@@ -87,11 +89,14 @@ def _compute_fft_rows_22050(
     Returns a list of FFTRow:
       (START_MS, END_MS, FFT_BUCKET_NO, HZ_START, HZ_END, FFT_BUCKET_SIZE_IN_HZ, FFT_VALUE)
     """
-    # Validate inputs
     if not isinstance(AUDIO_ARRAY_22050, np.ndarray) or AUDIO_ARRAY_22050.size == 0:
         return []
-    if SAMPLE_RATE <= 0:
-        return []
+
+    # Ensure mono float32 without changing semantics
+    if AUDIO_ARRAY_22050.ndim > 1:
+        AUDIO_ARRAY_22050 = np.mean(AUDIO_ARRAY_22050, axis=1).astype("float32")
+    else:
+        AUDIO_ARRAY_22050 = AUDIO_ARRAY_22050.astype("float32", copy=False)
 
     sample_rate = int(SAMPLE_RATE)
     window_size_samples = int(round(sample_rate * 0.100))  # 100 ms
@@ -106,7 +111,7 @@ def _compute_fft_rows_22050(
     total_samples = AUDIO_ARRAY_22050.size
     n_windows = 1 + (total_samples - window_size_samples) // hop_size_samples
 
-    for window_index in range(n_windows):
+    for window_index in range(max(0, n_windows)):
         start_sample = window_index * hop_size_samples
         end_sample   = start_sample + window_size_samples
         segment = AUDIO_ARRAY_22050[start_sample:end_sample]
@@ -131,8 +136,6 @@ def _compute_fft_rows_22050(
         for fft_bucket_no in range(frequency_bin_count):
             hz_start = fft_bucket_no * fft_bucket_size_in_hz
             hz_end   = (fft_bucket_no + 1) * fft_bucket_size_in_hz
-            fft_value = float(magnitude[fft_bucket_no])
-
             rows.append((
                 frame_start_ms,
                 frame_end_ms,
@@ -140,10 +143,11 @@ def _compute_fft_rows_22050(
                 float(hz_start),
                 float(hz_end),
                 float(fft_bucket_size_in_hz),
-                fft_value,
+                float(magnitude[fft_bucket_no]),
             ))
 
     return rows
+
 
 # ─────────────────────────────────────────────────────────────
 # PUBLIC ENTRY: per-frame FFT
@@ -152,41 +156,41 @@ def _compute_fft_rows_22050(
 async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(
     RECORDING_ID: int,
     AUDIO_FRAME_NO: int,
-    AUDIO_ARRAY_22050: np.ndarray
+    AUDIO_ARRAY_22050: np.ndarray,
 ) -> int:
     """
     Inputs:
       • RECORDING_ID, AUDIO_FRAME_NO
       • AUDIO_ARRAY_22050: mono float32 at ~22,050 Hz
-      • SAMPLE_RATE: sample rate for AUDIO_ARRAY_22050 (expected 22050)
     Returns the number of FFT rows inserted.
     """
     SAMPLE_RATE = 22050
-
-    # 100 ms per websocket frame
-    START_MS = 100 * (AUDIO_FRAME_NO - 1)
+    START_MS = 100 * (AUDIO_FRAME_NO - 1)  # 100 ms per websocket frame
 
     # Stamp start
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_FFT"] = datetime.now()
+    META = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]
+    META["DT_START_FFT"] = datetime.now()
 
-    # Compute rows
+    # Validate input (let decorator capture exceptions)
+    if not isinstance(AUDIO_ARRAY_22050, np.ndarray) or AUDIO_ARRAY_22050.size == 0:
+        raise ValueError("AUDIO_ARRAY_22050 is missing or empty for FFT")
+
     rows = _compute_fft_rows_22050(
         AUDIO_ARRAY_22050=AUDIO_ARRAY_22050,
         START_MS=START_MS,
         SAMPLE_RATE=int(SAMPLE_RATE),
     )
 
-    # Record count in metadata
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["FFT_RECORD_CNT"] = len(rows)
+    META["FFT_RECORD_CNT"] = len(rows)
 
     if not rows:
         CONSOLE_LOG(PREFIX, "NO_ROWS", {
-            "rid": RECORDING_ID,
-            "frame": AUDIO_FRAME_NO,
+            "rid": int(RECORDING_ID),
+            "frame": int(AUDIO_FRAME_NO),
             "sr": int(SAMPLE_RATE),
             "samples": int(getattr(AUDIO_ARRAY_22050, "shape", [0])[0] or 0),
         })
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_FFT"] = datetime.now()
+        META["DT_END_FFT"] = datetime.now()
         return 0
 
     # Bulk insert
@@ -195,18 +199,17 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(
             conn=conn,
             RECORDING_ID=int(RECORDING_ID),
             AUDIO_FRAME_NO=int(AUDIO_FRAME_NO),
-            SAMPLE_RATE = int(SAMPLE_RATE),
+            SAMPLE_RATE=int(SAMPLE_RATE),
             rows=rows,
         )
 
     CONSOLE_LOG(PREFIX, "DB_INSERT_OK", {
-        "rid": RECORDING_ID,
-        "frame": AUDIO_FRAME_NO,
+        "rid": int(RECORDING_ID),
+        "frame": int(AUDIO_FRAME_NO),
         "row_count": len(rows),
         "sr": int(SAMPLE_RATE),
         "samples": int(getattr(AUDIO_ARRAY_22050, "shape", [0])[0] or 0),
     })
 
-    # Stamp end
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_FFT"] = datetime.now()
+    META["DT_END_FFT"] = datetime.now()
     return len(rows)

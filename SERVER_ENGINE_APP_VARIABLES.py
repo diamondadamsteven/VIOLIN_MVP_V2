@@ -104,7 +104,7 @@ class ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_DICT(TypedDict):
     DT_START_FFT: NotRequired[Optional[datetime.datetime]]
     DT_END_FFT: NotRequired[Optional[datetime.datetime]]
     DT_START_ONS: NotRequired[Optional[datetime.datetime]]
-    DT_SEND_ONS: NotRequired[Optional[datetime.datetime]]
+    DT_END_ONS: NotRequired[Optional[datetime.datetime]]
     DT_START_PYIN: NotRequired[Optional[datetime.datetime]]
     DT_END_PYIN: NotRequired[Optional[datetime.datetime]]
     DT_START_CREPE: NotRequired[Optional[datetime.datetime]]

@@ -10,7 +10,7 @@ from SERVER_ENGINE_APP_VARIABLES import (
     RECORDING_WEBSOCKET_CONNECTION_ARRAY,
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
-    DB_LOG_FUNCTIONS,
+    ENGINE_DB_LOG_FUNCTIONS_INS,
     CONSOLE_LOG,
     schedule_coro,  # <— use loop-safe scheduler (works from threads)
 )
@@ -30,7 +30,7 @@ def SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS() -> None:
             # SAFE from worker threads; schedules on main loop
             schedule_coro(RECORDING_FINISHED(RECORDING_ID=rid))
 
-@DB_LOG_FUNCTIONS()
+@ENGINE_DB_LOG_FUNCTIONS_INS()
 async def RECORDING_FINISHED(RECORDING_ID: int) -> None:
     """
     Step 1) Delete from RECORDING_AUDIO_FRAME_ARRAY, RECORDING_CONFIG_ARRAY,
