@@ -84,8 +84,10 @@ def DB_ENGINE_STARTUP(warm_pool: bool = True) -> None:
     eng = get_engine()
     if warm_pool:
         try:
-            with eng.connect() as conn:
+            # begin() ensures a commit on success
+            with eng.begin() as conn:
                 conn.execute(text("SELECT 1"))
+                conn.execute(text("EXEC P_ENGINE_TRUNCATE_FOR_TESTING"))
         except Exception as e:
             LOGGER.exception("DB_ENGINE_STARTUP warm_pool failed: %s", e)
     try:
