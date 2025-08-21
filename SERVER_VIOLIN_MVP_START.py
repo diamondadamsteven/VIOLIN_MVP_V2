@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, List, Any, Iterable, Tuple, Optional, Union
 import pyodbc
 import sys
+import json
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -194,13 +195,56 @@ async def CALL_SP_HANDLER(request: Request):
 # Phone console mirror (unchanged)
 # ─────────────────────────────────────────────────────────────
 @router.post("/CLIENT_LOG")
-async def CLIENT_LOG(entries: dict = Body(...)):
-    try:
-        for e in entries.get("entries", []):
-            print(f"[PHONE] {e.get('t')} {e.get('level')} {e.get('tag')} :: {e.get('msg')} {e.get('extra')}")
-    except Exception as ex:
-        print(f"[PHONE] log parse error: {ex}")
-    return {"ok": True}
+async def client_log(request: Request):
+    data = await request.json()
+    entries = data.get("LOG_ENTRY", [])
+
+    conn = SERVER_DB_CONNECTION_GET()
+    cursor = conn.cursor()
+
+    sql = """
+    INSERT INTO CLIENT_DB_APP_LOG (
+      MOBILE_DEVICE_ID,
+      MOBILE_DEVICE_PLATFORM,
+      DT_LOG_ENTRY,
+      REACT_FILE_NAME,
+      REACT_FUNCTION_NAME,
+      REACT_STEP_NAME,
+      START_END_ERROR_OR_STEP,
+      LOG_MSG,
+      CLIENT_APP_VARIABLES_JSON,
+      CLIENT_DB_LOG_WEBSOCKET_AUDIO_FRAME_JSON,
+      CLIENT_DB_LOG_WEBSOCKET_CONNECTION_JSON,
+      CLIENT_DB_LOG_WEBSOCKET_MESSAGE_JSON,
+      LOCAL_VARIABLES_JSON
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+
+    def to_dt(s):
+      # Accept ISO strings; store as DATETIME2
+      try: return datetime.fromisoformat(s.replace('Z', '+00:00'))
+      except: return None
+
+    for e in entries:
+        cursor.execute(sql,
+            e.get("MOBILE_DEVICE_ID"),
+            e.get("MOBILE_DEVICE_PLATFORM"),
+            to_dt(e.get("DT_LOG_ENTRY")),
+            e.get("REACT_FILE_NAME"),
+            e.get("REACT_FUNCTION_NAME"),
+            e.get("REACT_STEP_NAME"),
+            e.get("START_END_ERROR_OR_STEP"),
+            e.get("LOG_MSG"),
+            json.dumps(e.get("CLIENT_APP_VARIABLES_JSON")),
+            json.dumps(e.get("CLIENT_DB_LOG_WEBSOCKET_AUDIO_FRAME_JSON")),
+            json.dumps(e.get("CLIENT_DB_LOG_WEBSOCKET_CONNECTION_JSON")),
+            json.dumps(e.get("CLIENT_DB_LOG_WEBSOCKET_MESSAGE_JSON")),
+            json.dumps(e.get("LOCAL_VARIABLES_JSON")),
+        )
+
+    conn.commit()
+    return {"status": "ok", "count": len(entries)}
 
 # ─────────────────────────────────────────────────────────────
 # NEW: Generic insert endpoint

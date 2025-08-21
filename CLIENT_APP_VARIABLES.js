@@ -55,7 +55,9 @@ const CLIENT_APP_VARIABLES = {
 
   _IS_PLAYING: null,
   _IS_RECORDING: null,
-  _IS_PAUSED: null
+  _IS_PAUSED: null,
+
+  AUDIO_STREAM_FRAME_SIZE_IN_MS: 100
 
 
   // Add more variables as needed...
@@ -89,3 +91,4 @@ export {
   CLIENT_DB_LOG_WEBSOCKET_MESSAGE
 };
 
+export default CLIENT_APP_VARIABLES

@@ -10,7 +10,8 @@
 #### curl -X POST "http://192.168.1.131:8000'/CALL_SP" -H "Content-Type: application/json" -d "{\"SP_NAME\": \"P_CLIENT_DD_SONG\", \"PARAMS\": {\"VIOLINIST_ID\": 123, \"FILTER_TEXT\": \"bach\"}}"
 
 
-#### pip freeze > SERVER_VIOLIN_MVP_requirements.txt ####
+#### pip freeze > SERVER_VIOLIN_MVP_requirements_DOT_VENV.txt ####
+#### pip freeze > SERVER_VIOLIN_MVP_requirements_VENV.txt ####
 
 #### dos prompt #2: ipconfig...get IPv4 Address and paste into CLIENT_STEP_1_REGISTER.js #####
 #### npx expo start --clear ##### 
@@ -24,3 +25,5 @@
 # Copy
 # Edit
 # powershell -ExecutionPolicy Bypass -File .\setup_server.ps1
+
+# npx expo run:ios

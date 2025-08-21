@@ -1,7 +1,228 @@
 INFO:     Will watch for changes in these directories: ['C:\\Users\\diamo\\VIOLIN_MVP']
 INFO:     Uvicorn running on http://0.0.0.0:7070 (Press CTRL+C to quit)
-INFO:     Started reloader process [53596] using WatchFiles
-INFO:     Started server process [44216]
+INFO:     Started reloader process [34336] using WatchFiles
+INFO:     Started server process [32492]
 INFO:     Waiting for application startup.
 STARTUP - Registered routes [{'type': 'Route', 'path': '/openapi.json', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/docs', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/docs/oauth2-redirect', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/redoc', 'methods': ['HEAD', 'GET']}, {'type': 'APIRoute', 'path': '/health', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/routes', 'methods': ['GET']}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/echo', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream_raw', 'methods': []}]
 INFO:     Application startup complete.
+INFO:     192.168.1.20:52028 - "GET /health HTTP/1.1" 200 OK
+WS/ECHO - incoming {'peer': {'host': '192.168.1.20', 'port': 49992}}
+INFO:     192.168.1.20:49992 - "WebSocket /ws/echo" [accepted]
+INFO:     connection open
+WS/ECHO - client disconnected {'peer': {'host': '192.168.1.20', 'port': 49992}}
+INFO:     connection closed
+WS/STREAM - incoming {'peer': {'host': '192.168.1.20', 'port': 49993}}
+INFO:     192.168.1.20:49993 - "WebSocket /ws/stream" [accepted]
+INFO:     connection open
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_CONNECTION (1926.2 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (1895.4 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_RECORDING_CONFIG (1004.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (1213.5 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (1138.6 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1139.7 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (953.7 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1113.1 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1116.2 ms, fof=False)
+[SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.PROCESS_THE_AUDIO_FRAME | SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py] Error: KeyError: 'AUDIO_ARRAY_22050'
+Traceback (most recent call last):
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_APP_FUNCTIONS.py", line 694, in aw
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py", line 72, in PROCESS_THE_AUDIO_FRAME
+    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'AUDIO_ARRAY_22050'
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (986.1 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1139.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (1139.2 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1145.3 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_FUNCTION_ERROR (1155.1 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (2130.3 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (2227.2 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (2232.4 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (2224.1 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (2239.8 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (2294.1 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (906.9 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (907.5 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (905.9 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (898.3 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (908.6 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1038.7 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1128.7 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1129.3 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1500.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1499.3 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1499.7 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (2340.7 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (2342.4 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (2356.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (2361.7 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1674.2 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (2565.3 ms, fof=False)
+[SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.PROCESS_THE_AUDIO_FRAME | SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py] Error: KeyError: 'AUDIO_ARRAY_22050'
+Traceback (most recent call last):
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_APP_FUNCTIONS.py", line 694, in aw
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py", line 72, in PROCESS_THE_AUDIO_FRAME
+    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'AUDIO_ARRAY_22050'
+[SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.PROCESS_THE_AUDIO_FRAME | SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py] Error: KeyError: 'AUDIO_ARRAY_22050'
+Traceback (most recent call last):
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_APP_FUNCTIONS.py", line 694, in aw
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py", line 72, in PROCESS_THE_AUDIO_FRAME
+    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'AUDIO_ARRAY_22050'
+[SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.PROCESS_THE_AUDIO_FRAME | SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py] Error: KeyError: 'AUDIO_ARRAY_22050'
+Traceback (most recent call last):
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_APP_FUNCTIONS.py", line 694, in aw
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py", line 72, in PROCESS_THE_AUDIO_FRAME
+    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'AUDIO_ARRAY_22050'
+[SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.PROCESS_THE_AUDIO_FRAME | SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py] Error: KeyError: 'AUDIO_ARRAY_22050'
+Traceback (most recent call last):
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_APP_FUNCTIONS.py", line 694, in aw
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py", line 72, in PROCESS_THE_AUDIO_FRAME
+    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'AUDIO_ARRAY_22050'
+SLOW INSERT: ENGINE_DB_LOG_FUNCTION_ERROR (946.5 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_FUNCTION_ERROR (967.6 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_FUNCTION_ERROR (991.7 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_FUNCTION_ERROR (991.0 ms, fof=False)
+FFT - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 6, 'row_count': 6618, 'sr': 22050, 'samples': 14985}
+PYIN - NO_ROWS {'rid': 202508201744442002, 'frame': 6}
+CREPE - BEGIN {'rid': 202508201744442002, 'frame': 6, 'device': 'cpu', 'frames_approx': 68, 'audio_sha1': '6c92969f6355', 'decoder': 'viterbi'}
+CREPE - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 6, 'row_count': 68, 'audio_sha1': '6c92969f6355'}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 6, 'rows_1ms': 682, 'hop_len': 22, 'frame_len': 44}
+VOLUME_10_MS - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 6, 'rows_10ms': 69, 'hop_len': 220, 'frame_len': 440}
+STAGE6_FRAMES - frame_done {'rid': 202508201744442002, 'frame': 6}
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (951.6 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (983.4 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1654.1 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (1664.9 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (765.6 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (765.6 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (951.6 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (956.4 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (968.8 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1165.5 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1166.6 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1168.7 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (1170.1 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1189.4 ms, fof=False)
+[SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.PROCESS_THE_AUDIO_FRAME | SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py] Error: KeyError: 'AUDIO_ARRAY_22050'
+Traceback (most recent call last):
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_APP_FUNCTIONS.py", line 694, in aw
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py", line 72, in PROCESS_THE_AUDIO_FRAME
+    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'AUDIO_ARRAY_22050'
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (961.2 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (988.8 ms, fof=False)
+[SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.PROCESS_THE_AUDIO_FRAME | SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py] Error: KeyError: 'AUDIO_ARRAY_22050'
+Traceback (most recent call last):
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_APP_FUNCTIONS.py", line 694, in aw
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py", line 72, in PROCESS_THE_AUDIO_FRAME
+    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'AUDIO_ARRAY_22050'
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1001.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (1001.4 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1002.4 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1193.9 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (1204.8 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1389.9 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_FUNCTION_ERROR (1955.4 ms, fof=False)
+[SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.PROCESS_THE_AUDIO_FRAME | SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py] Error: KeyError: 'AUDIO_ARRAY_22050'
+Traceback (most recent call last):
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_APP_FUNCTIONS.py", line 694, in aw
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py", line 72, in PROCESS_THE_AUDIO_FRAME
+    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'AUDIO_ARRAY_22050'
+[SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.PROCESS_THE_AUDIO_FRAME | SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py] Error: KeyError: 'AUDIO_ARRAY_22050'
+Traceback (most recent call last):
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_APP_FUNCTIONS.py", line 694, in aw
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py", line 72, in PROCESS_THE_AUDIO_FRAME
+    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'AUDIO_ARRAY_22050'
+INFO:     connection closed
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (805.2 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (805.5 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (806.4 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (964.3 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (986.4 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (994.7 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1000.6 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1001.2 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1001.9 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1008.9 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_FUNCTION_ERROR (1009.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_FUNCTION_ERROR (1009.9 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (1610.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (1609.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1744.3 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_MESSAGE (787.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1245.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1245.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (2049.8 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1283.3 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1263.5 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_FUNCTION_ERROR (1247.9 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1249.5 ms, fof=False)
+[SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.PROCESS_THE_AUDIO_FRAME | SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py] Error: KeyError: 'AUDIO_ARRAY_22050'
+Traceback (most recent call last):
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_APP_FUNCTIONS.py", line 694, in aw
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py", line 72, in PROCESS_THE_AUDIO_FRAME
+    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'AUDIO_ARRAY_22050'
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1326.0 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME (1518.6 ms, fof=False)
+[SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.PROCESS_THE_AUDIO_FRAME | SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py] Error: KeyError: 'AUDIO_ARRAY_22050'
+Traceback (most recent call last):
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_APP_FUNCTIONS.py", line 694, in aw
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\diamo\VIOLIN_MVP\SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py", line 72, in PROCESS_THE_AUDIO_FRAME
+    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'AUDIO_ARRAY_22050'
+SLOW INSERT: ENGINE_DB_LOG_FUNCTION_ERROR (1007.4 ms, fof=False)
+SLOW INSERT: ENGINE_DB_LOG_FUNCTION_ERROR (964.1 ms, fof=False)
+FFT - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 13, 'row_count': 6618, 'sr': 22050, 'samples': 15040}
+PYIN - NO_ROWS {'rid': 202508201744442002, 'frame': 13}
+CREPE - BEGIN {'rid': 202508201744442002, 'frame': 13, 'device': 'cpu', 'frames_approx': 68, 'audio_sha1': 'bc976bffcd25', 'decoder': 'viterbi'}
+CREPE - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 13, 'row_count': 69, 'audio_sha1': 'bc976bffcd25'}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 13, 'rows_1ms': 684, 'hop_len': 22, 'frame_len': 44}
+VOLUME_10_MS - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 13, 'rows_10ms': 69, 'hop_len': 220, 'frame_len': 440}
+FFT - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 14, 'row_count': 6618, 'sr': 22050, 'samples': 15019}
+PYIN - NO_ROWS {'rid': 202508201744442002, 'frame': 14}
+CREPE - BEGIN {'rid': 202508201744442002, 'frame': 14, 'device': 'cpu', 'frames_approx': 68, 'audio_sha1': 'dc1615dc94a0', 'decoder': 'viterbi'}
+CREPE - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 14, 'row_count': 69, 'audio_sha1': 'dc1615dc94a0'}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 14, 'rows_1ms': 683, 'hop_len': 22, 'frame_len': 44}
+VOLUME_10_MS - DB_INSERT_OK {'rid': 202508201744442002, 'frame': 14, 'rows_10ms': 69, 'hop_len': 220, 'frame_len': 440}
+STAGE6_FRAMES - frame_done {'rid': 202508201744442002, 'frame': 13}
+STAGE6_FRAMES - frame_done {'rid': 202508201744442002, 'frame': 14}

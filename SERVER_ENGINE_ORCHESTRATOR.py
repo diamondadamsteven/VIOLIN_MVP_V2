@@ -9,6 +9,10 @@ from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
+# NEW: dev-friendly middleware so iPhone/Expo origins/hosts aren't blocked
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
 # ── WS connection + message handlers ─────────────────────────
 from SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS import SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS
 from SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES    import SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES
@@ -21,7 +25,7 @@ from SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS import SERVER_ENGINE_LIS
 from SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS import SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS
 
 from SERVER_ENGINE_APP_FUNCTIONS import (
-    ENGINE_DB_LOG_FUNCTIONS_INS,
+    # ENGINE_DB_LOG_FUNCTIONS_INS,
     CONSOLE_LOG,
     DB_ENGINE_STARTUP,
     DB_ENGINE_SHUTDOWN,
@@ -33,10 +37,23 @@ OAF_PORT = int(os.getenv("OAF_PORT", "9077"))
 
 APP = FastAPI(title="VIOLIN_MVP Audio Stream WS Orchestrator", version="1.1.1")
 
+# ─────────────────────────────────────────────────────────────
+# DEV-ONLY middleware: allow any Origin/Host so iPhone (Expo Go) can handshake
+# Remove or tighten for production.
+APP.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+APP.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
+# ─────────────────────────────────────────────────────────────
+
 # -----------------------------
 # Helpers
 # -----------------------------
-@ENGINE_DB_LOG_FUNCTIONS_INS()
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def websocket_send_json(ws: WebSocket, payload: Dict[str, Any]):
     """Safe JSON send that won’t raise if the client has gone away."""
     if ws.client_state == WebSocketState.CONNECTED:
@@ -58,12 +75,12 @@ def _choose_subprotocol(requested: List[str]) -> Optional[str]:
 # Small HTTP utilities
 # -----------------------------
 @APP.get("/health")
-@ENGINE_DB_LOG_FUNCTIONS_INS()
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def health():
     return {"ok": True, "mode": "websocket", "oaf_port": OAF_PORT}
 
 @APP.get("/routes")
-@ENGINE_DB_LOG_FUNCTIONS_INS()
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def list_routes():
     """Quick visibility into registered routes, including websocket ones."""
     out = []
@@ -79,12 +96,12 @@ async def list_routes():
 # WS: /ws/stream
 # -----------------------------
 @APP.websocket("/ws/stream")
-@ENGINE_DB_LOG_FUNCTIONS_INS()
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def ws_stream(ws: WebSocket):
     # Print BEFORE any DB work so we know the route fired
     CONSOLE_LOG("WS/STREAM", "incoming", {"peer": _ws_peer(ws)})
 
-    # Accept & register
+    # Accept & register inside handler 1, then process frames in handler 2
     conn_id = await SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS(ws)
     await SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(ws, WEBSOCKET_CONNECTION_ID=conn_id)
 
@@ -92,31 +109,30 @@ async def ws_stream(ws: WebSocket):
 # WS: /ws/echo
 # -----------------------------
 @APP.websocket("/ws/echo")
-@ENGINE_DB_LOG_FUNCTIONS_INS()
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def ws_echo(ws: WebSocket):
     CONSOLE_LOG("WS/ECHO", "incoming", {"peer": _ws_peer(ws)})
     req = _requested_subprotocols(ws)
     chosen = _choose_subprotocol(req)
-
-    if chosen:
-        await ws.accept(subprotocol=chosen)
-    else:
-        await ws.accept()
-
+    await ws.accept(subprotocol=chosen) if chosen else await ws.accept()
     await ws.send_text("echo-server: connected")
 
-    while True:
-        msg = await ws.receive_text()
-        await ws.send_text(f"echo:{msg}")
+    try:
+        while True:
+            msg = await ws.receive_text()
+            await ws.send_text(f"echo:{msg}")
+    except WebSocketDisconnect:
+        # Normal closure; keep the logs calm.
+        CONSOLE_LOG("WS/ECHO", "client disconnected", {"peer": _ws_peer(ws)})
 
+# -----------------------------
+# WS: /ws/stream_raw  (handshake smoke test)
+# -----------------------------
 @APP.websocket("/ws/stream_raw")
-@ENGINE_DB_LOG_FUNCTIONS_INS()
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def ws_stream_raw(ws: WebSocket):
-    # No DB, no imports—just accept and keep open
     await ws.accept()
-    # tiny ping so client knows it opened
     await ws.send_text("raw-ok")
-    # echo loop
     while True:
         msg = await ws.receive()
         if msg.get("type") == "websocket.disconnect":
@@ -152,44 +168,37 @@ def _spawn_non_blocking(fn, name: str):
     async def _runner():
         try:
             if inspect.iscoroutinefunction(fn):
-                # async worker: call to get coroutine then await it
                 await fn()
             else:
-                # sync worker: run off the event loop
                 await asyncio.to_thread(fn)
         finally:
             _RUNNING_FLAGS[name] = False
 
-    # Use the loop-safe scheduler from APP_FUNCTIONS
     schedule_coro(_runner())
 
-@ENGINE_DB_LOG_FUNCTIONS_INS()
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def _engine_orchestrator():
     while True:
-        # Small, non-blocking passes inline
         await _maybe_await(SERVER_ENGINE_LISTEN_3A_FOR_START())   # O(1)
         await _maybe_await(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES())  # O(1)
         await _maybe_await(SERVER_ENGINE_LISTEN_3C_FOR_STOP())    # O(1)
 
-        # Heavy stages -> spawn safely (handles sync/async, deduped)
         _spawn_non_blocking(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS, "finish")
         _spawn_non_blocking(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS,     "finish")
 
         await asyncio.sleep(TICK_MS / 1000)
 
 @APP.on_event("shutdown")
-@ENGINE_DB_LOG_FUNCTIONS_INS()
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def _shutdown():
     DB_ENGINE_SHUTDOWN()
 
 @APP.on_event("startup")
-@ENGINE_DB_LOG_FUNCTIONS_INS()
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def _startup():
-    # capture and share the main loop for schedule_coro
     ASYNC_SET_MAIN_LOOP(asyncio.get_running_loop())
 
     DB_ENGINE_STARTUP(warm_pool=True)
-    # Show what FastAPI actually registered (helps catch 403-from-missing-route)
     CONSOLE_LOG("STARTUP", "Registered routes", [
         {"type": r.__class__.__name__, "path": getattr(r, "path", None), "methods": list(getattr(r, "methods", []) or [])}
         for r in APP.router.routes

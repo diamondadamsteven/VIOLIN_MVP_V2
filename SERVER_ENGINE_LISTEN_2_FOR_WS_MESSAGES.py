@@ -21,13 +21,6 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,  # centralized Start/End/Error logging
 )
 
-# ──────────────────────────────────────────────────────────────
-# Internal state
-# ──────────────────────────────────────────────────────────────
-# Per-connection FIFO: TEXT “FRAME” announces (RECORDING_ID, AUDIO_FRAME_NO)
-# -> the *next* BINARY message is paired with the oldest announce
-_PENDING_BY_CONN: Dict[int, List[Dict[str, Any]]] = {}
-
 _NEXT_MSG_ID = 1
 def _alloc_msg_id() -> int:
     global _NEXT_MSG_ID
@@ -86,21 +79,33 @@ def _save_bytes_and_metadata(
     return meta_row
 
 
+async def _receive_next_binary(ws: WebSocket) -> Optional[bytes]:
+    """
+    Block until the next binary WS message (skip over non-binary control/text),
+    or return None on disconnect.
+    """
+    while True:
+        evt = await ws.receive()
+        if evt.get("type") == "websocket.disconnect":
+            return None
+        if evt.get("bytes") is not None:
+            return evt["bytes"]
+        # Skip any stray control/text frames that may arrive between header and bytes.
+
+
 # ──────────────────────────────────────────────────────────────
 # Main receive loop
 # ──────────────────────────────────────────────────────────────
-@ENGINE_DB_LOG_FUNCTIONS_INS()
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(ws: WebSocket, WEBSOCKET_CONNECTION_ID: int) -> None:
     """
-    Contract:
-      • TEXT with MESSAGE_TYPE=FRAME arrives first → we queue its (recording_id, frame_no) as an “announce”
-      • The *next* BINARY frame is paired with the oldest announce
-      • Non-FRAME TEXT gets logged/persisted (e.g., START/STOP/etc.)
-      • STOP → socket closed + connection row stamped
-      • All DB writes are fire-and-forget to keep the loop snappy
+    Contract (paired receive):
+      • When TEXT {MESSAGE_TYPE:'FRAME', RECORDING_ID, FRAME_NO} arrives,
+        we synchronously await the very next BINARY and pair them atomically.
+      • Non-FRAME TEXT (START/STOP/etc.) is logged immediately.
+      • STOP → socket closed + connection row stamped.
+      • If a BINARY arrives without a prior FRAME header, we treat it as orphaned (RID=0, FRAME_NO=0).
     """
-    _PENDING_BY_CONN[WEBSOCKET_CONNECTION_ID] = []
-
     while True:
         raw = await ws.receive()
         now = datetime.now()
@@ -124,12 +129,34 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(ws: WebSocket, WEBSOCKET_CONNEC
             audio_frame_no = int(audio_frame_no) if audio_frame_no is not None else None
 
             if message_type == "FRAME":
-                # queue the announce; the next BINARY will consume this
-                _PENDING_BY_CONN[WEBSOCKET_CONNECTION_ID].append({
-                    "RECORDING_ID": recording_id,
-                    "AUDIO_FRAME_NO": audio_frame_no,
+                # PAIRING: wait for the very next binary and only then log/enqueue
+                bin_bytes = await _receive_next_binary(ws)
+                if bin_bytes is None:
+                    # peer disconnected before sending the binary – treat like a dropped frame
+                    break
+
+                # log the FRAME message itself (now that we HAVE bytes)
+                msg_id = _alloc_msg_id()
+                frame_msg_row = {
+                    "MESSAGE_ID": msg_id,
                     "DT_MESSAGE_RECEIVED": now,
-                })
+                    "RECORDING_ID": recording_id,
+                    "MESSAGE_TYPE": "FRAME",
+                    "AUDIO_FRAME_NO": int(audio_frame_no or 0),
+                    "DT_MESSAGE_PROCESS_STARTED": None,
+                    "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,
+                }
+                ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[msg_id] = frame_msg_row
+                _persist_message(frame_msg_row)
+
+                # store raw bytes + metadata (and persist metadata)
+                _save_bytes_and_metadata(
+                    recording_id=recording_id,
+                    audio_frame_no=int(audio_frame_no or 0),
+                    raw_bytes=bin_bytes,
+                    dt_received=now,
+                    websocket_connection_id=WEBSOCKET_CONNECTION_ID,
+                )
                 continue
 
             # normal (non-FRAME) control/message → log & persist
@@ -139,7 +166,7 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(ws: WebSocket, WEBSOCKET_CONNEC
                 "DT_MESSAGE_RECEIVED": now,
                 "RECORDING_ID": recording_id,
                 "MESSAGE_TYPE": message_type or "TEXT",
-                "AUDIO_FRAME_NO": audio_frame_no,
+                "AUDIO_FRAME_NO": int(audio_frame_no or 0) if audio_frame_no is not None else None,
                 "DT_MESSAGE_PROCESS_STARTED": None,
                 "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,
             }
@@ -155,46 +182,31 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(ws: WebSocket, WEBSOCKET_CONNEC
                     DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_CONNECTION", conn, fire_and_forget=True)
                 break
 
-        # ── BINARY (audio payload)
+        # ── BINARY (audio payload) received WITHOUT a preceding FRAME header
         elif raw.get("bytes") is not None:
-            raw_bytes: bytes = raw["bytes"]
-
-            if _PENDING_BY_CONN[WEBSOCKET_CONNECTION_ID]:
-                announce = _PENDING_BY_CONN[WEBSOCKET_CONNECTION_ID].pop(0)
-                recording_id = int(announce.get("RECORDING_ID") or 0)
-                audio_frame_no = int(announce.get("AUDIO_FRAME_NO") or 0)
-                dt_received = announce.get("DT_MESSAGE_RECEIVED", now)
-            else:
-                # orphaned audio (no announce)
-                recording_id = 0
-                audio_frame_no = 0
-                dt_received = now
-
-            # log the FRAME message itself
+            bin_bytes: bytes = raw["bytes"]
+            # orphaned audio (no header) → record with RID=0/FRAME=0 for visibility
             msg_id = _alloc_msg_id()
             frame_msg_row = {
                 "MESSAGE_ID": msg_id,
-                "DT_MESSAGE_RECEIVED": dt_received,
-                "RECORDING_ID": recording_id,
+                "DT_MESSAGE_RECEIVED": now,
+                "RECORDING_ID": 0,
                 "MESSAGE_TYPE": "FRAME",
-                "AUDIO_FRAME_NO": audio_frame_no,
+                "AUDIO_FRAME_NO": 0,
                 "DT_MESSAGE_PROCESS_STARTED": None,
                 "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,
             }
             ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[msg_id] = frame_msg_row
             _persist_message(frame_msg_row)
 
-            # store raw bytes + metadata (and persist metadata)
             _save_bytes_and_metadata(
-                recording_id=recording_id,
-                audio_frame_no=audio_frame_no,
-                raw_bytes=raw_bytes,
-                dt_received=dt_received,
+                recording_id=0,
+                audio_frame_no=0,
+                raw_bytes=bin_bytes,
+                dt_received=now,
                 websocket_connection_id=WEBSOCKET_CONNECTION_ID,
             )
 
         # ── Other WS control frames (ignore)
         else:
             continue
-
-    _PENDING_BY_CONN.pop(WEBSOCKET_CONNECTION_ID, None)

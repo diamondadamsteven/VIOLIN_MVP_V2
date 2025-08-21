@@ -88,6 +88,7 @@ def _pyin_relative_rows(audio_22050: np.ndarray, sample_rate: int = 22050) -> Li
     # Let exceptions bubble to the decorated caller (no local try/except)
     f0, voiced_flag, voiced_prob = librosa.pyin(
         y=audio_22050, sr=sample_rate,
+        fmin=180, fmax=4000,
         frame_length=frame_length, hop_length=hop_length, center=True
     )
 
