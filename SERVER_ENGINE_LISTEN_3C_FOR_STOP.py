@@ -1,18 +1,25 @@
 # SERVER_ENGINE_LISTEN_3C_FOR_STOP.py
 from __future__ import annotations
+
 from datetime import datetime
+from pathlib import Path
+from hashlib import sha256
 
 from SERVER_ENGINE_APP_VARIABLES import (
     ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY,
-    ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY,
     ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY,
+    ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY,
+    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY,
+    AUDIO_CHUNK_ACCUMULATORS,                    # simplified dictionary structure
+    AUDIO_BYTES_PER_FRAME,                       # frame size constants
+    AUDIO_SAMPLES_PER_FRAME,                     # samples per frame
+    AUDIO_SAMPLE_RATE,                           # sample rate
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,
     DB_INSERT_TABLE,
     schedule_coro,
 )
-from SERVER_ENGINE_AUDIO_FRAME_ALIGNMENT import flush_recording_audio
 
 # ─────────────────────────────────────────────────────────────
 # Scanner: queue unprocessed STOP messages
@@ -73,15 +80,36 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_STOP(MESSAGE_ID: int) -> None:
         ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["DT_RECORDING_END"] = datetime.now()
         DB_INSERT_TABLE("ENGINE_DB_LOG_RECORDING_CONFIG", ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID], fire_and_forget=True)
 
-    # 4.5) NEW: Flush any remaining audio data from the alignment buffer
-    remaining_frames = flush_recording_audio(RECORDING_ID)
+    # 4.5) NEW: Flush any remaining audio data from the audio chunk accumulator using direct dictionary access
+    remaining_frames = []
+    if RECORDING_ID in AUDIO_CHUNK_ACCUMULATORS:
+        accumulator = AUDIO_CHUNK_ACCUMULATORS[RECORDING_ID]
+        
+        # Flush any remaining audio data as the final frame
+        if accumulator['audio_buffer']:
+            # Pad to even byte length if needed
+            if len(accumulator['audio_buffer']) % 2 != 0:
+                accumulator['audio_buffer'].append(0)  # Add padding byte
+            
+            frame_bytes = bytes(accumulator['audio_buffer'])
+            
+            # Calculate time-based frame number for the remaining audio
+            total_samples_processed = accumulator['total_bytes_received'] // 2  # PCM16 = 2 bytes per sample
+            frame_no = (total_samples_processed // AUDIO_SAMPLES_PER_FRAME)
+            
+            accumulator['total_frames_produced'] += 1
+            remaining_frames.append((frame_no, frame_bytes))
+            
+            # Clean up the accumulator
+            del AUDIO_CHUNK_ACCUMULATORS[RECORDING_ID]
+    
     if remaining_frames:
         # Process any remaining frames that were flushed
         for frame_no, frame_bytes in remaining_frames:
             # Create a minimal frame record for the flushed frame
-            # frame_no is now time-based: Frame 1 = 0-99ms, Frame 2 = 100-199ms, etc.
-            start_ms = (frame_no - 1) * 100
-            end_ms = (frame_no * 100) - 1
+            # frame_no is now time-based: Frame 0 = 0-99ms, Frame 1 = 100-199ms, etc.
+            start_ms = frame_no * 100
+            end_ms = (frame_no * 100) + 99
             
             flushed_frame_record = {
                 "RECORDING_ID": RECORDING_ID,

@@ -1,0 +1,20 @@
+[33m1a164f9[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m testing bug-fix and DB performance changes
+[33m709f536[m Before CURSOR
+[33m59166ed[m 20250821
+[33md27cefc[m 20250819 server startup succesful
+[33m0142eca[m 20250819 Starting testing
+[33m2393c0a[m 20250819 Starting testing
+[33m49371a2[m 20250819 everything ready to test except ONS
+[33mf5c2324[m 20250819 All modified except for listener 6
+[33mf503c91[m 20250818 BEFORE STARTING RE-ARCHITECTURE TO REMOVE AUDIO-CHUNKS
+[33m23bcef8[m 20250817 2
+[33mb4019b7[m 20250817 DEBUGGING
+[33md3bbe33[m 20250816 BAT file update
+[33me68504d[m 20250816 REARCHITECT
+[33m69a1b78[m 20250815
+[33m6d7fcf0[m 20250814
+[33ma0cc6a7[m 20250813 2
+[33m84db067[m 20250813
+[33m8feba53[m 20250813
+[33m0fee32e[m 20250812
+[33mffbb5b8[m 20250812 (without checkpoints/logs)
