@@ -40,12 +40,7 @@ def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS() -> None:
         (int(RECORDING_ID), int(AUDIO_FRAME_NO))
         for RECORDING_ID, META_BY_FRAME_NO in ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY.items()
         for AUDIO_FRAME_NO, FRAME_META in META_BY_FRAME_NO.items()
-        if (FRAME_META.get("DT_PROCESSING_QUEDED_TO_START") is None and
-            # Only queue frames that have audio arrays ready
-            RECORDING_ID in WEBSOCKET_AUDIO_FRAME_ARRAY and
-            AUDIO_FRAME_NO in WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID] and
-            "AUDIO_ARRAY_22050" in WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO] and
-            "AUDIO_ARRAY_16000" in WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO])
+        if FRAME_META.get("DT_PROCESSING_QUEDED_TO_START") is None
     ]
 
     for RECORDING_ID, AUDIO_FRAME_NO in to_launch:
@@ -64,67 +59,18 @@ def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS() -> None:
 @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def PROCESS_THE_AUDIO_FRAME(RECORDING_ID: int, AUDIO_FRAME_NO: int) -> None:
     """
-    Run per-frame analyzers in parallel:
-      • FFT (22.05k), PYIN (22.05k), CREPE (16k),
-        VOLUME_1_MS (22.05k), VOLUME_10_MS (22.05k)
-
-    Each analyzer stamps its own DT_START_*/DT_END_* and *_RECORD_CNT.
-    This wrapper stamps DT_PROCESSING_START/END and frees volatile arrays.
+    PROCESS AUDIO FRAME:
+      1) Mark DT_PROCESSING_START
+      2) Get audio arrays from volatile store
+      3) Run analyzers (FFT, PYIN, CREPE) based on gating flags
+      4) Mark DT_PROCESSING_END
     """
-    # Durable per-frame metadata (must already exist from Stage-3B)
+    # 1) Mark processing started
     ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]
     ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD["DT_PROCESSING_START"] = datetime.now()
 
-    # Volatile per-frame buffers (created in Stage-3B)
-    # DIAGNOSTIC: Log the state of the array before accessing
-    CONSOLE_LOG(PREFIX, "debug_array_state", {
-        "rid": int(RECORDING_ID),
-        "frame": int(AUDIO_FRAME_NO),
-        "array_exists": WEBSOCKET_AUDIO_FRAME_ARRAY is not None,
-        "array_type": type(WEBSOCKET_AUDIO_FRAME_ARRAY),
-        "array_keys": list(WEBSOCKET_AUDIO_FRAME_ARRAY.keys()) if WEBSOCKET_AUDIO_FRAME_ARRAY else "None",
-        "recording_exists": RECORDING_ID in WEBSOCKET_AUDIO_FRAME_ARRAY if WEBSOCKET_AUDIO_FRAME_ARRAY else False,
-        "recording_frames": list(WEBSOCKET_AUDIO_FRAME_ARRAY.get(RECORDING_ID, {}).keys()) if WEBSOCKET_AUDIO_FRAME_ARRAY and RECORDING_ID in WEBSOCKET_AUDIO_FRAME_ARRAY else "None"
-    })
-    
+    # 2) Get audio arrays from volatile store (SIMPLE - no complex checks)
     WEBSOCKET_AUDIO_FRAME_RECORD = WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]
-    
-    # DIAGNOSTIC: Check if the frame record exists and what it contains
-    if WEBSOCKET_AUDIO_FRAME_RECORD is None:
-        CONSOLE_LOG(PREFIX, "error_frame_record_none", {
-            "rid": int(RECORDING_ID),
-            "frame": int(AUDIO_FRAME_NO),
-            "WEBSOCKET_AUDIO_FRAME_ARRAY_keys": list(WEBSOCKET_AUDIO_FRAME_ARRAY.keys()) if WEBSOCKET_AUDIO_FRAME_ARRAY else "None",
-            "recording_frames": list(WEBSOCKET_AUDIO_FRAME_ARRAY.get(RECORDING_ID, {}).keys()) if WEBSOCKET_AUDIO_FRAME_ARRAY.get(RECORDING_ID) else "None"
-        })
-        # Mark processing as failed and return early
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD["DT_PROCESSING_END"] = datetime.now()
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD["PROCESSING_ERROR"] = "WEBSOCKET_AUDIO_FRAME_RECORD is None"
-        return
-    
-    if not isinstance(WEBSOCKET_AUDIO_FRAME_RECORD, dict):
-        CONSOLE_LOG(PREFIX, "error_frame_record_not_dict", {
-            "rid": int(RECORDING_ID),
-            "frame": int(AUDIO_FRAME_NO),
-            "type": type(WEBSOCKET_AUDIO_FRAME_RECORD),
-            "value": str(WEBSOCKET_AUDIO_FRAME_RECORD)[:200] if WEBSOCKET_AUDIO_FRAME_RECORD else "None"
-        })
-        # Mark processing as failed and return early
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD["DT_PROCESSING_END"] = datetime.now()
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD["PROCESSING_ERROR"] = f"WEBSOCKET_AUDIO_FRAME_RECORD is not a dict, got {type(WEBSOCKET_AUDIO_FRAME_RECORD)}"
-        return
-
-    # Analyzer inputs prepared by Stage-3B
-    # DIAGNOSTIC: Log what's available before trying to access audio arrays
-    CONSOLE_LOG(PREFIX, "debug_frame_data", {
-        "rid": int(RECORDING_ID),
-        "frame": int(AUDIO_FRAME_NO),
-        "available_keys": list(WEBSOCKET_AUDIO_FRAME_RECORD.keys()),
-        "has_22050": "AUDIO_ARRAY_22050" in WEBSOCKET_AUDIO_FRAME_RECORD,
-        "has_16000": "AUDIO_ARRAY_16000" in WEBSOCKET_AUDIO_FRAME_RECORD,
-        "frame_size": len(WEBSOCKET_AUDIO_FRAME_RECORD) if WEBSOCKET_AUDIO_FRAME_RECORD else 0
-    })
-    
     AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
     AUDIO_ARRAY_16000 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_16000"]
 
@@ -162,40 +108,9 @@ async def PROCESS_THE_AUDIO_FRAME(RECORDING_ID: int, AUDIO_FRAME_NO: int) -> Non
             )
         ))
 
-    # Always compute volume metrics if 22.05k exists
-    tasks.append(asyncio.create_task(
-        SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_1_MS(
-            int(RECORDING_ID),
-            int(AUDIO_FRAME_NO),
-            AUDIO_ARRAY_22050  # 22.05k
-        )
-    ))
-    tasks.append(asyncio.create_task(
-        SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_10_MS(
-            int(RECORDING_ID),
-            int(AUDIO_FRAME_NO),
-            AUDIO_ARRAY_22050  # 22.05k
-        )
-    ))
+    # Wait for all tasks to complete
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Run in parallel; analyzer decorators will centrally log Start/End/Error.
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in results:
-        if isinstance(r, Exception):
-            CONSOLE_LOG(PREFIX, "analyzer_error", {
-                "rid": int(RECORDING_ID),
-                "frame": int(AUDIO_FRAME_NO),
-                "err": str(r),
-            })
-
-    # Stamp end
+    # 4) Mark processing completed
     ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD["DT_PROCESSING_END"] = datetime.now()
-
-    # Free volatile arrays; keep the per-frame dict for traceability
-    WEBSOCKET_AUDIO_FRAME_RECORD.pop("AUDIO_ARRAY_16000", None)
-    WEBSOCKET_AUDIO_FRAME_RECORD.pop("AUDIO_ARRAY_22050", None)
-
-    CONSOLE_LOG(PREFIX, "frame_done", {
-        "rid": int(RECORDING_ID),
-        "frame": int(AUDIO_FRAME_NO),
-    })

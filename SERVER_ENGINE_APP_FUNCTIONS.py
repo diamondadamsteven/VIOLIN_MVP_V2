@@ -38,16 +38,56 @@ def ASYNC_SET_MAIN_LOOP(loop: asyncio.AbstractEventLoop) -> None:
     _MAIN_LOOP = loop
 
 def schedule_coro(coro: Coroutine[Any, Any, Any]) -> Union[asyncio.Task, Any]:
-    """Schedule a coroutine from loop or thread."""
+    """Schedule a coroutine from loop or thread with performance optimization."""
+    start_time = time.time()
+    
     try:
+        # Fast path: we're in the main event loop
         loop = asyncio.get_running_loop()
-        return loop.create_task(coro)
+        result = loop.create_task(coro)
+        
+        # ✅ PERFORMANCE MONITORING: Log fast path usage
+        if hasattr(schedule_coro, '_fast_path_count'):
+            schedule_coro._fast_path_count += 1
+        else:
+            schedule_coro._fast_path_count = 1
+            
+        return result
+        
     except RuntimeError:
+        # Slow path: we're in a different thread
         if _MAIN_LOOP is None:
             raise RuntimeError(
                 "MAIN event loop not set. Call ASYNC_SET_MAIN_LOOP(asyncio.get_running_loop()) at startup."
             )
-        return asyncio.run_coroutine_threadsafe(coro, _MAIN_LOOP)
+        
+        # ✅ PERFORMANCE OPTIMIZATION: Use ThreadPoolExecutor for better performance
+        # This avoids the overhead of asyncio.run_coroutine_threadsafe
+        import concurrent.futures
+        if not hasattr(schedule_coro, '_executor'):
+            schedule_coro._executor = concurrent.futures.ThreadPoolExecutor(max_workers=20, thread_name_prefix="schedule_coro")
+        
+        # Submit the coroutine execution to the thread pool
+        try:
+            future = schedule_coro._executor.submit(asyncio.run, coro)
+            
+            # ✅ PERFORMANCE MONITORING: Log slow path usage
+            if hasattr(schedule_coro, '_slow_path_count'):
+                schedule_coro._slow_path_count += 1
+            else:
+                schedule_coro._slow_path_count = 1
+                
+            # Log if slow path is taking too long
+            slow_path_time = time.time() - start_time
+            if slow_path_time > 0.1:  # 100ms threshold
+                LOGGER.warning(f"schedule_coro slow path took {slow_path_time*1000:.1f}ms")
+                
+            return future
+            
+        except Exception as e:
+            # Fallback to the original method if thread pool fails
+            LOGGER.warning(f"ThreadPoolExecutor failed, falling back to run_coroutine_threadsafe: {e}")
+            return asyncio.run_coroutine_threadsafe(coro, _MAIN_LOOP)
 
 LOGGER = logging.getLogger("app")
 
@@ -68,11 +108,19 @@ def _create_engine() -> Engine:
         pool_pre_ping=True,
         pool_recycle=1800,
         fast_executemany=True,
-        # ✅ PERFORMANCE OPTIMIZATION: Increase connection pool capacity
-        pool_size=20,              # Increase from default 5 to 20
-        max_overflow=40,           # Increase from default 10 to 40
-        pool_timeout=60,           # Increase timeout from 30 to 60 seconds
-        pool_reset_on_return='commit',  # Better connection reuse
+        # PERFORMANCE OPTIMIZATION: Balanced settings for stability
+        pool_size=10,              # Reduced from 20 for better stability
+        max_overflow=20,           # Reduced from 40 for better resource management
+        pool_timeout=30,           # Reduced from 60 for faster failure detection
+        pool_reset_on_return='rollback',  # Changed from 'commit' for better transaction handling
+        # Additional performance optimizations
+        echo=False,                 # Disable SQL logging in production
+        echo_pool=False,           # Disable pool logging
+        # Connection optimization
+        connect_args={
+            "autocommit": False,   # Explicit transaction control
+            "isolation_level": "READ_COMMITTED",  # Balance between performance and consistency
+        }
     )
 
 def get_engine() -> Engine:
@@ -95,18 +143,58 @@ def DB_ENGINE_STARTUP(warm_pool: bool = True) -> None:
         except Exception as e:
             LOGGER.exception("DB_ENGINE_STARTUP warm_pool failed: %s", e)
     
-    # ✅ PERFORMANCE MONITORING: Log connection pool status
+    # PERFORMANCE MONITORING: Log connection pool status
     try:
         pool = eng.pool
-        LOGGER.info("DB_ENGINE_STARTUP: Connection pool configured - size=%d, overflow=%d, timeout=%ds", 
-                   pool.size(), pool.overflow(), pool.timeout())
+        pool_info = f"DB_ENGINE_STARTUP: Connection pool configured - size={pool.size()}, overflow={pool.overflow()}, timeout={pool.timeout()}s"
+        LOGGER.info(pool_info)
+        
+        # Also log to console for visibility (ASCII-safe)
+        try:
+            from SERVER_ENGINE_APP_FUNCTIONS import CONSOLE_LOG as _CL  # self-import safe at runtime
+        except Exception:
+            _CL = None
+        if _CL:
+            _CL("STARTUP", pool_info)
+            # Additional pool diagnostics
+            _CL("STARTUP", f"Pool details: checked_in={pool.checkedin()}, checked_out={pool.checkedout()}")
+        else:
+            print(pool_info)
+            print(f"Pool details: checked_in={pool.checkedin()}, checked_out={pool.checkedout()}")
     except Exception as e:
-        LOGGER.warning("DB_ENGINE_STARTUP: Could not log pool status: %s", e)
+        error_msg = f"DB_ENGINE_STARTUP: Could not log pool status: {e}"
+        LOGGER.warning(error_msg)
+        try:
+            from SERVER_ENGINE_APP_FUNCTIONS import CONSOLE_LOG as _CL  # self-import safe at runtime
+        except Exception:
+            _CL = None
+        if _CL:
+            _CL("STARTUP", error_msg)
+        else:
+            print(error_msg)
     
     try:
         DB_INIT_ALLOWED_TABLES()
+        try:
+            from SERVER_ENGINE_APP_FUNCTIONS import CONSOLE_LOG as _CL  # self-import safe at runtime
+        except Exception:
+            _CL = None
+        msg_ok = "DB_ENGINE_STARTUP: Table allowlist initialized successfully"
+        if _CL:
+            _CL("STARTUP", msg_ok)
+        else:
+            print(msg_ok)
     except Exception as e:
-        LOGGER.exception("Failed to initialize table allowlist: %s", e)
+        error_msg = f"Failed to initialize table allowlist: {e}"
+        LOGGER.exception(error_msg)
+        try:
+            from SERVER_ENGINE_APP_FUNCTIONS import CONSOLE_LOG as _CL  # self-import safe at runtime
+        except Exception:
+            _CL = None
+        if _CL:
+            _CL("STARTUP", f"ERROR: {error_msg}")
+        else:
+            print(f"ERROR: {error_msg}")
 
 def DB_ENGINE_SHUTDOWN() -> None:
     """Optional: dispose the engine at application shutdown."""
@@ -128,11 +216,30 @@ def DB_GET_POOL_STATUS() -> Dict[str, Any]:
             "checked_in": pool.checkedin(),
             "checked_out": pool.checkedout(),
             "overflow": pool.overflow(),
-            "invalid": pool.invalid(),
-            "total_connections": pool.checkedin() + pool.checkedout() + pool.invalid()
+            "total_connections": pool.checkedin() + pool.checkedout()
         }
     except Exception as e:
         LOGGER.warning("DB_GET_POOL_STATUS failed: %s", e)
+        return {"error": str(e)}
+
+def DB_GET_PERFORMANCE_STATS() -> Dict[str, Any]:
+    """Get database performance statistics for monitoring."""
+    try:
+        eng = get_engine()
+        pool = eng.pool
+        
+        # Test connection performance
+        t0 = time.perf_counter()
+        with eng.begin() as conn:
+            conn.execute(text("SELECT 1"))
+        connection_test_ms = (time.perf_counter() - t0) * 1000
+        
+        return {
+            "pool_status": DB_GET_POOL_STATUS(),
+            "connection_test_ms": round(connection_test_ms, 2),
+            "pool_health": "GOOD" if connection_test_ms < 10 else "SLOW" if connection_test_ms < 100 else "VERY_SLOW"
+        }
+    except Exception as e:
         return {"error": str(e)}
 
 # -----------------------------------------------------------------------------
@@ -188,6 +295,17 @@ def _make_insert_sql(table: str, cols: Iterable[str]) -> str:
         raise ValueError(f"INSERT not allowed for table '{table}' (not in allowlist).")
     col_list = list(cols)
     placeholders = [f":{c}" for c in col_list]
+    cols_sql = ", ".join(col_list)
+    vals_sql = ", ".join(placeholders)
+    return f"INSERT INTO {t} ({cols_sql}) VALUES ({vals_sql})"
+
+def _make_bulk_insert_sql(table: str, cols: Iterable[str]) -> str:
+    """Generate SQL for bulk inserts using ? placeholders for executemany."""
+    t = str(table).upper().strip()
+    if t not in _ALLOWED_TABLE_COLUMNS:
+        raise ValueError(f"INSERT not allowed for table '{table}' (not in allowlist).")
+    col_list = list(cols)
+    placeholders = ["?" for _ in col_list]  # Use ? for executemany
     cols_sql = ", ".join(col_list)
     vals_sql = ", ".join(placeholders)
     return f"INSERT INTO {t} ({cols_sql}) VALUES ({vals_sql})"
@@ -293,7 +411,7 @@ def DB_INSERT_TABLE_BULK(table: str, rows: List[Mapping[str, Any]], *, fire_and_
             name_map["DT_ADDED"] = "DT_ADDED"
 
         col_names = [name_map[ci] for ci in union_cols_ci]
-        sql = _make_insert_sql(table, col_names)
+        sql = _make_bulk_insert_sql(table, col_names)  # Use ? placeholders for executemany
 
         now_val = datetime.now
         payload: List[Dict[str, Any]] = []
@@ -313,8 +431,25 @@ def DB_INSERT_TABLE_BULK(table: str, rows: List[Mapping[str, Any]], *, fire_and_
     def _do():
         t0 = _now_ms()
         try:
-            with get_engine().begin() as CONN:
-                CONN.execute(text(sql), payload)
+            # PERFORMANCE OPTIMIZATION: Use raw connection for bulk inserts to avoid ORM overhead
+            engine = get_engine()
+            raw_conn = engine.raw_connection()
+            try:
+                # Set autocommit for bulk operations
+                raw_conn.autocommit = True
+                
+                # Use executemany for better performance than execute with list
+                cursor = raw_conn.cursor()
+                try:
+                    # Convert payload to list of tuples for executemany
+                    values = [[row.get(col) for col in col_names] for row in payload]
+                    cursor.executemany(sql, values)
+                    raw_conn.commit()
+                finally:
+                    cursor.close()
+            finally:
+                raw_conn.close()
+                    
         except Exception as e:
             LOGGER.exception("DB_INSERT_TABLE_BULK insert failed for %s: %s", table, e)
         finally:

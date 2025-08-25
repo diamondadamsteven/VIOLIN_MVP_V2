@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import json
 import os
+import time
 from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -78,6 +79,13 @@ def _choose_subprotocol(requested: List[str]) -> Optional[str]:
 # @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def health():
     return {"ok": True, "mode": "websocket", "oaf_port": OAF_PORT}
+
+@APP.get("/performance")
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
+async def performance():
+    """Get current system performance metrics."""
+    from SERVER_ENGINE_APP_FUNCTIONS import DB_GET_PERFORMANCE_STATS
+    return DB_GET_PERFORMANCE_STATS()
 
 @APP.get("/routes")
 # @ENGINE_DB_LOG_FUNCTIONS_INS()
@@ -155,38 +163,66 @@ _RUNNING_FLAGS: Dict[str, bool] = {}
 
 def _spawn_non_blocking(fn, name: str):
     """
-    Run `fn` once in the background:
+    Run `fn` in the background:
       - if `fn` is async -> schedule fn()
       - if `fn` is sync  -> schedule in a worker thread
-    Prevents duplicate concurrent runs by name.
+    Allows parallel execution for different functions.
     """
-    if _RUNNING_FLAGS.get(name):
-        return  # already running
-
-    _RUNNING_FLAGS[name] = True
-
     async def _runner():
         try:
             if inspect.iscoroutinefunction(fn):
                 await fn()
             else:
                 await asyncio.to_thread(fn)
-        finally:
-            _RUNNING_FLAGS[name] = False
+        except Exception as e:
+            CONSOLE_LOG("ORCHESTRATOR", f"error_in_{name}", {"error": str(e)})
 
     schedule_coro(_runner())
 
-# @ENGINE_DB_LOG_FUNCTIONS_INS()
+# ✅ PERFORMANCE OPTIMIZATION: Non-blocking orchestrator
 async def _engine_orchestrator():
+    tick_count = 0
+    start_time = time.time()
+    
     while True:
-        await _maybe_await(SERVER_ENGINE_LISTEN_3A_FOR_START())   # O(1)
-        await _maybe_await(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES())  # O(1)
-        await _maybe_await(SERVER_ENGINE_LISTEN_3C_FOR_STOP())    # O(1)
+        tick_start = time.time()
+        tick_count += 1
+        
+        # ALL operations should be non-blocking to maintain tick rate
+        _spawn_non_blocking(SERVER_ENGINE_LISTEN_3A_FOR_START, "start_scanner")
+        _spawn_non_blocking(SERVER_ENGINE_LISTEN_3C_FOR_STOP, "stop_scanner")
 
+        # Heavy audio processing - spawn asynchronously to avoid blocking
+        _spawn_non_blocking(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES, "audio_frames")
         _spawn_non_blocking(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS, "finish")
-        _spawn_non_blocking(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS,     "finish")
+        _spawn_non_blocking(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS, "finish")
 
-        await asyncio.sleep(TICK_MS / 1000)
+        # Performance monitoring every 100 ticks (~5 seconds)
+        if tick_count % 100 == 0:
+            elapsed = time.time() - start_time
+            avg_tick_time = elapsed / tick_count
+            CONSOLE_LOG("ORCHESTRATOR", "performance_stats", {
+                "ticks": tick_count,
+                "elapsed_seconds": round(elapsed, 1),
+                "avg_tick_ms": round(avg_tick_time * 1000, 1),
+                "target_tick_ms": TICK_MS,
+                "performance": "GOOD" if avg_tick_time * 1000 <= TICK_MS * 1.5 else "SLOW"
+            })
+
+        # Maintain consistent tick rate regardless of processing time
+        tick_duration = time.time() - tick_start
+        sleep_time = max(0, (TICK_MS / 1000) - tick_duration)
+        if sleep_time > 0:
+            await asyncio.sleep(sleep_time)
+        else:
+            # If we're behind schedule, don't sleep but log it
+            if tick_duration > (TICK_MS / 1000):
+                CONSOLE_LOG("ORCHESTRATOR", "tick_behind_schedule", {
+                    "tick": tick_count,
+                    "tick_duration_ms": round(tick_duration * 1000, 1),
+                    "target_ms": TICK_MS,
+                    "behind_by_ms": round((tick_duration - (TICK_MS / 1000)) * 1000, 1)
+                })
 
 @APP.on_event("shutdown")
 # @ENGINE_DB_LOG_FUNCTIONS_INS()

@@ -59,7 +59,7 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_START(MESSAGE_ID: int) -> None:
     # 1) mark started
     ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["DT_MESSAGE_PROCESS_STARTED"] = datetime.now()
 
-    # 2) persist message (allowlisted insert)
+    # 2) persist message (allowlisted insert) - NON-BLOCKING
     DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_MESSAGE", ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD, fire_and_forget=True)
 
     # 3) seed config (in-memory)
@@ -108,5 +108,5 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_START(MESSAGE_ID: int) -> None:
                     # timestamps/size/hash/encoding are filled later when bytes arrive
                 }
 
-    # 6) persist recording config
+    # 6) persist recording config - NON-BLOCKING
     DB_INSERT_TABLE("ENGINE_DB_LOG_RECORDING_CONFIG", ENGINE_DB_LOG_RECORDING_CONFIG_RECORD, fire_and_forget=True)
