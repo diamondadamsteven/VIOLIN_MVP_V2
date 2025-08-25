@@ -3,7 +3,7 @@ cd /d %~dp0
 
 :: Display current folder
 echo ----------------------------------
-echo Pushing changes for VIOLIN_MVP...
+echo Pushing changes for VIOLIN_MVP_V2...
 echo ----------------------------------
 
 :: Stage all changes
@@ -17,7 +17,7 @@ if "%commitmsg%"=="" set commitmsg=Quick update
 git commit -m "%commitmsg%"
 
 :: Push to GitHub
-git push https://github.com/DIAMONDADAMSTEVEN/VIOLIN_MVP.git main
+git push https://github.com/DIAMONDADAMSTEVEN/VIOLIN_MVP_V2.git main
 
 :: Done
 echo ----------------------------------

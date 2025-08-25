@@ -32,7 +32,7 @@ call :LOG "======== SERVER STARTUP LOG %DATE% %TIME% ========"
 rem 1) venv
 echo venv
 call :LOG "Activating virtual environment..."
-call venv\Scripts\activate.bat >> "%LOG_FILE%" 2>&1
+call .venv\Scripts\activate.bat >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
   call :LOG "[Error] Failed to activate virtual environment."
   pause & popd & exit /b 1
@@ -63,13 +63,13 @@ rem 4) Backend
 echo Backend
 call :LOG "Starting FastAPI backend on :8000 ..."
 start "FastAPI Backend" /D "%PROJECT_ROOT%" cmd /k ^
-  python -m uvicorn SERVER_VIOLIN_MVP_START:app --host 0.0.0.0 --port 8000 --reload ^>"%LOG_SERVER_VIOLIN_MVP_START" 2^>^&1
+  .venv\Scripts\python.exe -m uvicorn SERVER_VIOLIN_MVP_START:app --host 0.0.0.0 --port 8000 --reload ^>"%LOG_SERVER_VIOLIN_MVP_START" 2^>^&1
 
 rem 5) Listener (single process runs WS + orchestrator)
 echo Listener
 call :LOG "Starting Server Engine Listener on :7070 ..."
 start "Server Engine Listener" /D "%PROJECT_ROOT%" cmd /k ^
-  python -m uvicorn SERVER_ENGINE_ORCHESTRATOR:APP --host 0.0.0.0 --port 7070 --reload ^>"%LOG_SERVER_ENGINE_ORCHESTRATOR" 2^>^&1
+  .venv\Scripts\python.exe -m uvicorn SERVER_ENGINE_ORCHESTRATOR:APP --host 0.0.0.0 --port 7070 --reload ^>"%LOG_SERVER_ENGINE_ORCHESTRATOR" 2^>^&1
 
 echo.
 echo "Servers launched."
