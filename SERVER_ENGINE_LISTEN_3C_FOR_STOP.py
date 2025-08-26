@@ -26,8 +26,9 @@ def SERVER_ENGINE_LISTEN_3C_FOR_STOP() -> None:
     """
     Find STOP messages not yet queued, stamp queue time, and schedule processing.
     """
+    MESSAGE_ID_ARRAY = []
     while True:
-        MESSAGE_ID_ARRAY = []
+        MESSAGE_ID_ARRAY.clear()
         for MESSAGE_ID, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD in list(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.items()):
             if (ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("DT_MESSAGE_PROCESS_QUEDED_TO_START") is None and 
                 str(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("MESSAGE_TYPE", "")).upper() == "STOP"):

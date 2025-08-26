@@ -23,8 +23,10 @@ def SERVER_ENGINE_LISTEN_3A_FOR_START() -> None:
     Scan for unprocessed START messages and queue async processing.
     Marks DT_MESSAGE_PROCESS_QUEUED_TO_START to avoid double-queueing.
     """
+    MESSAGE_ID_ARRAY = []
+
     while True:
-        MESSAGE_ID_ARRAY = []
+        MESSAGE_ID_ARRAY.clear()
         for MESSAGE_ID, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD in list(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.items()):
             if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("DT_MESSAGE_PROCESS_QUEUED_TO_START") is None and str(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("MESSAGE_TYPE", "")).upper() == "START":
                 MESSAGE_ID_ARRAY.append(MESSAGE_ID)
