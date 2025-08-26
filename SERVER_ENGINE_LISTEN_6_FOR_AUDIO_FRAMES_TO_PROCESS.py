@@ -5,8 +5,8 @@ import asyncio
 from datetime import datetime
 
 from SERVER_ENGINE_APP_VARIABLES import (
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY,  # durable: per-frame metadata (no bytes/arrays)
-    WEBSOCKET_AUDIO_FRAME_ARRAY,                # volatile: per-frame bytes/arrays
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY,  # durable: per-frame metadata (no bytes/arrays)
+    SPLIT_100_MS_AUDIO_FRAME_ARRAY,                # volatile: per-frame bytes/arrays
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,
@@ -23,28 +23,19 @@ from SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_10_MS import SERVER_ENGINE_AUDIO_
 
 PREFIX = "STAGE6_FRAMES"
 
-
 # ─────────────────────────────────────────────────────────────
 # Scanner: queue frames that are ready to analyze
 # ─────────────────────────────────────────────────────────────
 def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS() -> None:
-    """
-    Find frames not yet queued (DT_PROCESSING_QUEDED_TO_START is NULL),
-    stamp the queue time, and schedule PROCESS_THE_AUDIO_FRAME.
-
-    Assumes Stage-3B has already:
-      • created/updated ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY (durable metadata)
-      • populated WEBSOCKET_AUDIO_FRAME_ARRAY with analyzer inputs
-    """
-    to_launch = [
+    SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY = [
         (int(RECORDING_ID), int(AUDIO_FRAME_NO))
-        for RECORDING_ID, META_BY_FRAME_NO in ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY.items()
-        for AUDIO_FRAME_NO, FRAME_META in META_BY_FRAME_NO.items()
-        if FRAME_META.get("DT_PROCESSING_QUEDED_TO_START") is None
+        for RECORDING_ID, ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY_2 in ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY.items()
+        for AUDIO_FRAME_NO, ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD in ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY_2.items()
+        if ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD.get("DT_PROCESSING_QUEUED_TO_START") is None
     ]
 
-    for RECORDING_ID, AUDIO_FRAME_NO in to_launch:
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_PROCESSING_QUEDED_TO_START"] = datetime.now()
+    for RECORDING_ID, AUDIO_FRAME_NO in SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY:
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_PROCESSING_QUEDED_TO_START"] = datetime.now()
         CONSOLE_LOG(PREFIX, "queuing_frame_for_analysis", {
             "rid": RECORDING_ID,
             "frame": AUDIO_FRAME_NO,
@@ -58,31 +49,40 @@ def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS() -> None:
 # ─────────────────────────────────────────────────────────────
 @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def PROCESS_THE_AUDIO_FRAME(RECORDING_ID: int, AUDIO_FRAME_NO: int) -> None:
-    """
-    PROCESS AUDIO FRAME:
-      1) Mark DT_PROCESSING_START
-      2) Get audio arrays from volatile store
-      3) Run analyzers (FFT, PYIN, CREPE) based on gating flags
-      4) Mark DT_PROCESSING_END
-    """
     # 1) Mark processing started
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD["DT_PROCESSING_START"] = datetime.now()
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD = ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD["DT_PROCESSING_START"] = datetime.now()
 
     # 2) Get audio arrays from volatile store (SIMPLE - no complex checks)
-    WEBSOCKET_AUDIO_FRAME_RECORD = WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]
-    AUDIO_ARRAY_22050 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
-    AUDIO_ARRAY_16000 = WEBSOCKET_AUDIO_FRAME_RECORD["AUDIO_ARRAY_16000"]
+    SPLIT_100_MS_AUDIO_FRAME_RECORD = SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]
+    AUDIO_ARRAY_22050 = SPLIT_100_MS_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+    AUDIO_ARRAY_16000 = SPLIT_100_MS_AUDIO_FRAME_RECORD["AUDIO_ARRAY_16000"]
 
     # Per-frame gating flags (set in Stage-3A/3B depending on mode)
-    YN_RUN_FFT   = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD.get("YN_RUN_FFT", "Y")
-    YN_RUN_PYIN  = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD.get("YN_RUN_PYIN", "Y")
-    YN_RUN_CREPE = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD.get("YN_RUN_CREPE", "Y")
+    YN_RUN_FFT   = ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD["YN_RUN_FFT"]
+    YN_RUN_PYIN  = ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD["YN_RUN_PYIN"]
+    YN_RUN_CREPE = ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD["YN_RUN_CREPE"]
 
-    tasks: list[asyncio.Task] = []
+    AUDIO_PROCESSING_TASK_ARRAY: list[asyncio.Task] = []
+
+    AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
+        SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_1_MS(
+            int(RECORDING_ID),
+            int(AUDIO_FRAME_NO),
+            AUDIO_ARRAY_22050  # 22.05k
+        )
+    ))
+
+    AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
+        SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_10_MS(
+            int(RECORDING_ID),
+            int(AUDIO_FRAME_NO),
+            AUDIO_ARRAY_22050  # 22.05k
+        )
+    ))
 
     if YN_RUN_FFT == "Y":
-        tasks.append(asyncio.create_task(
+        AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
             SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT(
                 int(RECORDING_ID),
                 int(AUDIO_FRAME_NO),
@@ -91,7 +91,7 @@ async def PROCESS_THE_AUDIO_FRAME(RECORDING_ID: int, AUDIO_FRAME_NO: int) -> Non
         ))
 
     if YN_RUN_PYIN == "Y":
-        tasks.append(asyncio.create_task(
+        AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
             SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
                 int(RECORDING_ID),
                 int(AUDIO_FRAME_NO),
@@ -100,7 +100,7 @@ async def PROCESS_THE_AUDIO_FRAME(RECORDING_ID: int, AUDIO_FRAME_NO: int) -> Non
         ))
 
     if YN_RUN_CREPE == "Y":
-        tasks.append(asyncio.create_task(
+        AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
             SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
                 int(RECORDING_ID),
                 int(AUDIO_FRAME_NO),
@@ -109,8 +109,8 @@ async def PROCESS_THE_AUDIO_FRAME(RECORDING_ID: int, AUDIO_FRAME_NO: int) -> Non
         ))
 
     # Wait for all tasks to complete
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+    if AUDIO_PROCESSING_TASK_ARRAY:
+        await asyncio.gather(*AUDIO_PROCESSING_TASK_ARRAY, return_exceptions=True)
 
     # 4) Mark processing completed
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD["DT_PROCESSING_END"] = datetime.now()
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD["DT_PROCESSING_END"] = datetime.now()
