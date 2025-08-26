@@ -47,7 +47,7 @@ AUDIO_BYTES_PER_FRAME = AUDIO_SAMPLES_PER_FRAME * AUDIO_BYTES_PER_SAMPLE  # 8820
 
 # Audio frame alignment buffers (per recording) - Simple dictionary structure
 # Key: RECORDING_ID, Value: Dictionary with buffer data
-AUDIO_FRAME_ALIGNMENT_BUFFERS: Dict[int, Dict[str, Any]] = {}
+# AUDIO_FRAME_ALIGNMENT_BUFFERS: Dict[int, Dict[str, Any]] = {}
 
 # ─────────────────────────────────────────────────────────────
 # TypedDicts
@@ -63,6 +63,17 @@ class ENGINE_DB_LOG_RECORDING_CONFIG_DICT(TypedDict):
     AUDIO_STREAM_FILE_NAME: NotRequired[Optional[str]]
     COMPOSE_YN_RUN_FFT: NotRequired[Optional[str]]
     WEBSOCKET_CONNECTION_ID: Optional[int]
+
+    TOTAL_BYTES_RECEIVED: Optional[int]
+    TOTAL_SPLIT_100_MS_FRAMES_PRODUCED: Optional[int]
+    SPLIT_100_MS_FRAME_COUNTER: Optional[int]
+    LAST_SPLIT_100_MS_FRAME_TIME: Optional[datetime.datetime]
+
+class RECORDING_CONFIG_DICT(TypedDict):
+    RECORDING_ID: Required[int]
+    AUDIO_BYTES: bytes           # bigint
+
+
     
 class ENGINE_DB_LOG_WEBSOCKET_MESSAGE_DICT(TypedDict):
     RECORDING_ID: Optional[int]
@@ -96,8 +107,9 @@ class ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_DICT(TypedDict):
     AUDIO_FRAME_ENCODING: NotRequired[Literal["raw", "pcm16", "base64", "hex"]]
     AUDIO_FRAME_SHA256_HEX: NotRequired[str]
     WEBSOCKET_CONNECTION_ID: Optional[int]
-    PRE_SPLIT_AUDIO_FRAME_IN_MS: Optional[int]
-   
+    PRE_SPLIT_AUDIO_FRAME_DURATION_IN_MS: Optional[int]
+
+
 class PRE_SPLIT_AUDIO_FRAME_DICT(TypedDict): 
     RECORDING_ID: Optional[int]
     AUDIO_FRAME_NO: Optional[int]
@@ -125,8 +137,6 @@ class ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_DICT(TypedDict):
     YN_RUN_ONS: NotRequired[Optional[str]]
     YN_RUN_PYIN: NotRequired[Optional[str]]
     YN_RUN_CREPE: NotRequired[Optional[str]]
-    DT_FRAME_RECEIVED: NotRequired[Optional[datetime.datetime]]
-    DT_FRAME_PAIRED_WITH_WEBSOCKETS_METADATA: NotRequired[Optional[datetime.datetime]]
     DT_FRAME_DECODED_FROM_BASE64_TO_BYTES: NotRequired[Optional[datetime.datetime]]
 
     DT_FRAME_DECODED_FROM_BYTES_INTO_AUDIO_SAMPLES: NotRequired[Optional[datetime.datetime]]
@@ -180,6 +190,7 @@ PRE_SPLIT_AUDIO_FRAME_ARRAY: Dict[int, Dict[int, PRE_SPLIT_AUDIO_FRAME_DICT]] = 
 ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY: Dict[int, Dict[int, ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_DICT]] = {}  #int = RECORDING_ID, AUDIO_FRAME_NO
 SPLIT_100_MS_AUDIO_FRAME_ARRAY: Dict[int, Dict[int, SPLIT_100_MS_AUDIO_FRAME_DICT]] = {}  #int = RECORDING_ID, AUDIO_FRAME_NO
 ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY: Dict[int, ENGINE_DB_LOG_RECORDING_CONFIG_DICT] = {}  #int = RECORDING_ID
+RECORDING_CONFIG_ARRAY: Dict[int, RECORDING_CONFIG_DICT] = {}  #int = RECORDING_ID
 ENGINE_DB_LOG_STEPS_ARRAY: Dict[int, ENGINE_DB_LOG_STEPS_DICT] = {}  #int = STEP_ID
 ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY: Dict[int, ENGINE_DB_LOG_WEBSOCKET_CONNECTION_DICT] = {}  #int = WEBSOCKET_CONNECTION_ID
 ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY: Dict[int, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_DICT] = {}  #int = MESSAGE_ID

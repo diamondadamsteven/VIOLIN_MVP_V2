@@ -36,10 +36,11 @@ from SERVER_ENGINE_APP_VARIABLES import (
     PRE_SPLIT_AUDIO_FRAME_ARRAY,
     TEMP_RECORDING_AUDIO_DIR,                    # for raw archive
     ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY,        # per-recording config
-    AUDIO_FRAME_ALIGNMENT_BUFFERS,               # simplified dictionary structure
     AUDIO_BYTES_PER_FRAME,                       # frame size constants
     AUDIO_SAMPLES_PER_FRAME,                     # samples per frame
     AUDIO_SAMPLE_RATE,                           # sample rate
+    AUDIO_BYTES_PER_SAMPLE,
+    RECORDING_CONFIG_ARRAY
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,  # Start/End/Error logger
@@ -182,24 +183,24 @@ def SERVER_ENGINE_LISTEN_3B_FOR_FRAMES() -> None:
     Find messages where DT_MESSAGE_PROCESS_QUEDED_TO_START is null and MESSAGE_TYPE='FRAME',
     timestamp the queueing, and schedule processing.
     """
-    MESSAGES_TO_PROCESS = []
+    MESSAGE_ID_ARRAY = []
     for MESSAGE_ID, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW in list(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.items()):
         if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW.get("DT_MESSAGE_PROCESS_QUEDED_TO_START") is None and \
            str(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW.get("MESSAGE_TYPE", "")).upper() == "FRAME":
-            MESSAGES_TO_PROCESS.append(MESSAGE_ID)
+            MESSAGE_ID_ARRAY.append(MESSAGE_ID)
 
-    for MESSAGE_ID in MESSAGES_TO_PROCESS:
+    for MESSAGE_ID in MESSAGE_ID_ARRAY:
         ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["DT_MESSAGE_PROCESS_QUEDED_TO_START"] = datetime.now()
         ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
         if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD is None:
             continue
-        schedule_coro(PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME(MESSAGE_ID))
+        schedule_coro(PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID))
 
 # ---------------------------------------------------------------------
 # Worker: process a single FRAME message
 # ---------------------------------------------------------------------
 @ENGINE_DB_LOG_FUNCTIONS_INS()
-async def PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME(MESSAGE_ID: int) -> None:
+async def PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID: int) -> None:
     """
     PROCESS FRAME:
       1) Mark DT_MESSAGE_PROCESS_STARTED
@@ -221,181 +222,104 @@ async def PROCESS_WEBSOCKET_MESSAGE_TYPE_FRAME(MESSAGE_ID: int) -> None:
     DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_MESSAGE", ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD, fire_and_forget=True)
 
     # ---- Identify the recording/frame
-    RECORDING_ID        = int(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("RECORDING_ID") or 0)
-    AUDIO_FRAME_NO      = int(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("AUDIO_FRAME_NO") or 0)
-    DT_MESSAGE_RECEIVED = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("DT_MESSAGE_RECEIVED")
-    PRE_SPLIT_AUDIO_FRAME_BYTES = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("PRE_SPLIT_AUDIO_FRAME_BYTES")
+    RECORDING_ID        = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["RECORDING_ID"]
+    AUDIO_FRAME_NO      = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["AUDIO_FRAME_NO"]
+    DT_MESSAGE_RECEIVED = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["DT_MESSAGE_RECEIVED"]
+    PRE_SPLIT_AUDIO_FRAME_BYTES = PRE_SPLIT_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["PRE_SPLIT_AUDIO_FRAME_BYTES"]
 
     # 3) get raw bytes from the volatile store (NOT from the message row)
     PRE_SPLIT_AUDIO_FRAME_RECORD = PRE_SPLIT_AUDIO_FRAME_ARRAY.setdefault(RECORDING_ID, {})
     PRE_SPLIT_AUDIO_FRAME_RECORD_2 = PRE_SPLIT_AUDIO_FRAME_RECORD.get(AUDIO_FRAME_NO, {})
     PRE_SPLIT_AUDIO_FRAME_BYTES = PRE_SPLIT_AUDIO_FRAME_RECORD_2.get("PRE_SPLIT_AUDIO_FRAME_BYTES")  # may be None if something went wrong
-(len(audio_bytes) // AUDIO_BYTES_PER_SAMPLE * 1000) // AUDIO_SAMPLE_RATE,
+    PRE_SPLIT_AUDIO_FRAME_DURATION_IN_MS = (len(PRE_SPLIT_AUDIO_FRAME_BYTES) // AUDIO_BYTES_PER_SAMPLE * 1000) // AUDIO_SAMPLE_RATE,
 
-    # 4) Initialize the metadata structure for this recording
-    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD = ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY.setdefault(RECORDING_ID, {})
 
-    # 5) NEW: Use audio frame alignment system to process the chunk
-    # Process the audio chunk through the alignment system using direct dictionary access
-    # Get or create the buffer for this recording
-    if RECORDING_ID not in AUDIO_FRAME_ALIGNMENT_BUFFERS:
-        AUDIO_FRAME_ALIGNMENT_BUFFERS[RECORDING_ID] = {
-            'audio_buffer': bytearray(),
-            'total_bytes_received': 0,
-            'total_frames_produced': 0,
-            'last_frame_time': None,
-            'frame_counter': 1
-        }
-    
-    buffer = AUDIO_FRAME_ALIGNMENT_BUFFERS[RECORDING_ID]
+   
+    ENGINE_DB_LOG_RECORDING_CONFIG_RECORD = ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]
+    RECORDING_CONFIG_RECORD = RECORDING_CONFIG_ARRAY[RECORDING_ID]
     
     # Add the chunk to the buffer directly
-    buffer['audio_buffer'].extend(AUDIO_FRAME_BYTES)
-    buffer['total_bytes_received'] += len(AUDIO_FRAME_BYTES)
-    
-    complete_frames = []
-    
+    RECORDING_CONFIG_RECORD['AUDIO_BYTES'].extend(PRE_SPLIT_AUDIO_FRAME_BYTES)
+    ENGINE_DB_LOG_RECORDING_CONFIG_RECORD['TOTAL_BYTES_RECEIVED'] += len(PRE_SPLIT_AUDIO_FRAME_BYTES)
+      
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD = ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY.setdefault(RECORDING_ID, {})
+
     # Keep producing frames while we have enough data
-    while len(buffer['audio_buffer']) >= AUDIO_BYTES_PER_FRAME:
+    while len(RECORDING_CONFIG_RECORD['AUDIO_BYTES']) >= AUDIO_BYTES_PER_FRAME:
         # Extract exactly one frame
-        frame_bytes = bytes(buffer['audio_buffer'][:AUDIO_BYTES_PER_FRAME])
-        buffer['audio_buffer'] = buffer['audio_buffer'][AUDIO_BYTES_PER_FRAME:]
+        SPLIT_100_MS_AUDIO_FRAME_BYTES = bytes(RECORDING_CONFIG_RECORD['AUDIO_BYTES'][:AUDIO_BYTES_PER_FRAME])
+        RECORDING_CONFIG_RECORD['AUDIO_BYTES'] = RECORDING_CONFIG_RECORD['AUDIO_BYTES'][AUDIO_BYTES_PER_FRAME:]
+
+        TOTAL_SPLIT_100_MS_FRAMES_PRODUCED = ENGINE_DB_LOG_RECORDING_CONFIG_RECORD['TOTAL_SPLIT_100_MS_FRAMES_PRODUCED'] OR 0
+
+        SPLIT_100_MS_AUDIO_FRAME_NO = TOTAL_SPLIT_100_MS_FRAMES_PRODUCED + 1
         
-        # Calculate time-based frame number
-        total_samples_processed = (buffer['total_bytes_received'] - len(buffer['audio_buffer'])) // 2  # PCM16 = 2 bytes per sample
-        frame_no = (total_samples_processed // AUDIO_SAMPLES_PER_FRAME)
+        ENGINE_DB_LOG_RECORDING_CONFIG_RECORD['TOTAL_SPLIT_100_MS_FRAMES_PRODUCED'] += 1
         
-        buffer['total_frames_produced'] += 1
+        SPLIT_100_MS_AUDIO_FRAME_START_MS = (SPLIT_100_MS_AUDIO_FRAME_NO - 1) * 100
+        SPLIT_100_MS_AUDIO_FRAME_END_MS = SPLIT_100_MS_AUDIO_FRAME_START_MS + 99
         
-        complete_frames.append((frame_no, frame_bytes))
-    
-    # ✅ PERFORMANCE OPTIMIZATION: Collect frames for batch insert
-    frames_to_insert = []
-    
-    # Process each complete frame that was produced
-    for aligned_frame_no, aligned_frame_bytes in complete_frames:
-        CONSOLE_LOG("FRAME_3B", "processing_aligned_frame", {
-            "rid": RECORDING_ID,
-            "client_frame": AUDIO_FRAME_NO,
-            "aligned_frame": aligned_frame_no,
-            "time_range": f"{aligned_frame_no * 100}-{(aligned_frame_no * 100) + 99}ms",
-            "aligned_bytes": len(aligned_frame_bytes),
-            "aligned_samples": len(aligned_frame_bytes) // 2,  # PCM16 = 2 bytes per sample
-            "aligned_duration_ms": (len(aligned_frame_bytes) // 2 * 1000) // 44100
-        })
-        
-        # Create frame record for the aligned frame
-        # aligned_frame_no is now time-based: Frame 0 = 0-99ms, Frame 1 = 100-199ms, etc.
-        start_ms = aligned_frame_no * 100
-        end_ms = (aligned_frame_no * 100) + 99
-        
-        aligned_frame_record = {
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD[SPLIT_100_MS_AUDIO_FRAME_NO] = {
             "RECORDING_ID": RECORDING_ID,
-            "AUDIO_FRAME_NO": aligned_frame_no,  # Time-based frame number
-            "START_MS": start_ms,  # 100ms per frame
-            "END_MS": end_ms,
-            "DT_FRAME_RECEIVED": DT_MESSAGE_RECEIVED,
-            "DT_FRAME_PAIRED_WITH_WEBSOCKETS_METADATA": datetime.now(),
-            "AUDIO_FRAME_SIZE_BYTES": len(aligned_frame_bytes),
-            "AUDIO_FRAME_SHA256_HEX": sha256(aligned_frame_bytes).hexdigest(),
-            "NOTE": f"Time-based frame: {start_ms}-{end_ms}ms (from client frame {AUDIO_FRAME_NO})"
+            "AUDIO_FRAME_NO": SPLIT_100_MS_AUDIO_FRAME_NO,  # Time-based frame number
+            "START_MS": SPLIT_100_MS_AUDIO_FRAME_START_MS,  # 100ms per frame
+            "END_MS": SPLIT_100_MS_AUDIO_FRAME_END_MS,
+            "AUDIO_FRAME_SIZE_BYTES": SPLIT_100_MS_AUDIO_FRAME_BYTES,
+            "AUDIO_FRAME_SHA256_HEX": sha256(SPLIT_100_MS_AUDIO_FRAME_BYTES).hexdigest(),
+            "NOTE": f"Time-based frame: {SPLIT_100_MS_AUDIO_FRAME_START_MS}-{SPLIT_100_MS_AUDIO_FRAME_END_MS}ms (from client frame {PRE_SPLIT_AUDIO_FRAME_NO})"
         }
+        
+        SPLIT_100_MS_AUDIO_FRAME_ARRAY.append((SPLIT_100_MS_AUDIO_FRAME_NO, SPLIT_100_MS_AUDIO_FRAME_BYTES))
         
         # Compose-mode gating for analyzers
         if ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["COMPOSE_PLAY_OR_PRACTICE"] == "COMPOSE":
-            aligned_frame_record["YN_RUN_CREPE"] = "Y"
-            aligned_frame_record["YN_RUN_PYIN"] = "Y"
+            ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD["YN_RUN_CREPE"] = "Y"
+            ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD["YN_RUN_PYIN"] = "Y"
             if ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["COMPOSE_YN_FFT"] == "Y":
-                aligned_frame_record["YN_RUN_FFT"] = "Y"
-                aligned_frame_record["YN_RUN_ONS"] = "Y"
+                ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD["YN_RUN_FFT"] = "Y"
+                ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD["YN_RUN_ONS"] = "Y"
         
         # Store the aligned frame record
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD[aligned_frame_no] = aligned_frame_record
-        # ✅ PERFORMANCE OPTIMIZATION: Collect for batch insert instead of individual inserts
-        frames_to_insert.append(aligned_frame_record)
-        
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO] = ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD
+
         # Process the aligned frame bytes
-        X_FLOAT, SRC_SR, enc_label = decode_bytes_best_effort(aligned_frame_bytes)
-        aligned_frame_record["AUDIO_FRAME_ENCODING"] = enc_label
-        aligned_frame_record["DT_FRAME_DECODED_FROM_BYTES_INTO_AUDIO_SAMPLES"] = datetime.now()
+        X_FLOAT, SRC_SR, enc_label = decode_bytes_best_effort(SPLIT_100_MS_AUDIO_FRAME_BYTES)
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO]["AUDIO_FRAME_ENCODING"] = enc_label
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO]["DT_FRAME_DECODED_FROM_BYTES_INTO_AUDIO_SAMPLES"] = datetime.now()
         
-        # CRITICAL FIX: Always create audio arrays, even if decode fails
-        # This ensures STAGE6_FRAMES doesn't crash when trying to access missing arrays
-        if RECORDING_ID not in WEBSOCKET_AUDIO_FRAME_ARRAY:
-            WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID] = {}
-        if aligned_frame_no not in WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID]:
-            WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][aligned_frame_no] = {}
-        
-        # Store the aligned frame bytes in the volatile array
-        WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][aligned_frame_no]["AUDIO_FRAME_BYTES"] = aligned_frame_bytes
-        
-        # Only proceed with audio processing if decode was successful
-        if X_FLOAT is not None and SRC_SR is not None and X_FLOAT.size > 0:
-            # Ensure 44.1k anchor for archival file
-            X_441 = resample_best(X_FLOAT, SRC_SR, 44100)
-            aligned_frame_record["DT_FRAME_RESAMPLED_TO_44100"] = datetime.now()
+        # Ensure 44.1k anchor for archival file
+        X_441 = resample_best(X_FLOAT, SRC_SR, 44100)
+        aligned_frame_record["DT_FRAME_RESAMPLED_TO_44100"] = datetime.now()
 
-            # 5) Append to single raw file per recording
-            REC_DIR = (TEMP_RECORDING_AUDIO_DIR / str(RECORDING_ID))
-            REC_DIR.mkdir(parents=True, exist_ok=True)
-            RAW_PATH: Path = REC_DIR / f"recording_{RECORDING_ID}.pcm16.44100.raw"
-            with RAW_PATH.open("ab") as fh:
-                fh.write(float32_to_pcm16le_bytes(X_441))
-            aligned_frame_record["DT_FRAME_CONVERTED_TO_PCM16_WITH_SAMPLE_RATE_44100"] = datetime.now()
-            aligned_frame_record["DT_FRAME_APPENDED_TO_RAW_FILE"] = datetime.now()
+        # 5) Append to single raw file per recording
+        REC_DIR = (TEMP_RECORDING_AUDIO_DIR / str(RECORDING_ID))
+        REC_DIR.mkdir(parents=True, exist_ok=True)
+        RAW_PATH: Path = REC_DIR / f"recording_{RECORDING_ID}.pcm16.44100.raw"
+        with RAW_PATH.open("ab") as fh:
+            fh.write(float32_to_pcm16le_bytes(X_441))
+        aligned_frame_record["DT_FRAME_CONVERTED_TO_PCM16_WITH_SAMPLE_RATE_44100"] = datetime.now()
+        aligned_frame_record["DT_FRAME_APPENDED_TO_RAW_FILE"] = datetime.now()
 
-            # 6) Analyzer arrays (float32 mono), stored only in the volatile store
-            # Keep your existing 16k path
-            WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][aligned_frame_no]["AUDIO_ARRAY_16000"] = resample_best(X_441, 44100, 16000)
-            aligned_frame_record["DT_FRAME_RESAMPLED_TO_16000"] = datetime.now()
+        # 6) Analyzer arrays (float32 mono), stored only in the volatile store
+        # Keep your existing 16k path
+        WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][aligned_frame_no]["AUDIO_ARRAY_16000"] = resample_best(X_441, 44100, 16000)
+        aligned_frame_record["DT_FRAME_RESAMPLED_TO_16000"] = datetime.now()
 
-            # NEW: always provide 22.05k for pYIN so later stages don't crash
-            WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][aligned_frame_no]["AUDIO_ARRAY_22050"] = resample_best(X_441, 44100, 22050)
-            aligned_frame_record["DT_FRAME_RESAMPLED_22050"] = datetime.now()
+        # NEW: always provide 22.05k for pYIN so later stages don't crash
+        WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][aligned_frame_no]["AUDIO_ARRAY_22050"] = resample_best(X_441, 44100, 22050)
+        aligned_frame_record["DT_FRAME_RESAMPLED_22050"] = datetime.now()
 
-            # Free the transport bytes
-            WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][aligned_frame_no].pop("AUDIO_FRAME_BYTES", None)
+        # Free the transport bytes
+        WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][aligned_frame_no].pop("AUDIO_FRAME_BYTES", None)
 
-            aligned_frame_record["DT_FRAME_RESAMPLED_22050"] = datetime.now()
-            ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD[aligned_frame_no] = aligned_frame_record
-            DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME", aligned_frame_record, fire_and_forget=True)
-        else:
-            # Decode failed - log error but continue
-            CONSOLE_LOG("FRAME_3B", "decode_failed", {
-                "rid": RECORDING_ID,
-                "aligned_frame": aligned_frame_no,
-                "client_frame": AUDIO_FRAME_NO,
-                "bytes": len(aligned_frame_bytes)
-            })
-            # Still store the frame record for visibility
-            ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD[aligned_frame_no] = aligned_frame_record
-            DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME", aligned_frame_record, fire_and_forget=True)
+        aligned_frame_record["DT_FRAME_RESAMPLED_22050"] = datetime.now()
+        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_RECORD[aligned_frame_no] = aligned_frame_record
+        DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME", aligned_frame_record, fire_and_forget=True)
     
-    # ✅ PERFORMANCE OPTIMIZATION: Batch insert all frames at once
-    if frames_to_insert:
-        CONSOLE_LOG("FRAME_3B", "batch_insert_frames", {
-            "rid": RECORDING_ID,
-            "frames_count": len(frames_to_insert),
-            "note": "Using batch insert for performance"
-        })
-        DB_INSERT_TABLE_BULK("ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME", frames_to_insert, fire_and_forget=True)
-    
-    # CRITICAL FIX: Don't corrupt the aligned frame data!
-    # The AUDIO_FRAME_BYTES cleanup was happening in the wrong location
-    # and was overwriting the audio arrays we just created
-        
     # 7) remove the original message row now that we've captured bytes + meta
     del ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[MESSAGE_ID]
     
     # ✅ PERFORMANCE MONITORING: Log function execution time
     execution_time = time.time() - start_time
-    if execution_time > 0.1:  # Log if takes more than 100ms
-        CONSOLE_LOG("FRAME_3B", "performance_warning", {
-            "rid": RECORDING_ID,
-            "frame": AUDIO_FRAME_NO,
-            "execution_time_ms": round(execution_time * 1000, 1),
-            "frames_processed": len(frames_to_insert) if 'frames_to_insert' in locals() else 0,
-            "note": "Function execution time exceeded 100ms"
-        })
     
 
