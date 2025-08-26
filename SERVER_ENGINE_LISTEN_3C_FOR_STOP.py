@@ -1,5 +1,6 @@
 # SERVER_ENGINE_LISTEN_3C_FOR_STOP.py
 from __future__ import annotations
+import asyncio
 
 from datetime import datetime
 from pathlib import Path
@@ -15,8 +16,7 @@ from SERVER_ENGINE_APP_VARIABLES import (
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,
-    DB_INSERT_TABLE,
-    schedule_coro,
+    DB_INSERT_TABLE
 )
 
 # ─────────────────────────────────────────────────────────────
@@ -26,16 +26,17 @@ def SERVER_ENGINE_LISTEN_3C_FOR_STOP() -> None:
     """
     Find STOP messages not yet queued, stamp queue time, and schedule processing.
     """
-    MESSAGE_ID_ARRAY = []
-    for MESSAGE_ID, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD in list(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.items()):
-        if (ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("DT_MESSAGE_PROCESS_QUEDED_TO_START") is None and 
-            str(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("MESSAGE_TYPE", "")).upper() == "STOP"):
-            MESSAGE_ID_ARRAY.append(MESSAGE_ID)
+    while True:
+        MESSAGE_ID_ARRAY = []
+        for MESSAGE_ID, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD in list(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.items()):
+            if (ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("DT_MESSAGE_PROCESS_QUEDED_TO_START") is None and 
+                str(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("MESSAGE_TYPE", "")).upper() == "STOP"):
+                MESSAGE_ID_ARRAY.append(MESSAGE_ID)
 
-    for MESSAGE_ID in MESSAGE_ID_ARRAY:
-        ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
-        ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["DT_MESSAGE_PROCESS_QUEDED_TO_START"] = datetime.now()
-        schedule_coro(PROCESS_WEBSOCKET_STOP_MESSAGE(MESSAGE_ID))
+        for MESSAGE_ID in MESSAGE_ID_ARRAY:
+            ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
+            ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["DT_MESSAGE_PROCESS_QUEDED_TO_START"] = datetime.now()
+            asyncio.create_task(PROCESS_WEBSOCKET_STOP_MESSAGE(MESSAGE_ID=MESSAGE_ID))
 
 # ─────────────────────────────────────────────────────────────
 # Worker: process a single STOP message

@@ -161,69 +161,6 @@ async def _maybe_await(result):
 # Safe spawner that works for sync/async workers and prevents duplicates
 _RUNNING_FLAGS: Dict[str, bool] = {}
 
-def _spawn_non_blocking(fn, name: str):
-    """
-    Run `fn` in the background:
-      - if `fn` is async -> schedule fn()
-      - if `fn` is sync  -> schedule in a worker thread
-    Allows parallel execution for different functions.
-    """
-    async def _runner():
-        try:
-            if inspect.iscoroutinefunction(fn):
-                await fn()
-            else:
-                await asyncio.to_thread(fn)
-        except Exception as e:
-            CONSOLE_LOG("ORCHESTRATOR", f"error_in_{name}", {"error": str(e)})
-
-    schedule_coro(_runner())
-
-# ✅ PERFORMANCE OPTIMIZATION: Non-blocking orchestrator
-async def _engine_orchestrator():
-    tick_count = 0
-    start_time = time.time()
-    
-    while True:
-        tick_start = time.time()
-        tick_count += 1
-        
-        # ALL operations should be non-blocking to maintain tick rate
-        _spawn_non_blocking(SERVER_ENGINE_LISTEN_3A_FOR_START, "start_scanner")
-        _spawn_non_blocking(SERVER_ENGINE_LISTEN_3C_FOR_STOP, "stop_scanner")
-
-        # Heavy audio processing - spawn asynchronously to avoid blocking
-        _spawn_non_blocking(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES, "audio_frames")
-        _spawn_non_blocking(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS, "finish")
-        _spawn_non_blocking(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS, "finish")
-
-        # Performance monitoring every 100 ticks (~5 seconds)
-        if tick_count % 100 == 0:
-            elapsed = time.time() - start_time
-            avg_tick_time = elapsed / tick_count
-            CONSOLE_LOG("ORCHESTRATOR", "performance_stats", {
-                "ticks": tick_count,
-                "elapsed_seconds": round(elapsed, 1),
-                "avg_tick_ms": round(avg_tick_time * 1000, 1),
-                "target_tick_ms": TICK_MS,
-                "performance": "GOOD" if avg_tick_time * 1000 <= TICK_MS * 1.5 else "SLOW"
-            })
-
-        # Maintain consistent tick rate regardless of processing time
-        tick_duration = time.time() - tick_start
-        sleep_time = max(0, (TICK_MS / 1000) - tick_duration)
-        if sleep_time > 0:
-            await asyncio.sleep(sleep_time)
-        else:
-            # If we're behind schedule, don't sleep but log it
-            if tick_duration > (TICK_MS / 1000):
-                CONSOLE_LOG("ORCHESTRATOR", "tick_behind_schedule", {
-                    "tick": tick_count,
-                    "tick_duration_ms": round(tick_duration * 1000, 1),
-                    "target_ms": TICK_MS,
-                    "behind_by_ms": round((tick_duration - (TICK_MS / 1000)) * 1000, 1)
-                })
-
 @APP.on_event("shutdown")
 # @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def _shutdown():
@@ -239,7 +176,12 @@ async def _startup():
         {"type": r.__class__.__name__, "path": getattr(r, "path", None), "methods": list(getattr(r, "methods", []) or [])}
         for r in APP.router.routes
     ])
-    schedule_coro(_engine_orchestrator())
+    asyncio.create_task(SERVER_ENGINE_LISTEN_3A_FOR_START)
+    asyncio.create_task(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES)
+    # Heavy audio processing - spawn asynchronously to avoid blocking
+    asyncio.create_task(SERVER_ENGINE_LISTEN_3C_FOR_STOP)
+    asyncio.create_task(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS)
+    asyncio.create_task(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS)
 
 # Dev entry
 if __name__ == "__main__":

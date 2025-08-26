@@ -1,6 +1,7 @@
 # SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS.py
 from __future__ import annotations
 from datetime import datetime, timedelta
+import asyncio  
 
 from SERVER_ENGINE_APP_VARIABLES import (
     ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY,
@@ -19,8 +20,7 @@ from SERVER_ENGINE_APP_VARIABLES import (
 from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,
     DB_INSERT_TABLE,
-    CONSOLE_LOG,
-    schedule_coro,  # <— use loop-safe scheduler (works from threads)
+    CONSOLE_LOG
 )
 
 def SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS() -> None:
@@ -30,23 +30,24 @@ def SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS() -> None:
       • there are no frames for that RECORDING_ID with DT_PROCESSING_END == null
     Then queue RECORDING_FINISHED for cleanup/purge.
     """
-    for RECORDING_ID, ENGINE_DB_LOG_RECORDING_CONFIG_RECORD in list(ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY.items()):
-        DT_RECORDING_END = ENGINE_DB_LOG_RECORDING_CONFIG_RECORD.get("DT_RECORDING_END")
-        if not DT_RECORDING_END:
-            continue
-        # Skip if already purged
-        if ENGINE_DB_LOG_RECORDING_CONFIG_RECORD.get("DT_RECORDING_DATA_QUEUED_FOR_PURGING"):
-            continue
+    while True:
+        for RECORDING_ID, ENGINE_DB_LOG_RECORDING_CONFIG_RECORD in list(ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY.items()):
+            DT_RECORDING_END = ENGINE_DB_LOG_RECORDING_CONFIG_RECORD.get("DT_RECORDING_END")
+            if not DT_RECORDING_END:
+                continue
+            # Skip if already purged
+            if ENGINE_DB_LOG_RECORDING_CONFIG_RECORD.get("DT_RECORDING_DATA_QUEUED_FOR_PURGING"):
+                continue
 
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_2 = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY.get(RECORDING_ID, {})
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_3 = any(
-            fr.get("DT_PROCESSING_END") is None for fr in ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_2.values()
-        ) if ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_2 else False
+            ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_2 = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY.get(RECORDING_ID, {})
+            ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_3 = any(
+                fr.get("DT_PROCESSING_END") is None for fr in ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_2.values()
+            ) if ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_2 else False
 
-        if not ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_3:
-            # SAFE from worker threads; schedules on main loop
-            ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["DT_RECORDING_DATA_QUEUED_FOR_PURGING"] = datetime.now()
-            schedule_coro(PURGE_RECORDING_DATA(RECORDING_ID=int(RECORDING_ID)))
+            if not ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_3:
+                # SAFE from worker threads; schedules on main loop
+                ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["DT_RECORDING_DATA_QUEUED_FOR_PURGING"] = datetime.now()
+                asyncio.create_task(PURGE_RECORDING_DATA(RECORDING_ID=int(RECORDING_ID)))
 
 @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def PURGE_RECORDING_DATA(RECORDING_ID: int) -> None:

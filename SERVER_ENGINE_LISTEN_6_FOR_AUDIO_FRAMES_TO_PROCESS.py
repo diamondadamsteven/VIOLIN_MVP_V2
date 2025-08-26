@@ -13,8 +13,7 @@ from SERVER_ENGINE_APP_VARIABLES import (
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,
-    CONSOLE_LOG,
-    schedule_coro,   # loop/thread-safe scheduler
+    CONSOLE_LOG
 )
 
 # Per-frame analyzers (all async)
@@ -30,21 +29,22 @@ PREFIX = "STAGE6_FRAMES"
 # Scanner: queue frames that are ready to analyze
 # ─────────────────────────────────────────────────────────────
 def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS() -> None:
-    SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY = [
-        (int(RECORDING_ID), int(AUDIO_FRAME_NO))
-        for RECORDING_ID, ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY_2 in ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY.items()
-        for AUDIO_FRAME_NO, ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD in ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY_2.items()
-        if ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD.get("DT_PROCESSING_QUEUED_TO_START") is None
-    ]
+    while True:
+        SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY = [
+            (int(RECORDING_ID), int(AUDIO_FRAME_NO))
+            for RECORDING_ID, ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY_2 in ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY.items()
+            for AUDIO_FRAME_NO, ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD in ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY_2.items()
+            if ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD.get("DT_PROCESSING_QUEUED_TO_START") is None
+        ]
 
-    for RECORDING_ID, AUDIO_FRAME_NO in SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY:
-        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_PROCESSING_QUEDED_TO_START"] = datetime.now()
-        CONSOLE_LOG(PREFIX, "queuing_frame_for_analysis", {
-            "rid": RECORDING_ID,
-            "frame": AUDIO_FRAME_NO,
-            "note": "Audio arrays ready, queuing for analysis"
-        })
-        schedule_coro(PROCESS_THE_AUDIO_FRAME(RECORDING_ID=RECORDING_ID, AUDIO_FRAME_NO=AUDIO_FRAME_NO))
+        for RECORDING_ID, AUDIO_FRAME_NO in SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY:
+            ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_PROCESSING_QUEDED_TO_START"] = datetime.now()
+            CONSOLE_LOG(PREFIX, "queuing_frame_for_analysis", {
+                "rid": RECORDING_ID,
+                "frame": AUDIO_FRAME_NO,
+                "note": "Audio arrays ready, queuing for analysis"
+            })
+            asyncio.create_task(PROCESS_THE_AUDIO_FRAME(RECORDING_ID=RECORDING_ID, AUDIO_FRAME_NO=AUDIO_FRAME_NO))
 
 
 # ─────────────────────────────────────────────────────────────

@@ -63,6 +63,8 @@ class ENGINE_DB_LOG_RECORDING_CONFIG_DICT(TypedDict):
     AUDIO_STREAM_FILE_NAME: NotRequired[Optional[str]]
     COMPOSE_YN_RUN_FFT: NotRequired[Optional[str]]
     WEBSOCKET_CONNECTION_ID: NotRequired[Optional[int]]
+    DT_PROCESS_WEBSOCKET_START_MESSAGE_DONE: NotRequired[Optional[datetime.datetime]]
+    MAX_PRE_SPLIT_AUDIO_FRAME_NO_SPLIT: NotRequired[Optional[int]]
 
     TOTAL_BYTES_RECEIVED: NotRequired[Optional[int]]
     TOTAL_SPLIT_100_MS_FRAMES_PRODUCED: NotRequired[Optional[int]]
@@ -105,6 +107,7 @@ class ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_DICT(TypedDict):
     AUDIO_FRAME_SHA256_HEX: NotRequired[Optional[str]]
     WEBSOCKET_CONNECTION_ID: NotRequired[Optional[int]]
     PRE_SPLIT_AUDIO_FRAME_DURATION_IN_MS: NotRequired[Optional[int]]
+    DT_FRAME_SPLIT_INTO_100_MS_FRAMES: NotRequired[Optional[datetime.datetime]]
 
 class PRE_SPLIT_AUDIO_FRAME_DICT(TypedDict): 
     RECORDING_ID: Required[int]

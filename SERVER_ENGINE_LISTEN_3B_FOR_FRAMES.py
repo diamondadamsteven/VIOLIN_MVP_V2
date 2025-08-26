@@ -7,6 +7,7 @@ from hashlib import sha256
 from typing import Optional, Tuple
 import io
 import time
+import asyncio
 
 import numpy as np
 import av
@@ -40,13 +41,13 @@ from SERVER_ENGINE_APP_VARIABLES import (
     AUDIO_SAMPLES_PER_FRAME,                     # samples per frame
     AUDIO_SAMPLE_RATE,                           # sample rate
     AUDIO_BYTES_PER_SAMPLE,
-    RECORDING_CONFIG_ARRAY
+    RECORDING_CONFIG_ARRAY,
+    ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,  # Start/End/Error logger
     DB_INSERT_TABLE,              # allowlisted insert, fire_and_forget
     DB_INSERT_TABLE_BULK,         # allowlisted bulk insert, fire_and_forget
-    schedule_coro,                # loop/thread-safe scheduler
 )
 
 # ---------------------------------------------------------------------
@@ -184,17 +185,23 @@ def SERVER_ENGINE_LISTEN_3B_FOR_FRAMES() -> None:
     timestamp the queueing, and schedule processing.
     """
     MESSAGE_ID_ARRAY = []
-    for MESSAGE_ID, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW in list(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.items()):
-        if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW.get("DT_MESSAGE_PROCESS_QUEDED_TO_START") is None and \
-           str(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW.get("MESSAGE_TYPE", "")).upper() == "FRAME":
-            MESSAGE_ID_ARRAY.append(MESSAGE_ID)
 
-    for MESSAGE_ID in MESSAGE_ID_ARRAY:
-        ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[MESSAGE_ID]["DT_MESSAGE_PROCESS_QUEDED_TO_START"] = datetime.now()
-        ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
-        if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD is None:
-            continue
-        schedule_coro(PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID))
+    while True:
+        MESSAGE_ID_ARRAY.clear
+        for MESSAGE_ID, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW in list(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.items()):
+            if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW.get("DT_MESSAGE_PROCESS_QUEUED_TO_START") is None and \
+            str(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW.get("MESSAGE_TYPE", "")).upper() == "FRAME" and \
+            ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["RECORDING_ID"]]["DT_PROCESS_WEBSOCKET_START_MESSAGE_DONE"] is not None and \
+            (ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["AUDIO_FRAME_NO"] == 1 or 
+             ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["AUDIO_FRAME_NO"] == 1 + ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["RECORDING_ID"]]["MAX_PRE_SPLIT_AUDIO_FRAME_NO_SPLIT"]):
+                MESSAGE_ID_ARRAY.append(MESSAGE_ID)
+
+        for MESSAGE_ID in MESSAGE_ID_ARRAY:
+            ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[MESSAGE_ID]["DT_MESSAGE_PROCESS_QUEUED_TO_START"] = datetime.now()
+            ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
+            if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD is None:
+                continue
+            asyncio.create_task(PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID=MESSAGE_ID))
 
 # ---------------------------------------------------------------------
 # Worker: process a single FRAME message
@@ -316,6 +323,9 @@ async def PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID: int) -> None:
     
     # 7) remove the original message row now that we've captured bytes + meta
     del ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[MESSAGE_ID]
+
+    ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["MAX_PRE_SPLIT_AUDIO_FRAME_NO_SPLIT"] = PRE_SPLIT_AUDIO_FRAME_NO
+    ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY[RECORDING_ID][PRE_SPLIT_AUDIO_FRAME_NO]["DT_FRAME_SPLIT_INTO_100_MS_FRAMES"] = datetime.now()
     
     # ✅ PERFORMANCE MONITORING: Log function execution time
     execution_time = time.time() - start_time
