@@ -19,8 +19,8 @@ except Exception:  # pragma: no cover
     torchcrepe = None
 
 from SERVER_ENGINE_APP_VARIABLES import (
-    WEBSOCKET_AUDIO_FRAME_ARRAY,               # volatile: raw bytes only
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY  # durable: metadata only (assumed pre-populated)
+    SPLIT_100_MS_AUDIO_FRAME_ARRAY,               # volatile: raw bytes only
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY  # durable: metadata only (assumed pre-populated)
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
@@ -95,24 +95,24 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
     START_MS = 100 * (AUDIO_FRAME_NO - 1) 
 
     # Stamp start
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_CREPE"] = datetime.now()
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_CREPE"] = datetime.now()
 
     # Dependencies available?
     if torch is None or torchcrepe is None:
         CONSOLE_LOG(PREFIX, "TORCHCREPE_UNAVAILABLE_SKIP", {"rid": RECORDING_ID, "frame": AUDIO_FRAME_NO})
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["CREPE_RECORD_CNT"] = 0
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_CREPE"] = datetime.now()
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["CREPE_RECORD_CNT"] = 0
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_CREPE"] = datetime.now()
         return 0
 
     # Get/prepare audio @16k mono float32
     if AUDIO_16000 is None:
-        b = WEBSOCKET_AUDIO_FRAME_ARRAY.get(RECORDING_ID, {}).get(AUDIO_FRAME_NO, {}).get("AUDIO_FRAME_BYTES")
+        b = SPLIT_100_MS_AUDIO_FRAME_ARRAY.get(RECORDING_ID, {}).get(AUDIO_FRAME_NO, {}).get("AUDIO_FRAME_BYTES")
         AUDIO_16000 = _pcm16_to_float32_array(b)
 
     if AUDIO_16000 is None or getattr(AUDIO_16000, "size", 0) == 0:
         CONSOLE_LOG(PREFIX, "NO_AUDIO", {"rid": RECORDING_ID, "frame": AUDIO_FRAME_NO})
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["CREPE_RECORD_CNT"] = 0
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_CREPE"] = datetime.now()
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["CREPE_RECORD_CNT"] = 0
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_CREPE"] = datetime.now()
         return 0
 
     if isinstance(AUDIO_16000, np.ndarray) and AUDIO_16000.ndim > 1:
@@ -167,11 +167,11 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
                 continue
             rows.append((int(START_MS_ARRAY[i]), int(END_MS_ARRAY[i]), hz, conf))
 
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["CREPE_RECORD_CNT"] = len(rows)
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["CREPE_RECORD_CNT"] = len(rows)
 
     if not rows:
         CONSOLE_LOG(PREFIX, "NO_ROWS", {"rid": RECORDING_ID, "frame": AUDIO_FRAME_NO})
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_CREPE"] = datetime.now()
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_CREPE"] = datetime.now()
         return 0
 
     with DB_CONNECT_CTX() as conn:
@@ -191,5 +191,5 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
         "audio_sha1": audio_sha1,
     })
 
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_CREPE"] = datetime.now()
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_CREPE"] = datetime.now()
     return len(rows)

@@ -33,7 +33,7 @@ except Exception:  # pragma: no cover
     pretty_midi = None  # not used in streaming mode
 
 from SERVER_ENGINE_APP_VARIABLES import (
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY,  # per-frame metadata (assumed to exist)
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY,  # per-frame metadata (assumed to exist)
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
@@ -271,20 +271,20 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS(
     Returns number of NOTE rows inserted for this call.
     """
     # Stamp start
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_ONS"] = datetime.now()
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_ONS"] = datetime.now()
 
     # Validate audio
     if not isinstance(AUDIO_ARRAY_16000, np.ndarray) or AUDIO_ARRAY_16000.size == 0:
         CONSOLE_LOG(PREFIX, "EMPTY_AUDIO", {"rid": int(RECORDING_ID), "frame": int(AUDIO_FRAME_NO)})
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["ONS_RECORD_CNT"] = 0
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_ONS"] = datetime.now()
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["ONS_RECORD_CNT"] = 0
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_ONS"] = datetime.now()
         return 0
 
     # Session
     session_id = _get_or_open_session(int(RECORDING_ID))
     if not session_id:
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["ONS_RECORD_CNT"] = 0
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_ONS"] = datetime.now()
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["ONS_RECORD_CNT"] = 0
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_ONS"] = datetime.now()
         return 0
 
     # Convert to PCM16 bytes and compute absolute offset
@@ -302,8 +302,8 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS(
 
     if not resp or not resp.get("ok", False):
         # No rows; stamp end and exit
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["ONS_RECORD_CNT"] = 0
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_ONS"] = datetime.now()
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["ONS_RECORD_CNT"] = 0
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_ONS"] = datetime.now()
         return 0
 
     # Commit logic
@@ -326,8 +326,8 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS(
         _ONS_STREAM_STATE[int(RECORDING_ID)] = state
 
     # Stamp count/end
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["ONS_RECORD_CNT"] = int(inserted)
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_ONS"] = datetime.now()
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["ONS_RECORD_CNT"] = int(inserted)
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_ONS"] = datetime.now()
 
     CONSOLE_LOG(PREFIX, "INGEST_OK", {
         "rid": int(RECORDING_ID),

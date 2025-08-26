@@ -19,7 +19,7 @@ except Exception:  # pragma: no cover
     librosa = None  # type: ignore
 
 from SERVER_ENGINE_APP_VARIABLES import (
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY,  # per-frame metadata (assumed to exist)
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY,  # per-frame metadata (assumed to exist)
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
@@ -137,21 +137,21 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
     START_MS = 100 * (AUDIO_FRAME_NO - 1)
 
     # Stamp start
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_PYIN"] = datetime.now()
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_PYIN"] = datetime.now()
 
     # Validate audio
     if not isinstance(AUDIO_ARRAY_22050, np.ndarray) or AUDIO_ARRAY_22050.size == 0:
         CONSOLE_LOG(PREFIX, "EMPTY_AUDIO", {"rid": RECORDING_ID, "frame": AUDIO_FRAME_NO})
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["PYIN_RECORD_CNT"] = 0
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_PYIN"] = datetime.now()
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["PYIN_RECORD_CNT"] = 0
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_PYIN"] = datetime.now()
         return 0
 
     # Compute relative rows then offset to absolute ms
     rows_rel = _pyin_relative_rows(AUDIO_ARRAY_22050.astype(np.float32, copy=False), sample_rate=SAMPLE_RATE)
     if not rows_rel:
         CONSOLE_LOG(PREFIX, "NO_ROWS", {"rid": RECORDING_ID, "frame": AUDIO_FRAME_NO})
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["PYIN_RECORD_CNT"] = 0
-        ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_PYIN"] = datetime.now()
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["PYIN_RECORD_CNT"] = 0
+        ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_PYIN"] = datetime.now()
         return 0
 
     rows_abs: List[HZRow] = [
@@ -159,7 +159,7 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
         for (start_ms_rel, end_ms_rel, hz, confidence) in rows_rel
     ]
 
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["PYIN_RECORD_CNT"] = len(rows_abs)
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["PYIN_RECORD_CNT"] = len(rows_abs)
 
     with DB_CONNECT_CTX() as conn:
         ENGINE_LOAD_HZ_INS(
@@ -177,5 +177,5 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
         "row_count": len(rows_abs),
     })
 
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_PYIN"] = datetime.now()
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_PYIN"] = datetime.now()
     return len(rows_abs)
