@@ -176,12 +176,12 @@ async def _startup():
         {"type": r.__class__.__name__, "path": getattr(r, "path", None), "methods": list(getattr(r, "methods", []) or [])}
         for r in APP.router.routes
     ])
-    asyncio.create_task(SERVER_ENGINE_LISTEN_3A_FOR_START)
-    asyncio.create_task(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES)
-    # Heavy audio processing - spawn asynchronously to avoid blocking
-    asyncio.create_task(SERVER_ENGINE_LISTEN_3C_FOR_STOP)
-    asyncio.create_task(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS)
-    asyncio.create_task(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS)
+    # Run synchronous scanners in background threads so they don't block the loop
+    asyncio.create_task(asyncio.to_thread(SERVER_ENGINE_LISTEN_3A_FOR_START))
+    asyncio.create_task(asyncio.to_thread(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES))
+    asyncio.create_task(asyncio.to_thread(SERVER_ENGINE_LISTEN_3C_FOR_STOP))
+    asyncio.create_task(asyncio.to_thread(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS))
+    asyncio.create_task(asyncio.to_thread(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS))
 
 # Dev entry
 if __name__ == "__main__":
