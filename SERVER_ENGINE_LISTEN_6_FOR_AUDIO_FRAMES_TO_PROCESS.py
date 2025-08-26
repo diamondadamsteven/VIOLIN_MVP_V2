@@ -6,7 +6,10 @@ from datetime import datetime
 
 from SERVER_ENGINE_APP_VARIABLES import (
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY,  # durable: per-frame metadata (no bytes/arrays)
-    SPLIT_100_MS_AUDIO_FRAME_ARRAY,                # volatile: per-frame bytes/arrays
+    SPLIT_100_MS_AUDIO_FRAME_ARRAY, 
+    P_ENGINE_SONG_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET_ARRAY,
+    ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY
+                   # volatile: per-frame bytes/arrays
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,

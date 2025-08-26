@@ -36,6 +36,9 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(WEBSOCKET_MESSAGE: WebSocket, W
       • STOP → socket closed + connection row stamped.
       • If a BINARY arrives without a prior FRAME header, we treat it as orphaned (RID=0, FRAME_NO=0).
     """
+
+    global L_MESSAGE_ID
+    
     while True:
         RAW_WEBSOCKET_MESSAGE = await WEBSOCKET_MESSAGE.receive()
         now = datetime.now()
@@ -65,9 +68,10 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(WEBSOCKET_MESSAGE: WebSocket, W
                         break
                     if RAW_WEBSOCKET_MESSAGE_2.get("bytes") is not None: 
                         AUDIO_FRAME_BYTES = RAW_WEBSOCKET_MESSAGE_2["bytes"]
+                        break
 
                 # log the FRAME message itself (now that we HAVE bytes)
-                L_MESSAGE_ID =  L_MESSAGE_ID + 1
+                L_MESSAGE_ID = L_MESSAGE_ID + 1
                 ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD = {
                     "MESSAGE_ID": L_MESSAGE_ID,
                     "DT_MESSAGE_RECEIVED": now,

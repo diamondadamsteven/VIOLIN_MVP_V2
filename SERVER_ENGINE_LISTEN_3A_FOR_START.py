@@ -5,7 +5,8 @@ from datetime import datetime
 from SERVER_ENGINE_APP_VARIABLES import (
     ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY,
     ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY,
-    ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY,  # metadata-only (no bytes)
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY,  # metadata-only (no bytes)
+    RECORDING_CONFIG_ARRAY
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,
@@ -77,6 +78,12 @@ async def PROCESS_WEBSOCKET_START_MESSAGE(MESSAGE_ID: int) -> None:
     with DB_CONNECT_CTX() as CONN:
         ROW = DB_EXEC_SP_SINGLE_ROW(CONN, "P_ENGINE_ALL_RECORDING_PARAMETERS_GET", RECORDING_ID=RECORDING_ID) or {}
 
+    # Ensure per-recording accumulator exists and AUDIO_BYTES is a bytearray
+    RECORDING_CONFIG_RECORD = RECORDING_CONFIG_ARRAY.setdefault(RECORDING_ID, {"RECORDING_ID": RECORDING_ID})
+    if not isinstance(RECORDING_CONFIG_RECORD.get("AUDIO_BYTES"), bytearray):
+        RECORDING_CONFIG_RECORD["AUDIO_BYTES"] = bytearray()
+    RECORDING_CONFIG_ARRAY[RECORDING_ID] = RECORDING_CONFIG_RECORD
+    
     # Copy selected keys (extend as needed)
     for K in ("COMPOSE_PLAY_OR_PRACTICE", "AUDIO_STREAM_FILE_NAME", "COMPOSE_YN_RUN_FFT"):
         if K in ROW:
@@ -88,17 +95,13 @@ async def PROCESS_WEBSOCKET_START_MESSAGE(MESSAGE_ID: int) -> None:
     # 5) play/practice: pre-seed per-frame metadata (no bytes)
     if COMPOSE_PLAY_OR_PRACTICE in ("PLAY", "PRACTICE"):
         with DB_CONNECT_CTX() as CONN:
-            ROWS = DB_EXEC_SP_MULTIPLE_ROWS(CONN, "P_ENGINE_SONG_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET", RECORDING_ID=RECORDING_ID) or []
+            RES_SET_P_ENGINE_SONG_100_MS_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET = DB_EXEC_SP_MULTIPLE_ROWS(CONN, "P_ENGINE_SONG_100_MS_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET", RECORDING_ID=RECORDING_ID) or []
 
-        if ROWS:
-            FRAMES_BY_NO = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY.setdefault(RECORDING_ID, {})
-            for RR in ROWS:
-                AUDIO_FRAME_NO = int(RR.get("AUDIO_FRAME_NO") or 0)
-                if AUDIO_FRAME_NO <= 0:
-                    continue
-                FRAMES_BY_NO[AUDIO_FRAME_NO] = {
+            for RR in RES_SET_P_ENGINE_SONG_100_MS_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET:
+                SPLIT_100_MS_AUDIO_FRAME_NO = RR.get("SPLIT_100_MS_AUDIO_FRAME_NO")
+                ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO] = {
                     "RECORDING_ID": RECORDING_ID,
-                    "AUDIO_FRAME_NO": AUDIO_FRAME_NO,
+                    "AUDIO_FRAME_NO": SPLIT_100_MS_AUDIO_FRAME_NO,
                     "START_MS": RR.get("START_MS"),
                     "END_MS": RR.get("END_MS"),
                     "YN_RUN_FFT": RR.get("YN_RUN_FFT"),

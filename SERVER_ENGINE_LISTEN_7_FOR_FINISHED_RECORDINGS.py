@@ -60,6 +60,7 @@ async def PURGE_RECORDING_DATA(RECORDING_ID: int) -> None:
     SPLIT_100_MS_AUDIO_FRAME_ARRAY.pop(RECORDING_ID, None)
     RECORDING_CONFIG_ARRAY.pop(RECORDING_ID, None)
     ENGINE_DB_LOG_STEPS_ARRAY.clear()
+    
 
     # Remove messages for this recording (messages keyed by MESSAGE_ID)
     ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY_2 = [
