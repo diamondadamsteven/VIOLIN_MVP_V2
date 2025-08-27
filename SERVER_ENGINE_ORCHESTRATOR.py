@@ -7,6 +7,7 @@ import os
 import time
 from typing import Dict, Any, List, Optional
 
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
@@ -17,6 +18,9 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 # ── WS connection + message handlers ─────────────────────────
 from SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS import SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS
 from SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES    import SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES
+
+# ── Process monitoring and cleanup ───
+from SERVER_ENGINE_PROCESS_MONITOR import PROCESS_MONITOR, PROCESS_MONITOR_HEARTBEAT
 
 # ── Engine scanners (can be sync or async; we handle both) ───
 from SERVER_ENGINE_LISTEN_3A_FOR_START import SERVER_ENGINE_LISTEN_3A_FOR_START
@@ -164,6 +168,8 @@ _RUNNING_FLAGS: Dict[str, bool] = {}
 @APP.on_event("shutdown")
 # @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def _shutdown():
+    CONSOLE_LOG("SHUTDOWN", "=== Server shutting down ===")
+    await PROCESS_MONITOR.graceful_shutdown()
     DB_ENGINE_SHUTDOWN()
 
 @APP.on_event("startup")
@@ -173,6 +179,11 @@ async def _startup():
     ASYNC_SET_MAIN_LOOP(asyncio.get_running_loop())
 
     DB_ENGINE_STARTUP(warm_pool=True)
+    
+    # Clean up any orphaned processes from previous runs
+    CONSOLE_LOG("STARTUP", "=== Checking for orphaned processes ===")
+    await PROCESS_MONITOR.cleanup_orphaned_processes()
+    
     CONSOLE_LOG("STARTUP", "Registered routes", [
         {"type": r.__class__.__name__, "path": getattr(r, "path", None), "methods": list(getattr(r, "methods", []) or [])}
         for r in APP.router.routes
@@ -180,23 +191,33 @@ async def _startup():
     
     CONSOLE_LOG("STARTUP", "=== Starting to create background scanner tasks ===")
     
-    # Run all scanners concurrently in the main event loop
+    # Start the heartbeat monitor first
+    CONSOLE_LOG("STARTUP", "Creating task for PROCESS_MONITOR_HEARTBEAT")
+    heartbeat_task = asyncio.create_task(PROCESS_MONITOR_HEARTBEAT())
+    PROCESS_MONITOR.register_task("heartbeat_monitor", heartbeat_task)
+    
+    # Create scanner tasks and register them with the process monitor
     CONSOLE_LOG("STARTUP", "Creating task for SERVER_ENGINE_LISTEN_3A_FOR_START")
-    asyncio.create_task(SERVER_ENGINE_LISTEN_3A_FOR_START())
+    scanner_3a = asyncio.create_task(SERVER_ENGINE_LISTEN_3A_FOR_START())
+    PROCESS_MONITOR.register_task("scanner_3a", scanner_3a)
     
     CONSOLE_LOG("STARTUP", "Creating task for SERVER_ENGINE_LISTEN_3B_FOR_FRAMES")
-    asyncio.create_task(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES())
+    scanner_3b = asyncio.create_task(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES())
+    PROCESS_MONITOR.register_task("scanner_3b", scanner_3b)
     
     CONSOLE_LOG("STARTUP", "Creating task for SERVER_ENGINE_LISTEN_3C_FOR_STOP")
-    asyncio.create_task(SERVER_ENGINE_LISTEN_3C_FOR_STOP())
+    scanner_3c = asyncio.create_task(SERVER_ENGINE_LISTEN_3C_FOR_STOP())
+    PROCESS_MONITOR.register_task("scanner_3c", scanner_3c)
     
     CONSOLE_LOG("STARTUP", "Creating task for SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS")
-    asyncio.create_task(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS())
+    scanner_6 = asyncio.create_task(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS())
+    PROCESS_MONITOR.register_task("scanner_6", scanner_6)
     
     CONSOLE_LOG("STARTUP", "Creating task for SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS")
-    asyncio.create_task(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS())
+    scanner_7 = asyncio.create_task(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS())
+    PROCESS_MONITOR.register_task("scanner_7", scanner_7)
     
-    CONSOLE_LOG("STARTUP", "=== All background scanner tasks created successfully ===")
+    CONSOLE_LOG("STARTUP", "=== All background scanner tasks created and registered successfully ===")
 
 # Dev entry
 if __name__ == "__main__":
