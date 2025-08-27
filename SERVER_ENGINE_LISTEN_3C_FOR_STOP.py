@@ -22,7 +22,7 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
 # ─────────────────────────────────────────────────────────────
 # Scanner: queue unprocessed STOP messages
 # ─────────────────────────────────────────────────────────────
-def SERVER_ENGINE_LISTEN_3C_FOR_STOP() -> None:
+async def SERVER_ENGINE_LISTEN_3C_FOR_STOP() -> None:
     """
     Find STOP messages not yet queued, stamp queue time, and schedule processing.
     """
@@ -37,7 +37,7 @@ def SERVER_ENGINE_LISTEN_3C_FOR_STOP() -> None:
         for MESSAGE_ID in MESSAGE_ID_ARRAY:
             ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
             ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["DT_MESSAGE_PROCESS_QUEDED_TO_START"] = datetime.now()
-            asyncio.create_task(PROCESS_WEBSOCKET_STOP_MESSAGE(MESSAGE_ID=MESSAGE_ID))
+            await PROCESS_WEBSOCKET_STOP_MESSAGE(MESSAGE_ID=MESSAGE_ID)
 
 # ─────────────────────────────────────────────────────────────
 # Worker: process a single STOP message

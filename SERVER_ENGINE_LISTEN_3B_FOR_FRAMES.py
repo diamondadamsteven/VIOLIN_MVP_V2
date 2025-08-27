@@ -179,14 +179,16 @@ def decode_bytes_best_effort(pcm_or_container: Optional[bytes]) -> Tuple[Optiona
 # ---------------------------------------------------------------------
 # Scanner: queue unprocessed FRAME messages
 # ---------------------------------------------------------------------
-def SERVER_ENGINE_LISTEN_3B_FOR_FRAMES() -> None:
+async def SERVER_ENGINE_LISTEN_3B_FOR_FRAMES() -> None:
     """
     Find messages where DT_MESSAGE_PROCESS_QUEDED_TO_START is null and MESSAGE_TYPE='FRAME',
     timestamp the queueing, and schedule processing.
     """
+    CONSOLE_LOG("SCANNER", "=== 3B_FOR_FRAMES scanner starting ===")
     MESSAGE_ID_ARRAY = []
 
     while True:
+        CONSOLE_LOG("SCANNER", "3B_FOR_FRAMES: scanning for FRAME messages...")
         MESSAGE_ID_ARRAY.clear()
         for MESSAGE_ID, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW in list(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.items()):
             if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW.get("DT_MESSAGE_PROCESS_QUEUED_TO_START") is None and \
@@ -201,7 +203,14 @@ def SERVER_ENGINE_LISTEN_3B_FOR_FRAMES() -> None:
             ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
             if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD is None:
                 continue
+            # Create task but don't await it (runs concurrently)
             asyncio.create_task(PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID=MESSAGE_ID))
+        
+        if MESSAGE_ID_ARRAY:
+            CONSOLE_LOG("SCANNER", f"3B_FOR_FRAMES: found {len(MESSAGE_ID_ARRAY)} FRAME messages to process")
+        
+        # Sleep to prevent excessive CPU usage
+        await asyncio.sleep(0.1)  # 100ms delay between scans
 
 # ---------------------------------------------------------------------
 # Worker: process a single FRAME message

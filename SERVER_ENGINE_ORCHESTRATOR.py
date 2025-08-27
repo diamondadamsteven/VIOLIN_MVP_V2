@@ -169,6 +169,7 @@ async def _shutdown():
 @APP.on_event("startup")
 # @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def _startup():
+    CONSOLE_LOG("STARTUP", "=== _startup() function called ===")
     ASYNC_SET_MAIN_LOOP(asyncio.get_running_loop())
 
     DB_ENGINE_STARTUP(warm_pool=True)
@@ -176,12 +177,26 @@ async def _startup():
         {"type": r.__class__.__name__, "path": getattr(r, "path", None), "methods": list(getattr(r, "methods", []) or [])}
         for r in APP.router.routes
     ])
-    # Run synchronous scanners in background threads so they don't block the loop
-    asyncio.create_task(asyncio.to_thread(SERVER_ENGINE_LISTEN_3A_FOR_START))
-    asyncio.create_task(asyncio.to_thread(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES))
-    asyncio.create_task(asyncio.to_thread(SERVER_ENGINE_LISTEN_3C_FOR_STOP))
-    asyncio.create_task(asyncio.to_thread(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS))
-    asyncio.create_task(asyncio.to_thread(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS))
+    
+    CONSOLE_LOG("STARTUP", "=== Starting to create background scanner tasks ===")
+    
+    # Run all scanners concurrently in the main event loop
+    CONSOLE_LOG("STARTUP", "Creating task for SERVER_ENGINE_LISTEN_3A_FOR_START")
+    asyncio.create_task(SERVER_ENGINE_LISTEN_3A_FOR_START())
+    
+    CONSOLE_LOG("STARTUP", "Creating task for SERVER_ENGINE_LISTEN_3B_FOR_FRAMES")
+    asyncio.create_task(SERVER_ENGINE_LISTEN_3B_FOR_FRAMES())
+    
+    CONSOLE_LOG("STARTUP", "Creating task for SERVER_ENGINE_LISTEN_3C_FOR_STOP")
+    asyncio.create_task(SERVER_ENGINE_LISTEN_3C_FOR_STOP())
+    
+    CONSOLE_LOG("STARTUP", "Creating task for SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS")
+    asyncio.create_task(SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS())
+    
+    CONSOLE_LOG("STARTUP", "Creating task for SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS")
+    asyncio.create_task(SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS())
+    
+    CONSOLE_LOG("STARTUP", "=== All background scanner tasks created successfully ===")
 
 # Dev entry
 if __name__ == "__main__":

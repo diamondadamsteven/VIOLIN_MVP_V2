@@ -57,10 +57,10 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(WEBSOCKET_MESSAGE: WebSocket, W
             MESSAGE_TYPE = str(WEBSOCKET_MESSAGE_JSON.get("MESSAGE_TYPE") or 
                                WEBSOCKET_MESSAGE_JSON.get("type", "")).upper()
             RECORDING_ID = int(WEBSOCKET_MESSAGE_JSON.get("RECORDING_ID") or 0)
-            AUDIO_FRAME_NO = int(WEBSOCKET_MESSAGE_JSON.get("AUDIO_FRAME_NO") or
-                                 WEBSOCKET_MESSAGE_JSON.get("FRAME_NO"))
 
-            if MESSAGE_TYPE == "FRAME":
+            if MESSAGE_TYPE == "FRAME":              
+                AUDIO_FRAME_NO = int(WEBSOCKET_MESSAGE_JSON.get("AUDIO_FRAME_NO") or
+                                    WEBSOCKET_MESSAGE_JSON.get("FRAME_NO"))
                 # PAIRING: wait for the very next binary and only then log/enqueue
                 while True:
                     RAW_WEBSOCKET_MESSAGE_2 = await WEBSOCKET_MESSAGE.receive()
@@ -105,7 +105,7 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(WEBSOCKET_MESSAGE: WebSocket, W
                     "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,  # ignored by DB if not allowlisted
                 }
                 # 3) persist metadata (never the bytes)
-                DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME", ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_RECORD, fire_and_forget=True)
+                DB_INSERT_TABLE("ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME", ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_RECORD, fire_and_forget=True)
 
             else:  #NON-FRAME
                 L_MESSAGE_ID =  L_MESSAGE_ID + 1
@@ -114,7 +114,7 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(WEBSOCKET_MESSAGE: WebSocket, W
                 "DT_MESSAGE_RECEIVED": now,
                 "RECORDING_ID": RECORDING_ID,
                 "MESSAGE_TYPE": MESSAGE_TYPE or "TEXT",
-                "AUDIO_FRAME_NO": AUDIO_FRAME_NO,
+                "AUDIO_FRAME_NO": None,
                 "DT_MESSAGE_PROCESS_STARTED": None,
                 "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,
                 }

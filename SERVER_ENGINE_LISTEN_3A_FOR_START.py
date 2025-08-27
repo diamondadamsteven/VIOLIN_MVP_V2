@@ -18,26 +18,34 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
 )
 
 
-def SERVER_ENGINE_LISTEN_3A_FOR_START() -> None:
+async def SERVER_ENGINE_LISTEN_3A_FOR_START() -> None:
     """
     Scan for unprocessed START messages and queue async processing.
     Marks DT_MESSAGE_PROCESS_QUEUED_TO_START to avoid double-queueing.
     """
+    CONSOLE_LOG("SCANNER", "=== 3A_FOR_START scanner starting ===")
     MESSAGE_ID_ARRAY = []
 
     while True:
+        CONSOLE_LOG("SCANNER", "3A_FOR_START: scanning for START messages...")
         MESSAGE_ID_ARRAY.clear()
         for MESSAGE_ID, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD in list(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.items()):
             if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("DT_MESSAGE_PROCESS_QUEUED_TO_START") is None and str(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD.get("MESSAGE_TYPE", "")).upper() == "START":
                 MESSAGE_ID_ARRAY.append(MESSAGE_ID)
 
+        if MESSAGE_ID_ARRAY:
+            CONSOLE_LOG("SCANNER", f"3A_FOR_START: found {len(MESSAGE_ID_ARRAY)} START messages to process")
+        
         for MESSAGE_ID in MESSAGE_ID_ARRAY:
             ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
             if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD is None:
                 continue
+            CONSOLE_LOG("SCANNER", f"3A_FOR_START: processing START message {MESSAGE_ID}")
             ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["DT_MESSAGE_PROCESS_QUEUED_TO_START"] = datetime.now()
-            asyncio.create_task(PROCESS_WEBSOCKET_START_MESSAGE(MESSAGE_ID=MESSAGE_ID))
-
+            await PROCESS_WEBSOCKET_START_MESSAGE(MESSAGE_ID=MESSAGE_ID)
+        
+        # Sleep to prevent excessive CPU usage
+        await asyncio.sleep(0.1)  # 100ms delay between scans
 
 
 @ENGINE_DB_LOG_FUNCTIONS_INS()

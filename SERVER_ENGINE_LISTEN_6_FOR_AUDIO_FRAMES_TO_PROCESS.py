@@ -27,8 +27,10 @@ PREFIX = "STAGE6_FRAMES"
 # ─────────────────────────────────────────────────────────────
 # Scanner: queue frames that are ready to analyze
 # ─────────────────────────────────────────────────────────────
-def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS() -> None:
+async def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS() -> None:
+    CONSOLE_LOG("SCANNER", "=== 6_FOR_AUDIO_FRAMES_TO_PROCESS scanner starting ===")
     while True:
+        CONSOLE_LOG("SCANNER", "6_FOR_AUDIO_FRAMES: scanning for frames ready to analyze...")
         SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY = [
             (int(RECORDING_ID), int(AUDIO_FRAME_NO))
             for RECORDING_ID, ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY_2 in ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY.items()
@@ -43,7 +45,14 @@ def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS() -> None:
                 "frame": AUDIO_FRAME_NO,
                 "note": "Audio arrays ready, queuing for analysis"
             })
+            # Create task but don't await it (runs concurrently)
             asyncio.create_task(PROCESS_THE_AUDIO_FRAME(RECORDING_ID=RECORDING_ID, AUDIO_FRAME_NO=AUDIO_FRAME_NO))
+        
+        if SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY:
+            CONSOLE_LOG("SCANNER", f"6_FOR_AUDIO_FRAMES: found {len(SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY)} frames ready to analyze")
+        
+        # Sleep to prevent excessive CPU usage
+        await asyncio.sleep(0.1)  # 100ms delay between scans
 
 
 # ─────────────────────────────────────────────────────────────

@@ -1,40 +1,9 @@
 INFO:     Will watch for changes in these directories: ['C:\\Users\\diamo\\VIOLIN_MVP_V2']
 INFO:     Uvicorn running on http://0.0.0.0:7070 (Press CTRL+C to quit)
-INFO:     Started reloader process [34312] using WatchFiles
-INFO:     Started server process [26652]
+INFO:     Started reloader process [21716] using WatchFiles
+INFO:     Started server process [23836]
 INFO:     Waiting for application startup.
 STARTUP - DB_ENGINE_STARTUP: Connection pool configured - size=10, overflow=-9, timeout=30s
 STARTUP - Pool details: checked_in=1, checked_out=0
 STARTUP - DB_ENGINE_STARTUP: Table allowlist initialized successfully
 STARTUP - Registered routes [{'type': 'Route', 'path': '/openapi.json', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/docs', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/docs/oauth2-redirect', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/redoc', 'methods': ['HEAD', 'GET']}, {'type': 'APIRoute', 'path': '/health', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/performance', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/routes', 'methods': ['GET']}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/echo', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream_raw', 'methods': []}]
-ERROR:    Traceback (most recent call last):
-  File "C:\Users\diamo\VIOLIN_MVP_V2\.venv\Lib\site-packages\starlette\routing.py", line 694, in lifespan
-    async with self.lifespan_context(app) as maybe_state:
-               ~~~~~~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Users\diamo\VIOLIN_MVP_V2\.venv\Lib\site-packages\starlette\routing.py", line 571, in __aenter__
-    await self._router.startup()
-  File "C:\Users\diamo\VIOLIN_MVP_V2\.venv\Lib\site-packages\starlette\routing.py", line 671, in startup
-    await handler()
-  File "C:\Users\diamo\VIOLIN_MVP_V2\SERVER_ENGINE_ORCHESTRATOR.py", line 179, in _startup
-    asyncio.create_task(SERVER_ENGINE_LISTEN_3A_FOR_START)
-    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python313\Lib\asyncio\tasks.py", line 410, in create_task
-    task = loop.create_task(coro, name=name)
-  File "C:\Python313\Lib\asyncio\base_events.py", line 468, in create_task
-    task = tasks.Task(coro, loop=self, name=name, context=context)
-TypeError: a coroutine was expected, got <function SERVER_ENGINE_LISTEN_3A_FOR_START at 0x0000028EF94C3420>
-
-ERROR:    Application startup failed. Exiting.
-WARNING:  WatchFiles detected changes in 'SERVER_ENGINE_ORCHESTRATOR.py'. Reloading...
- INFO:     Started server process [35744]
-INFO:     Waiting for application startup.
-STARTUP - DB_ENGINE_STARTUP: Connection pool configured - size=10, overflow=-9, timeout=30s
-STARTUP - Pool details: checked_in=1, checked_out=0
-STARTUP - DB_ENGINE_STARTUP: Table allowlist initialized successfully
-STARTUP - Registered routes [{'type': 'Route', 'path': '/openapi.json', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/docs', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/docs/oauth2-redirect', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/redoc', 'methods': ['HEAD', 'GET']}, {'type': 'APIRoute', 'path': '/health', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/performance', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/routes', 'methods': ['GET']}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/echo', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream_raw', 'methods': []}]
-INFO:     Application startup complete.
-forrtl: error (200): program aborting due to window-CLOSE event
-Image              PC                Routine            Line        Source             
-KERNELBASE.dll     00007FFCA939B0AD  Unknown               Unknown  Unknown
-KERNEL32.DLL       00007FFCA9B5E8D7  Unknown               Unknown  Unknown
-ntdll.dll          00007FFCABDDC34C  Unknown               Unknown  Unknown
