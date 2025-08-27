@@ -91,6 +91,7 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(WEBSOCKET_MESSAGE: WebSocket, W
                     "AUDIO_FRAME_BYTES": AUDIO_FRAME_BYTES,
                 }
 
+                # Store in the array for later processing
                 ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_RECORD = ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY.setdefault(RECORDING_ID, {})
                 ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_RECORD[AUDIO_FRAME_NO] = {
                     "RECORDING_ID": RECORDING_ID,
@@ -104,13 +105,28 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(WEBSOCKET_MESSAGE: WebSocket, W
                     "AUDIO_FRAME_SHA256_HEX": sha256(AUDIO_FRAME_BYTES).hexdigest(),
                     "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,  # ignored by DB if not allowlisted
                 }
-                # 3) persist metadata (never the bytes)
+                
+                # 3) persist metadata (never the bytes) - Create flat dictionary for DB insert
+                frame_data_for_db = {
+                    "RECORDING_ID": RECORDING_ID,
+                    "AUDIO_FRAME_NO": AUDIO_FRAME_NO,
+                    "START_MS": None,
+                    "END_MS": None,
+                    "DT_FRAME_RECEIVED": now,
+                    "DT_FRAME_PAIRED_WITH_WEBSOCKETS_METADATA": now,
+                    "AUDIO_FRAME_SIZE_BYTES": len(AUDIO_FRAME_BYTES),
+                    "AUDIO_FRAME_ENCODING": "raw",
+                    "AUDIO_FRAME_SHA256_HEX": sha256(AUDIO_FRAME_BYTES).hexdigest(),
+                    "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,  # ignored by DB if not allowlisted
+                }
+                
                 # DEBUG: Log what we're trying to insert
-                print(f"DEBUG: Data being sent: {ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_RECORD}")
-                print(f"DEBUG: Keys: {list(ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_RECORD.keys())}")
+                print(f"DEBUG: Data being sent: {frame_data_for_db}")
+                print(f"DEBUG: Keys: {list(frame_data_for_db.keys())}")
                 print(f"DEBUG: Table: ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME")
                 
-                DB_INSERT_TABLE("ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME", ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_RECORD, fire_and_forget=True)
+                # Insert the single flat frame record
+                DB_INSERT_TABLE("ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME", frame_data_for_db, fire_and_forget=True)
 
             else:  #NON-FRAME
                 L_MESSAGE_ID =  L_MESSAGE_ID + 1
