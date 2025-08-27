@@ -80,14 +80,6 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
     AUDIO_FRAME_NO: int,
     AUDIO_16000: Optional[np.ndarray] = None,
 ) -> int:
-    """
-    Frame-level CREPE processing.
-      • Assumes ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO] already exists.
-      • Uses provided AUDIO_16000 (float32, mono, 16k) if given; else decodes from WEBSOCKET_AUDIO_FRAME_ARRAY bytes (assumes PCM16@16k).
-      • Updates per-frame metadata (DT_START/END_CREPE, CREPE_RECORD_CNT).
-      • Bulk-inserts (START_MS, END_MS, HZ, CONFIDENCE) rows into ENGINE_LOAD_HZ.
-    Returns the number of inserted rows.
-    """
     SAMPLE_RATE = 16000
     HOP = 160                # 10 ms @ 16 kHz for CREPE
     ANALYSIS_HOP_MS = 10     # CREPE hop size

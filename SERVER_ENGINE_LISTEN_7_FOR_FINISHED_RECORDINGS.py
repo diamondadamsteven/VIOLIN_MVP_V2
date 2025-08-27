@@ -14,6 +14,7 @@ from SERVER_ENGINE_APP_VARIABLES import (
     SPLIT_100_MS_AUDIO_FRAME_ARRAY,
     RECORDING_CONFIG_ARRAY,
     ENGINE_DB_LOG_STEPS_ARRAY,
+    
 
 )
 
@@ -23,13 +24,14 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG
 )
 
-def SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS() -> None:
+async def SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS() -> None:
     """
     Find recordings where:
       • DT_RECORDING_END is not null, and
       • there are no frames for that RECORDING_ID with DT_PROCESSING_END == null
     Then queue RECORDING_FINISHED for cleanup/purge.
     """
+    CONSOLE_LOG("SCANNER", "=== 7_FOR_FINISHED_RECORDINGS scanner starting ===")
     while True:
         for RECORDING_ID, ENGINE_DB_LOG_RECORDING_CONFIG_RECORD in list(ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY.items()):
             DT_RECORDING_END = ENGINE_DB_LOG_RECORDING_CONFIG_RECORD.get("DT_RECORDING_END")
@@ -39,18 +41,23 @@ def SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS() -> None:
             if ENGINE_DB_LOG_RECORDING_CONFIG_RECORD.get("DT_RECORDING_DATA_QUEUED_FOR_PURGING"):
                 continue
 
-            ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_2 = ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY.get(RECORDING_ID, {})
-            ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_3 = any(
-                fr.get("DT_PROCESSING_END") is None for fr in ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_2.values()
-            ) if ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_2 else False
+            ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY_2 = ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY.get(RECORDING_ID, {})
+            ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY_3 = any(
+                fr.get("DT_PROCESSING_END") is None for fr in ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY_2.values()
+            ) if ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY_2 else False
 
-            if not ENGINE_DB_LOG_WEBSOCKET_AUDIO_FRAME_ARRAY_3:
+            if not ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY_3:
                 # SAFE from worker threads; schedules on main loop
+                CONSOLE_LOG("SCANNER", f"7_FOR_FINISHED_RECORDINGS: found finished recording {RECORDING_ID} to purge")
                 ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["DT_RECORDING_DATA_QUEUED_FOR_PURGING"] = datetime.now()
                 asyncio.create_task(PURGE_RECORDING_DATA(RECORDING_ID=int(RECORDING_ID)))
+        
+        # Sleep to prevent excessive CPU usage
+        await asyncio.sleep(0.1)  # 100ms delay between scans
 
 @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def PURGE_RECORDING_DATA(RECORDING_ID: int) -> None:
+    CONSOLE_LOG("SCANNER", f"PURGE_RECORDING_DATA: {RECORDING_ID}")
     ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["DT_RECORDING_DATA_PURGED"] = datetime.now()
     DB_INSERT_TABLE("ENGINE_DB_LOG_RECORDING_CONFIG", ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID], fire_and_forget=True)
 

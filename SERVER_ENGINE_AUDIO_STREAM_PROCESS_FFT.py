@@ -1,12 +1,4 @@
 # SERVER_ENGINE_AUDIO_STREAM_PROCESS_FFT.py
-# ----------------------------------------------------------------------
-# FFT processing for a single 100 ms websocket audio frame.
-#   • Input: mono float32 audio at ~22.05 kHz (AUDIO_ARRAY_22050)
-#   • Transport frame timing: START_MS = 100 * (AUDIO_FRAME_NO - 1)
-#   • 100 ms Hann window / 100 ms hop
-#   • Per-window max-normalized magnitudes
-#   • Bulk insert -> ENGINE_LOAD_FFT (keyed by RECORDING_ID, AUDIO_FRAME_NO)
-# ----------------------------------------------------------------------
 
 from __future__ import annotations
 

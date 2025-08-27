@@ -1,11 +1,4 @@
 # SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_10_MS.py
-# ----------------------------------------------------------------------
-# Volume (10 ms series) for a single 100 ms websocket audio frame.
-#   • Input: 22,050 Hz mono float32 array
-#   • Compute 10 ms RMS series via librosa.feature.rms
-#   • Insert into ENGINE_LOAD_VOLUME_10_MS
-#   • All times are ABSOLUTE: START_MS = 100 * (AUDIO_FRAME_NO - 1)
-# ----------------------------------------------------------------------
 
 from __future__ import annotations
 

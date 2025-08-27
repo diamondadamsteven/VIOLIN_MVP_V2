@@ -73,7 +73,7 @@ class ENGINE_DB_LOG_RECORDING_CONFIG_DICT(TypedDict):
 
 class RECORDING_CONFIG_DICT(TypedDict):
     RECORDING_ID: Required[int]
-    AUDIO_BYTES: NotRequired[Optional[bytes]]           # bigint
+    AUDIO_BYTES: NotRequired[Optional[bytearray]]           # bigint
     
 class ENGINE_DB_LOG_WEBSOCKET_MESSAGE_DICT(TypedDict):
     MESSAGE_ID: Required[int]

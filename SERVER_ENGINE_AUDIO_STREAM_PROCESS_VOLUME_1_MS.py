@@ -1,12 +1,4 @@
 # SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_1_MS.py
-# ----------------------------------------------------------------------
-# Volume (1 ms series) for a single 100 ms websocket audio frame.
-#   • Input: 22,050 Hz mono float32 array
-#   • Compute 1 ms RMS series using librosa.feature.rms (frame_length ≈ 2 ms)
-#   • Insert per-ms rows into ENGINE_LOAD_VOLUME_1_MS:
-#       (RECORDING_ID, START_MS, VOLUME, VOLUME_IN_DB, AUDIO_FRAME_NO, SAMPLE_RATE)
-#   • All times are ABSOLUTE: START_MS = 100 * (AUDIO_FRAME_NO - 1)
-# ----------------------------------------------------------------------
 
 from __future__ import annotations
 
@@ -76,12 +68,6 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_1_MS(
     AUDIO_FRAME_NO: int,
     AUDIO_ARRAY_22050: np.ndarray,
 ) -> int:
-    """
-    Inputs:
-      • RECORDING_ID, AUDIO_FRAME_NO
-      • AUDIO_ARRAY_22050: mono float32 at 22,050 Hz
-    Returns: number of 1 ms rows inserted.
-    """
     SAMPLE_RATE = 22050
 
     # 100 ms per websocket frame → absolute base timestamp

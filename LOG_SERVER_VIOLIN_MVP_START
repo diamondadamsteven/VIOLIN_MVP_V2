@@ -1,102 +1,24 @@
 INFO:     Will watch for changes in these directories: ['C:\\Users\\diamo\\VIOLIN_MVP_V2']
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [45608] using WatchFiles
-INFO:     Started server process [2300]
+INFO:     Started reloader process [3000] using WatchFiles
+INFO:     Started server process [38264]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 ✅ Loaded 63 SP metadata entries.
 ✅ Loaded column whitelists for 3 tables.
-INFO:     192.168.1.2:59639 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59643 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59644 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59645 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59643 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59644 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59647 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59646 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59643 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59645 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59647 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59644 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59648 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59646 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59650 - "POST /CALL_SP HTTP/1.1" 200 OK
-INFO:     192.168.1.2:59650 - "POST /INSERT_TABLE/CLIENT_DB_LOG_WEBSOCKET_CONNECTION HTTP/1.1" 200 OK
-WARNING:  WatchFiles detected changes in 'SERVER_ENGINE_ORCHESTRATOR.py'. Reloading...
- INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [2300]
-🛑 Shutting down backend app...
-WARNING:  WatchFiles detected changes in 'SERVER_ENGINE_LISTEN_3B_FOR_FRAMES.py', 'SERVER_ENGINE_APP_FUNCTIONS.py', 'SERVER_ENGINE_LISTEN_3A_FOR_START.py'. Reloading...
- INFO:     Started server process [53896]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-ERROR:    Traceback (most recent call last):
-  File "C:\Python313\Lib\asyncio\runners.py", line 118, in run
-    return self._loop.run_until_complete(task)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
-  File "C:\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
-    return future.result()
-           ~~~~~~~~~~~~~^^
-asyncio.exceptions.CancelledError
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "C:\Python313\Lib\asyncio\runners.py", line 195, in run
-    return runner.run(main)
-           ~~~~~~~~~~^^^^^^
-  File "C:\Python313\Lib\asyncio\runners.py", line 123, in run
-    raise KeyboardInterrupt()
-KeyboardInterrupt
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "C:\Users\diamo\VIOLIN_MVP_V2\.venv\Lib\site-packages\starlette\routing.py", line 701, in lifespan
-    await receive()
-  File "C:\Users\diamo\VIOLIN_MVP_V2\.venv\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
-    return await self.receive_queue.get()
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python313\Lib\asyncio\queues.py", line 186, in get
-    await getter
-asyncio.exceptions.CancelledError
-
-✅ Loaded 63 SP metadata entries.
-✅ Loaded column whitelists for 3 tables.
-WARNING:  WatchFiles detected changes in 'SERVER_ENGINE_LISTEN_3B_FOR_FRAMES.py'. Reloading...
- Process SpawnProcess-3:
-Traceback (most recent call last):
-  File "C:\Python313\Lib\multiprocessing\process.py", line 313, in _bootstrap
-    self.run()
-    ~~~~~~~~^^
-  File "C:\Python313\Lib\multiprocessing\process.py", line 108, in run
-    self._target(*self._args, **self._kwargs)
-    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\diamo\VIOLIN_MVP_V2\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 76, in subprocess_started
-    config.configure_logging()
-    ~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "C:\Users\diamo\VIOLIN_MVP_V2\.venv\Lib\site-packages\uvicorn\config.py", line 367, in configure_logging
-    logging.config.dictConfig(self.log_config)
-    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "C:\Python313\Lib\logging\config.py", line 935, in dictConfig
-    dictConfigClass(config).configure()
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "C:\Python313\Lib\logging\config.py", line 604, in configure
-    handler = self.configure_handler(handlers[name])
-  File "C:\Python313\Lib\logging\config.py", line 771, in configure_handler
-    formatter = config.pop('formatter', None)
-  File "C:\Python313\Lib\logging\config.py", line 350, in pop
-    return self.convert_with_key(key, value, replace=False)
-           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Python313\Lib\logging\config.py", line 308, in convert_with_key
-    result = self.configurator.convert(value)
-  File "C:\Python313\Lib\logging\config.py", line 469, in convert
-    m = self.CONVERT_PATTERN.match(value)
-KeyboardInterrupt
-INFO:     Started server process [56488]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  WatchFiles detected changes in 'SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py'. Reloading...
- 
+INFO:     192.168.1.2:57712 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57717 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57720 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57719 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57721 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57718 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57721 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57720 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57717 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57719 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57718 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57722 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57717 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57723 - "POST /CALL_SP HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57723 - "POST /INSERT_TABLE/CLIENT_DB_LOG_WEBSOCKET_CONNECTION HTTP/1.1" 200 OK
+INFO:     192.168.1.2:57723 - "POST /INSERT_TABLE/CLIENT_DB_LOG_WEBSOCKET_MESSAGE HTTP/1.1" 200 OK

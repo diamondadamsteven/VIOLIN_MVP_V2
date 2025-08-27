@@ -1,17 +1,4 @@
 # SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS.py
-# ----------------------------------------------------------------------
-# Onsets & Frames (real-time-ish) for 100 ms websocket audio frames.
-#   • Input: mono float32 audio at 16 kHz (AUDIO_ARRAY_16000)
-#   • START_MS = 100 * (AUDIO_FRAME_NO - 1)
-#   • Maintains a persistent O&F session per RECORDING_ID
-#   • Streams each frame as raw PCM16 bytes with absolute offset
-#   • Service returns { commit_ms, notes[] }, we insert only stable notes:
-#       notes where note.end_ms <= commit_ms and > last_committed_ms
-#   • Bulk insert into ENGINE_LOAD_NOTE with SOURCE_METHOD='ONS'
-#   • Stamps ONS_RECORD_CNT / DT_START_ONS / DT_END_ONS into per-frame metadata
-#   • Call SERVER_ENGINE_AUDIO_STREAM_PROCESS_ONS_FINALIZE(RECORDING_ID)
-#     after STOP to flush remaining notes and close the session.
-# ----------------------------------------------------------------------
 
 from __future__ import annotations
 

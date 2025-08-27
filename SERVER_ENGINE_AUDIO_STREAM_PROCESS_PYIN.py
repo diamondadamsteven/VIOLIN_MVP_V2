@@ -1,11 +1,4 @@
 # SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN.py
-# ----------------------------------------------------------------------
-# pYIN for a single 100 ms websocket audio frame (array-first, 22.05 kHz mono).
-#   • Run librosa.pyin on 22.05 kHz audio
-#   • Produce (START_MS, END_MS, HZ, CONFIDENCE) at ~10 ms
-#   • Offset by START_MS = 100 * (AUDIO_FRAME_NO - 1) to absolute times
-#   • Bulk insert into ENGINE_LOAD_HZ with SOURCE_METHOD='PYIN'
-# ----------------------------------------------------------------------
 
 from __future__ import annotations
 

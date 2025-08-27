@@ -80,7 +80,7 @@ def ensure_mono_float(x: np.ndarray) -> np.ndarray:
 def float32_to_pcm16le_bytes(x: np.ndarray) -> bytes:
     """Clamp float32 [-1,1] → PCM16 (little-endian) bytes."""
     x = np.clip(x, -1.0, 1.0).astype(np.float32, copy=False)
-    return (x * 32767.0).astype("<i2", False).tobytes()
+    return (x * 32767.0).astype("<i2", order="C").tobytes()
 
 def resample_best(x: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
     """
@@ -188,7 +188,6 @@ async def SERVER_ENGINE_LISTEN_3B_FOR_FRAMES() -> None:
     MESSAGE_ID_ARRAY = []
 
     while True:
-        CONSOLE_LOG("SCANNER", "3B_FOR_FRAMES: scanning for FRAME messages...")
         MESSAGE_ID_ARRAY.clear()
         for MESSAGE_ID, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW in list(ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.items()):
             if ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ROW.get("DT_MESSAGE_PROCESS_QUEUED_TO_START") is None and \
@@ -228,6 +227,7 @@ async def PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID: int) -> None:
       7) Delete the message entry
     """
     # ✅ PERFORMANCE MONITORING: Start timing
+    CONSOLE_LOG("SCANNER", f"PROCESS_WEBSOCKET_FRAME_MESSAGE: {MESSAGE_ID}")
     start_time = time.time()
     
     ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
@@ -241,12 +241,12 @@ async def PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID: int) -> None:
     RECORDING_ID        = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["RECORDING_ID"]
     PRE_SPLIT_AUDIO_FRAME_NO      = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["AUDIO_FRAME_NO"]
     DT_MESSAGE_RECEIVED = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["DT_MESSAGE_RECEIVED"]
-    PRE_SPLIT_AUDIO_FRAME_BYTES = PRE_SPLIT_AUDIO_FRAME_ARRAY[RECORDING_ID][PRE_SPLIT_AUDIO_FRAME_NO]["PRE_SPLIT_AUDIO_FRAME_BYTES"]
+    PRE_SPLIT_AUDIO_FRAME_BYTES = PRE_SPLIT_AUDIO_FRAME_ARRAY[RECORDING_ID][PRE_SPLIT_AUDIO_FRAME_NO]["AUDIO_FRAME_BYTES"]
 
     # 3) get raw bytes from the volatile store (NOT from the message row)
     PRE_SPLIT_AUDIO_FRAME_RECORD = PRE_SPLIT_AUDIO_FRAME_ARRAY.setdefault(RECORDING_ID, {})
     PRE_SPLIT_AUDIO_FRAME_RECORD_2 = PRE_SPLIT_AUDIO_FRAME_RECORD.get(PRE_SPLIT_AUDIO_FRAME_NO, {})
-    PRE_SPLIT_AUDIO_FRAME_BYTES = PRE_SPLIT_AUDIO_FRAME_RECORD_2.get("PRE_SPLIT_AUDIO_FRAME_BYTES")  # may be None if something went wrong
+    PRE_SPLIT_AUDIO_FRAME_BYTES = PRE_SPLIT_AUDIO_FRAME_RECORD_2.get("AUDIO_FRAME_BYTES")  # may be None if something went wrong
     PRE_SPLIT_AUDIO_FRAME_DURATION_IN_MS = (len(PRE_SPLIT_AUDIO_FRAME_BYTES) // AUDIO_BYTES_PER_SAMPLE * 1000) // AUDIO_SAMPLE_RATE
 
 
@@ -285,7 +285,11 @@ async def PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID: int) -> None:
             "NOTE": f"Time-based frame: {SPLIT_100_MS_AUDIO_FRAME_START_MS}-{SPLIT_100_MS_AUDIO_FRAME_END_MS}ms (from client frame {PRE_SPLIT_AUDIO_FRAME_NO})"
         }
         
-        SPLIT_100_MS_AUDIO_FRAME_ARRAY.append((SPLIT_100_MS_AUDIO_FRAME_NO, SPLIT_100_MS_AUDIO_FRAME_BYTES))
+        SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO] = {
+            "RECORDING_ID": RECORDING_ID,
+            "AUDIO_FRAME_NO": SPLIT_100_MS_AUDIO_FRAME_NO,
+            "AUDIO_FRAME_BYTES": SPLIT_100_MS_AUDIO_FRAME_BYTES
+        }
         
         # Compose-mode gating for analyzers
         if ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["COMPOSE_PLAY_OR_PRACTICE"] == "COMPOSE":

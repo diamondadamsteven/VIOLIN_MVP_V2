@@ -105,6 +105,11 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(WEBSOCKET_MESSAGE: WebSocket, W
                     "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,  # ignored by DB if not allowlisted
                 }
                 # 3) persist metadata (never the bytes)
+                # DEBUG: Log what we're trying to insert
+                print(f"DEBUG: Data being sent: {ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_RECORD}")
+                print(f"DEBUG: Keys: {list(ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_RECORD.keys())}")
+                print(f"DEBUG: Table: ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME")
+                
                 DB_INSERT_TABLE("ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME", ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_RECORD, fire_and_forget=True)
 
             else:  #NON-FRAME

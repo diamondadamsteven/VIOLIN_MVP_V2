@@ -94,10 +94,7 @@ LOGGER = logging.getLogger("app")
 # -----------------------------------------------------------------------------
 # Engine creation / pooling (lazy + startup/shutdown helpers)
 # -----------------------------------------------------------------------------
-DB_URL = os.getenv(
-    "VIOLIN_DB_URL",
-    "mssql+pyodbc://violin:Test123!@104.40.11.248:3341/VIOLIN?driver=ODBC+Driver+17+for+SQL+Server",
-)
+DB_URL = r"mssql+pyodbc://violin:Test123!@adam\MSSQLSERVER01/VIOLIN?driver=ODBC+Driver+17+for+SQL+Server"
 
 _DB_ENGINE: Optional[Engine] = None  # set via get_engine()
 
@@ -109,8 +106,8 @@ def _create_engine() -> Engine:
         pool_recycle=1800,
         fast_executemany=True,
         # PERFORMANCE OPTIMIZATION: Balanced settings for stability
-        pool_size=10,              # Reduced from 20 for better stability
-        max_overflow=20,           # Reduced from 40 for better resource management
+        pool_size=5,               # Reduced from 10 for better stability
+        max_overflow=5,            # Reduced from 20 for better resource management
         pool_timeout=30,           # Reduced from 60 for faster failure detection
         pool_reset_on_return='rollback',  # Changed from 'commit' for better transaction handling
         # Additional performance optimizations
@@ -800,6 +797,25 @@ def ENGINE_DB_LOG_FUNCTIONS_INS(level=logging.INFO, *, defer_ws_db_io: bool = Tr
                     "kwargs_count": len(kwargs),
                     "queued_at": queued_at.isoformat()
                 })
+                
+                # ADD CONNECTION POOL STATUS LOGGING
+                try:
+                    from SERVER_ENGINE_APP_FUNCTIONS import get_engine
+                    engine = get_engine()
+                    pool = engine.pool
+                    CONSOLE_LOG("ENGINE_DB_LOG_FUNCTIONS_INS", "CONNECTION_POOL_STATUS", {
+                        "function": func_id,
+                        "pool_size": pool.size(),
+                        "checked_in": pool.checkedin(),
+                        "checked_out": pool.checkedout(),
+                        "overflow": pool.overflow()
+                    })
+                except Exception as e:
+                    CONSOLE_LOG("ENGINE_DB_LOG_FUNCTIONS_INS", "CONNECTION_POOL_STATUS_ERROR", {
+                        "function": func_id,
+                        "error": f"{e.__class__.__name__}: {e}"
+                    })
+                    
             except Exception as e:
                 # Fallback if CONSOLE_LOG fails
                 print(f"[CONSOLE_LOG_ERROR] {func_id}: {kind} - {e}")

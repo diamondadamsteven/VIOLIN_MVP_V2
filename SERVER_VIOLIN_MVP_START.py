@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Iterable, Tuple, Optional, Union
 import pyodbc
 import sys
 import json
+import datetime
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -18,7 +19,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {}  # table -> allowed columns (from P_BAC
 def SERVER_DB_CONNECTION_GET():
     CONNECTION_STRING = (
         "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=104.40.11.248,3341;"
+        r"SERVER=adam\MSSQLSERVER01;"
         "DATABASE=VIOLIN;"
         "UID=violin;"
         "PWD=Test123!"
