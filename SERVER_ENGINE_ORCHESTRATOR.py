@@ -5,6 +5,7 @@ import inspect
 import json
 import os
 import time
+import subprocess
 from typing import Dict, Any, List, Optional
 
 
@@ -14,6 +15,59 @@ from starlette.websockets import WebSocketState
 # NEW: dev-friendly middleware so iPhone/Expo origins/hosts aren't blocked
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+# ─────────────────────────────────────────────────────────────
+# Process cleanup at startup (prevents multiple Python processes on port 7070)
+# ─────────────────────────────────────────────────────────────
+def smart_cleanup():
+    print("SMART_CLEANUP FUNCTION CALLED")
+    try:
+        current_pid = os.getpid()
+        print(f"Smart cleanup starting - current PID: {current_pid}")
+        
+        # Wait a moment for other servers to fully start
+        print("Waiting 3 seconds for other servers to start...")
+        time.sleep(3)
+        
+        # Only kill processes that are using port 7070 (our target port)
+        result = subprocess.run(['netstat', '-ano'], capture_output=True, text=True, shell=True)
+        
+        killed_count = 0
+        for line in result.stdout.split('\n'):
+            if ':7070' in line and 'LISTENING' in line:
+                # Extract PID from netstat output
+                parts = line.strip().split()
+                if len(parts) >= 5:
+                    pid = parts[-1]  # Last part is the PID
+                    if pid != str(current_pid):
+                        try:
+                            print(f"Found process {pid} using port 7070 - killing it")
+                            subprocess.run(['taskkill', '/PID', pid, '/F'], shell=True)
+                            print(f"Killed conflicting process: {pid}")
+                            killed_count += 1
+                        except Exception as e:
+                            print(f"Failed to kill PID {pid}: {e}")
+        
+        if killed_count > 0:
+            print(f"Cleanup completed: killed {killed_count} processes using port 7070")
+        else:
+            print("No conflicting processes found on port 7070")
+            
+        # Wait a moment for processes to fully terminate
+        time.sleep(1)
+            
+    except Exception as e:
+        print(f"Smart cleanup warning: {e}")
+
+print("ORCHESTRATOR MODULE IMPORTING - ABOUT TO RUN CLEANUP")
+# Run cleanup at module import
+smart_cleanup()
+print("CLEANUP COMPLETED")
+
+# Additional startup delay to prevent race conditions
+print("Waiting 2 seconds for cleanup to complete...")
+time.sleep(2)
+print("STARTUP DELAY COMPLETED")
 
 # ── WS connection + message handlers ─────────────────────────
 from SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS import SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS

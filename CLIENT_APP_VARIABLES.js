@@ -21,7 +21,7 @@ const CLIENT_APP_VARIABLES = {
   DEVICE_PIXEL_RATIO: null,
 
   BACKEND_URL: 'http://192.168.1.3:8000', //'http://104.40.11.248:8000',  // Replace with your PC's IP
-  WEBSOCKET_URL: 'http://192.168.1.3:7070', //'http://104.40.11.248:8000',  // Replace with your PC's IP
+  //WEBSOCKET_URL: 'http://192.168.1.3:7070', //'http://104.40.11.248:8000',  // Replace with your PC's IP
   COMPOSE_PLAY_OR_PRACTICE: null,
   // Populated by Song or Recording Search page
   SONG_ID: null,

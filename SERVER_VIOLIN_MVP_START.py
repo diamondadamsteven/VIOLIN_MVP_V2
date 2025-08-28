@@ -6,7 +6,7 @@ from typing import Dict, List, Any, Iterable, Tuple, Optional, Union
 import pyodbc
 import sys
 import json
-import datetime
+from datetime import datetime
 
 sys.stdout.reconfigure(encoding='utf-8')
 

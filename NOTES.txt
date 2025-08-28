@@ -15,6 +15,20 @@
 
 #### dos prompt #2: ipconfig...get IPv4 Address and paste into CLIENT_STEP_1_REGISTER.js #####
 #### npx expo start --clear ##### 
+
+npx expo start --tunnel --clear
+npx expo start --lan --clear
+
+# Find all Python procetasklist | findstr python
+sses
+tasklist | findstr python
+
+# Kill specific process IDstasklist | findstr python
+
+taskkill /PID 41216 /F
+taskkill /PID 55480 /F  
+taskkill /PID 62900 /F
+
 #### Step 1: Expo starts the app from index.js (or index.ts) #####
 #### Step 2: App loads app/_layout.tsx (or app/_layout.jsx) #####
 #### Step 3: Initial screen loads from app/(tabs)/index.tsx #####

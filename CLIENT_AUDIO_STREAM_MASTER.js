@@ -8,7 +8,7 @@ import * as FileSystem from 'expo-file-system';
 import { DeviceEventEmitter } from 'react-native';
 import { CLIENT_DB_LOG_FUNCTIONS } from './CLIENT_APP_LOGGER';
 import {
-  CLIENT_APP_VARIABLES
+    CLIENT_APP_VARIABLES
 } from './CLIENT_APP_VARIABLES';
 
 // ─────────────────────────────────────────────────────────────
@@ -208,10 +208,33 @@ function GET_HEALTH_URL() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Audio recording configuration (explicit instead of HIGH_QUALITY preset)
+// ─────────────────────────────────────────────────────────────
+const AUDIO_RECORDING_OPTIONS = {
+  android: {
+    extension: '.m4a',
+    outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_MPEG_4,
+    audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_AAC,
+    sampleRate: 44100,
+    numberOfChannels: 1,
+    bitRate: 128000,
+  },
+  ios: {
+    extension: '.m4a',
+    outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_MPEG4AAC,
+    audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_HIGH,
+    sampleRate: 44100,
+    numberOfChannels: 1,
+    bitRate: 128000,
+  },
+};
+
+// ─────────────────────────────────────────────────────────────
 // Frame size (from DB via CLIENT_APP_VARIABLES)
+// ─────────────────────────────────────────────────────────────
 const FRAME_MS = Number(CLIENT_APP_VARIABLES.AUDIO_STREAM_FRAME_SIZE_IN_MS) || 100;
 const RESEND_BUFFER_SIZE = 128;
-const SEND_SLACK_MS = 15;
+const SEND_SLACK_MS = 5;  // Reduced from 15ms to 5ms for tighter timing
 
 let WS = null;
 let STREAMING = false;
@@ -292,7 +315,7 @@ async function RECORD_MICRO_CHUNK(ms) {
   try {
     if (!_rec) {
       _rec = new Audio.Recording();
-      await _rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await _rec.prepareToRecordAsync(AUDIO_RECORDING_OPTIONS);
       await _rec.startAsync();
     }
 
@@ -313,7 +336,7 @@ async function RECORD_MICRO_CHUNK(ms) {
 
     if (STREAMING && recRef === _rec) {
       _rec = new Audio.Recording();
-      await _rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await _rec.prepareToRecordAsync(AUDIO_RECORDING_OPTIONS);
       await _rec.startAsync();
     }
 
@@ -354,6 +377,11 @@ async function SEND_FRAME_PAIR({ recordingId, frameNo, frameMs, bytes }) {
 
   WS_SEND_JSON(header);
   WS.send(bytes);
+  
+  // Force immediate transmission - prevent buffering delays
+  if (WS.bufferedAmount > 0) {
+    // LOG('WebSocket buffer flushed', { bufferedAmount: WS.bufferedAmount });
+  }
 
   // Client-side DB logs (non-blocking)
   LOG_CLIENT_MESSAGE({
@@ -614,7 +642,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
 
   // Prime the first recording slice so the first tick can stop/unload it
   _rec = new Audio.Recording();
-  await _rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+  await _rec.prepareToRecordAsync(AUDIO_RECORDING_OPTIONS);
   await _rec.startAsync();
 
   // Single-flight arming helper (ensure only one next tick)
@@ -630,6 +658,7 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   const TICK = async () => {
     if (!STREAMING || !WS || WS.readyState !== 1) return;
 
+    const tickStartTime = Date.now();
     try {
       const uri = await RECORD_MICRO_CHUNK(FRAME_MS);
       if (!uri) {
@@ -664,12 +693,21 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
         bytes: audioBytes,
       });
 
+      const sendStartTime = Date.now();
       await SEND_FRAME_PAIR({
         recordingId: RECORDING_ID,
         frameNo: frameNoToSend,
         frameMs: FRAME_MS,
         bytes: audioBytes,
       });
+      const sendEndTime = Date.now();
+      
+      // Log frame timing for debugging
+      const totalTickTime = Date.now() - tickStartTime;
+      const sendTime = sendEndTime - sendStartTime;
+      if (totalTickTime > FRAME_MS + 10) { // Log if tick takes longer than expected
+        console.log(`Frame ${frameNoToSend} timing: tick=${totalTickTime}ms, send=${sendTime}ms, expected=${FRAME_MS}ms`);
+      }
 
       try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
     } catch (e) {
