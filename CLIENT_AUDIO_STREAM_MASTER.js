@@ -8,7 +8,7 @@ import * as FileSystem from 'expo-file-system';
 import { DeviceEventEmitter } from 'react-native';
 import { CLIENT_DB_LOG_FUNCTIONS } from './CLIENT_APP_LOGGER';
 import {
-    CLIENT_APP_VARIABLES
+  CLIENT_APP_VARIABLES
 } from './CLIENT_APP_VARIABLES';
 
 // ─────────────────────────────────────────────────────────────
@@ -645,80 +645,64 @@ export async function START_STREAMING_WS({ countdownBeats = 0, bpm = 60 }) {
   await _rec.prepareToRecordAsync(AUDIO_RECORDING_OPTIONS);
   await _rec.startAsync();
 
-  // Single-flight arming helper (ensure only one next tick)
-  const ARM_NEXT = (delayMs) => {
-    if (_nextTimeout !== null) return; // already armed
-    _nextTimeout = setTimeout(async () => {
-      _nextTimeout = null;
-      await TICK();
-    }, delayMs);
-  };
-
-  // Non-overlapping tick loop
-  const TICK = async () => {
-    if (!STREAMING || !WS || WS.readyState !== 1) return;
-
-    const tickStartTime = Date.now();
-    try {
-      const uri = await RECORD_MICRO_CHUNK(FRAME_MS);
-      if (!uri) {
-        return;
-      }
-
-      const audioBytes = await READ_FILE_AS_UINT8(uri);
-
-      // Discard every chunk until countdown completes exactly on a frame boundary.
-      if (!BOUNDARY_SENT) {
-        if (COUNTDOWN_REMAINING_MS > 0) {
-          COUNTDOWN_REMAINING_MS -= FRAME_MS;
-          // LOG('Countdown chunk discarded', { COUNTDOWN_REMAINING_MS });
-          if (COUNTDOWN_REMAINING_MS <= 0) {
-            BOUNDARY_SENT = true;
-            FRAME_NO = 1;
-            // LOG('Countdown finished; next chunk will be frame #1');
-          }
-          try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
-          return;
-        } else {
-          BOUNDARY_SENT = true;
+  // Non-overlapping loop driven by recorder slice duration (reduces timer drift)
+  (async function LOOP() {
+    while (STREAMING && WS && WS.readyState === 1) {
+      const tickStartTime = Date.now();
+      try {
+        const uri = await RECORD_MICRO_CHUNK(FRAME_MS);
+        if (!uri) {
+          if (!STREAMING) break;
+          continue;
         }
+
+        const audioBytes = await READ_FILE_AS_UINT8(uri);
+
+        // Discard until countdown completes exactly on a frame boundary
+        if (!BOUNDARY_SENT) {
+          if (COUNTDOWN_REMAINING_MS > 0) {
+            COUNTDOWN_REMAINING_MS -= FRAME_MS;
+            if (COUNTDOWN_REMAINING_MS <= 0) {
+              BOUNDARY_SENT = true;
+              FRAME_NO = 1;
+            }
+            try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
+            continue;
+          } else {
+            BOUNDARY_SENT = true;
+          }
+        }
+
+        const frameNoToSend = FRAME_NO;
+        FRAME_NO += 1;
+
+        RESEND_BUFFER_PUT(frameNoToSend, {
+          header: { FRAME_DURATION_IN_MS: FRAME_MS },
+          bytes: audioBytes,
+        });
+
+        const sendStartTime = Date.now();
+        await SEND_FRAME_PAIR({
+          recordingId: RECORDING_ID,
+          frameNo: frameNoToSend,
+          frameMs: FRAME_MS,
+          bytes: audioBytes,
+        });
+        const sendEndTime = Date.now();
+
+        const totalTickTime = Date.now() - tickStartTime;
+        const sendTime = sendEndTime - sendStartTime;
+        if (totalTickTime > FRAME_MS + 10) {
+          console.log(`Frame ${frameNoToSend} timing: tick=${totalTickTime}ms, send=${sendTime}ms, expected=${FRAME_MS}ms`);
+        }
+
+        try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
+      } catch (e) {
+        // swallow
       }
-
-      // Send a regular frame
-      const frameNoToSend = FRAME_NO;
-      FRAME_NO += 1;
-
-      RESEND_BUFFER_PUT(frameNoToSend, {
-        header: { FRAME_DURATION_IN_MS: FRAME_MS },
-        bytes: audioBytes,
-      });
-
-      const sendStartTime = Date.now();
-      await SEND_FRAME_PAIR({
-        recordingId: RECORDING_ID,
-        frameNo: frameNoToSend,
-        frameMs: FRAME_MS,
-        bytes: audioBytes,
-      });
-      const sendEndTime = Date.now();
-      
-      // Log frame timing for debugging
-      const totalTickTime = Date.now() - tickStartTime;
-      const sendTime = sendEndTime - sendStartTime;
-      if (totalTickTime > FRAME_MS + 10) { // Log if tick takes longer than expected
-        console.log(`Frame ${frameNoToSend} timing: tick=${totalTickTime}ms, send=${sendTime}ms, expected=${FRAME_MS}ms`);
-      }
-
-      try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
-    } catch (e) {
-      // ERR('Streaming loop error', String(e));
-    } finally {
-      if (STREAMING) ARM_NEXT(FRAME_MS + SEND_SLACK_MS);
+      // Loop immediately; recording duration enforces pacing
     }
-  };
-
-  // Kick off loop
-  ARM_NEXT(FRAME_MS + SEND_SLACK_MS);
+  })();
 }
 
 export async function STOP_STREAMING_WS() {

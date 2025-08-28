@@ -76,21 +76,21 @@ async def PROCESS_THE_AUDIO_FRAME(RECORDING_ID: int, AUDIO_FRAME_NO: int) -> Non
 
     AUDIO_PROCESSING_TASK_ARRAY: list[asyncio.Task] = []
 
-    AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
-        SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_1_MS(
-            int(RECORDING_ID),
-            int(AUDIO_FRAME_NO),
-            AUDIO_ARRAY_22050  # 22.05k
-        )
-    ))
+    # AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
+    #     SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_1_MS(
+    #         int(RECORDING_ID),
+    #         int(AUDIO_FRAME_NO),
+    #         AUDIO_ARRAY_22050  # 22.05k
+    #     )
+    # ))
 
-    AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
-        SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_10_MS(
-            int(RECORDING_ID),
-            int(AUDIO_FRAME_NO),
-            AUDIO_ARRAY_22050  # 22.05k
-        )
-    ))
+    # AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
+    #     SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_10_MS(
+    #         int(RECORDING_ID),
+    #         int(AUDIO_FRAME_NO),
+    #         AUDIO_ARRAY_22050  # 22.05k
+    #     )
+    # ))
 
     if YN_RUN_FFT == "Y":
         AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
@@ -110,14 +110,14 @@ async def PROCESS_THE_AUDIO_FRAME(RECORDING_ID: int, AUDIO_FRAME_NO: int) -> Non
             )
         ))
 
-    if YN_RUN_CREPE == "Y":
-        AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
-            SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
-                int(RECORDING_ID),
-                int(AUDIO_FRAME_NO),
-                AUDIO_ARRAY_16000  # 16k
-            )
-        ))
+    # if YN_RUN_CREPE == "Y":
+    #     AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
+    #         SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
+    #             int(RECORDING_ID),
+    #             int(AUDIO_FRAME_NO),
+    #             AUDIO_ARRAY_16000  # 16k
+    #         )
+    #     ))
 
     # Wait for all tasks to complete
     if AUDIO_PROCESSING_TASK_ARRAY:
