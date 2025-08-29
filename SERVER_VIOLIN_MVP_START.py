@@ -7,11 +7,22 @@ import pyodbc
 import sys
 import json
 from datetime import datetime
+from SERVER_ENGINE_APP_FUNCTIONS import (
+    P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET
+)
+from SERVER_ENGINE_SQLITE_LOGGING import truncate_all_logging_tables
+from SERVER_ENGINE_CREATE_SQLITE_DB_AND_TABLES import create_database_and_tables
+# Import the resource pre-warmer
+from SERVER_ENGINE_PREWARM_RESOURCES import prewarm_resources, cleanup_resources
+from SERVER_ENGINE_RESOURCE_MONITOR import start_resource_monitoring, stop_resource_monitoring
 
 sys.stdout.reconfigure(encoding='utf-8')
 
 SP_RESULT_SET_TYPE: Dict[str, str] = {}
 TABLE_COLUMNS: Dict[str, List[str]] = {}  # table -> allowed columns (from P_BACKEND_TABLE_INSERTS_METADATA)
+
+truncate_all_logging_tables()
+create_database_and_tables()
 
 # ─────────────────────────────────────────────────────────────
 # DB connection
@@ -32,6 +43,7 @@ def SERVER_DB_CONNECTION_GET():
 # ─────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET()
     try:
         conn = SERVER_DB_CONNECTION_GET()
         cursor = conn.cursor()
@@ -49,33 +61,6 @@ async def lifespan(app: FastAPI):
                     break
         except Exception as e:
             print(f"❌ Error loading SP metadata: {e}")
-
-        # 2) Table/column whitelist for safe inserts (NEW)
-        try:
-            # Returns TABLE_NAME, COLUMN_NAME
-            cursor.execute("EXEC P_BACKEND_TABLE_INSERTS_METADATA")
-            rows = cursor.fetchall()
-            table_cols: Dict[str, List[str]] = {}
-            for r in rows:
-                t = str(r.TABLE_NAME).strip()
-                c = str(r.COLUMN_NAME).strip()
-                table_cols.setdefault(t, []).append(c)
-            # Normalize: dedupe + stable order
-            for t, cols in table_cols.items():
-                seen = set()
-                ordered = []
-                for c in cols:
-                    if c not in seen:
-                        seen.add(c)
-                        ordered.append(c)
-                TABLE_COLUMNS[t] = ordered
-        except Exception as e:
-            print(f"❌ Error loading table/column metadata: {e}")
-
-        cursor.close()
-        conn.close()
-        print(f"✅ Loaded {len(SP_RESULT_SET_TYPE)} SP metadata entries.")
-        print(f"✅ Loaded column whitelists for {len(TABLE_COLUMNS)} tables.")
     except Exception as e:
         print(f"❌ Startup error: {str(e)}")
 

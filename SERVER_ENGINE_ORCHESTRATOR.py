@@ -88,7 +88,6 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_ENGINE_STARTUP,
     DB_ENGINE_SHUTDOWN,
-    schedule_coro,         # ← loop-safe scheduler (now in APP_FUNCTIONS)
     ASYNC_SET_MAIN_LOOP,   # ← setter to capture the main event loop
 )
 
@@ -144,6 +143,21 @@ async def performance():
     """Get current system performance metrics."""
     from SERVER_ENGINE_APP_FUNCTIONS import DB_GET_PERFORMANCE_STATS
     return DB_GET_PERFORMANCE_STATS()
+
+@APP.get("/resources")
+# @ENGINE_DB_LOG_FUNCTIONS_INS()
+async def resources():
+    """Get current resource status and contention information."""
+    try:
+        from SERVER_ENGINE_RESOURCE_MONITOR import get_resource_status, get_contention_summary, get_performance_metrics
+        
+        return {
+            "current_status": get_resource_status(),
+            "contention_summary": get_contention_summary(),
+            "performance_metrics": get_performance_metrics(window_minutes=5)
+        }
+    except Exception as e:
+        return {"error": f"Failed to get resource status: {e}"}
 
 @APP.get("/routes")
 # @ENGINE_DB_LOG_FUNCTIONS_INS()
@@ -223,6 +237,19 @@ _RUNNING_FLAGS: Dict[str, bool] = {}
 # @ENGINE_DB_LOG_FUNCTIONS_INS()
 async def _shutdown():
     CONSOLE_LOG("SHUTDOWN", "=== Server shutting down ===")
+    
+    # Stop resource monitoring and cleanup
+    try:
+        from SERVER_ENGINE_RESOURCE_MONITOR import stop_resource_monitoring
+        from SERVER_ENGINE_PREWARM_RESOURCES import cleanup_resources
+        
+        stop_resource_monitoring()
+        cleanup_resources()
+        CONSOLE_LOG("SHUTDOWN", "Resource monitoring stopped and resources cleaned up")
+        
+    except Exception as e:
+        CONSOLE_LOG("SHUTDOWN", f"Resource cleanup failed: {e}")
+    
     await PROCESS_MONITOR.graceful_shutdown()
     DB_ENGINE_SHUTDOWN()
 
@@ -233,6 +260,23 @@ async def _startup():
     ASYNC_SET_MAIN_LOOP(asyncio.get_running_loop())
 
     DB_ENGINE_STARTUP(warm_pool=True)
+    
+    # Pre-warm system resources to avoid initialization delays
+    CONSOLE_LOG("STARTUP", "=== Pre-warming system resources ===")
+    try:
+        from SERVER_ENGINE_PREWARM_RESOURCES import prewarm_resources
+        from SERVER_ENGINE_RESOURCE_MONITOR import start_resource_monitoring
+        
+        prewarm_resources()
+        CONSOLE_LOG("STARTUP", "Resource pre-warming completed successfully")
+        
+        # Start resource monitoring
+        start_resource_monitoring(interval_seconds=0.1)
+        CONSOLE_LOG("STARTUP", "Resource monitoring started")
+        
+    except Exception as e:
+        CONSOLE_LOG("STARTUP", f"Resource pre-warming failed: {e}")
+        # Continue startup even if pre-warming fails
     
     # Clean up any orphaned processes from previous runs
     CONSOLE_LOG("STARTUP", "=== Checking for orphaned processes ===")

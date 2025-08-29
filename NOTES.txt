@@ -16,6 +16,9 @@
 #### dos prompt #2: ipconfig...get IPv4 Address and paste into CLIENT_STEP_1_REGISTER.js #####
 #### npx expo start --clear ##### 
 
+findstr /n "SERVER_ENGINE_SQLITE_LOGGING" *.py
+
+
 npx expo start --tunnel --clear
 npx expo start --lan --clear
 

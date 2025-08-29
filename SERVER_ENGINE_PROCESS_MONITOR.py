@@ -10,7 +10,7 @@ import signal
 import sys
 import atexit
 
-from SERVER_ENGINE_APP_FUNCTIONS import CONSOLE_LOG, DB_INSERT_TABLE
+from SERVER_ENGINE_APP_FUNCTIONS import CONSOLE_LOG, ENGINE_DB_LOG_TABLE_INS
 from SERVER_ENGINE_APP_VARIABLES import ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY
 
 # ---------------------------------------------------------------------
@@ -61,7 +61,7 @@ class ProcessMonitor:
             }
             
             # Upsert process registry (create table if needed)
-            DB_INSERT_TABLE("ENGINE_DB_LOG_PROCESS_REGISTRY", process_metadata, fire_and_forget=True)
+            ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_PROCESS_REGISTRY", process_metadata)
             
         except Exception as e:
             CONSOLE_LOG("PROCESS_MONITOR", f"Error updating heartbeat: {e}")

@@ -22,6 +22,14 @@ from sqlalchemy.engine import Engine
 from contextlib import contextmanager
 
 import traceback
+from SERVER_ENGINE_APP_VARIABLES import RESULT_SET_P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET_ARRAY
+import sqlite3
+
+# FastAPI WebSocket import for WS detection
+try:
+    from fastapi import WebSocket as _FastAPIWebSocket  # type: ignore
+except Exception:
+    _FastAPIWebSocket = None  # type: ignore
 
 # -----------------------------------------------------------------------------
 # Async utils: loop-safe scheduler usable from threads or loop
@@ -36,58 +44,6 @@ def ASYNC_SET_MAIN_LOOP(loop: asyncio.AbstractEventLoop) -> None:
     """Capture the process' main event loop exactly once at app startup."""
     global _MAIN_LOOP
     _MAIN_LOOP = loop
-
-def schedule_coro(coro: Coroutine[Any, Any, Any]) -> Union[asyncio.Task, Any]:
-    """Schedule a coroutine from loop or thread with performance optimization."""
-    start_time = time.time()
-    
-    try:
-        # Fast path: we're in the main event loop
-        loop = asyncio.get_running_loop()
-        result = loop.create_task(coro)
-        
-        # ✅ PERFORMANCE MONITORING: Log fast path usage
-        if hasattr(schedule_coro, '_fast_path_count'):
-            schedule_coro._fast_path_count += 1
-        else:
-            schedule_coro._fast_path_count = 1
-            
-        return result
-        
-    except RuntimeError:
-        # Slow path: we're in a different thread
-        if _MAIN_LOOP is None:
-            raise RuntimeError(
-                "MAIN event loop not set. Call ASYNC_SET_MAIN_LOOP(asyncio.get_running_loop()) at startup."
-            )
-        
-        # ✅ PERFORMANCE OPTIMIZATION: Use ThreadPoolExecutor for better performance
-        # This avoids the overhead of asyncio.run_coroutine_threadsafe
-        import concurrent.futures
-        if not hasattr(schedule_coro, '_executor'):
-            schedule_coro._executor = concurrent.futures.ThreadPoolExecutor(max_workers=20, thread_name_prefix="schedule_coro")
-        
-        # Submit the coroutine execution to the thread pool
-        try:
-            future = schedule_coro._executor.submit(asyncio.run, coro)
-            
-            # ✅ PERFORMANCE MONITORING: Log slow path usage
-            if hasattr(schedule_coro, '_slow_path_count'):
-                schedule_coro._slow_path_count += 1
-            else:
-                schedule_coro._slow_path_count = 1
-                
-            # Log if slow path is taking too long
-            slow_path_time = time.time() - start_time
-            if slow_path_time > 0.1:  # 100ms threshold
-                LOGGER.warning(f"schedule_coro slow path took {slow_path_time*1000:.1f}ms")
-                
-            return future
-            
-        except Exception as e:
-            # Fallback to the original method if thread pool fails
-            LOGGER.warning(f"ThreadPoolExecutor failed, falling back to run_coroutine_threadsafe: {e}")
-            return asyncio.run_coroutine_threadsafe(coro, _MAIN_LOOP)
 
 LOGGER = logging.getLogger("app")
 
@@ -171,7 +127,7 @@ def DB_ENGINE_STARTUP(warm_pool: bool = True) -> None:
             print(error_msg)
     
     try:
-        DB_INIT_ALLOWED_TABLES()
+        P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET()
         try:
             from SERVER_ENGINE_APP_FUNCTIONS import CONSOLE_LOG as _CL  # self-import safe at runtime
         except Exception:
@@ -240,91 +196,29 @@ def DB_GET_PERFORMANCE_STATS() -> Dict[str, Any]:
         return {"error": str(e)}
 
 # -----------------------------------------------------------------------------
-# Generic INSERT allowlist (from P_ENGINE_TABLE_INSERTS_METADATA)
+# Generic INSERT allowlist (from P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET)
 # -----------------------------------------------------------------------------
-_ALLOWED_TABLE_COLUMNS: Dict[str, set] = {}
-
-def DB_INIT_ALLOWED_TABLES() -> None:
-    """
-    Load whitelist of (TABLE_NAME, COLUMN_NAME) from P_ENGINE_TABLE_INSERTS_METADATA.
-    Must be called before using DB_INSERT_TABLE / DB_INSERT_TABLE_BULK.
-    """
-    try:
-        with get_engine().begin() as CONN:
-            rows = CONN.execute(text("EXEC P_ENGINE_TABLE_INSERTS_METADATA")).fetchall()
-        _ALLOWED_TABLE_COLUMNS.clear()
+def P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET() -> None:
+    with get_engine().begin() as CONN:
+        rows = CONN.execute(text("EXEC P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET")).fetchall()
+               
+        # Import and clear the global variable
+        RESULT_SET_P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET_ARRAY.clear()
+        
         for r in rows:
             t = str(getattr(r, "TABLE_NAME")).upper().strip()
             c = str(getattr(r, "COLUMN_NAME")).upper().strip()
-            _ALLOWED_TABLE_COLUMNS.setdefault(t, set()).add(c)
-        LOGGER.info("DB_INIT_ALLOWED_TABLES loaded %d tables", len(_ALLOWED_TABLE_COLUMNS))
-    except Exception as e:
-        LOGGER.exception("DB_INIT_ALLOWED_TABLES failed: %s", e)
+            
+            # Initialize table entry if it doesn't exist
+            if t not in RESULT_SET_P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET_ARRAY:
+                RESULT_SET_P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET_ARRAY[t] = []
+            
+            # Add column to the table's column list
+            RESULT_SET_P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET_ARRAY[t].append({
+                "TABLE_NAME": t,
+                "COLUMN_NAME": c
+            })
 
-def _filter_insert_payload(table: str, row: Mapping[str, Any]) -> Dict[str, Any]:
-    """
-    Keep only columns allowed for this table; inject DT_ADDED=datetime.now()
-    if the allowlist contains it (case-insensitive), regardless of input.
-    """
-    t = str(table).upper().strip()
-    allowed = _ALLOWED_TABLE_COLUMNS.get(t)
-    if not allowed:
-        raise ValueError(f"INSERT not allowed for table '{table}' (not in allowlist).")
-
-    out: Dict[str, Any] = {}
-    provided_ci = {str(k).upper(): k for k in row.keys()}
-
-    for col_ci in allowed:
-        if col_ci == "DT_ADDED":  # case-insensitive via col_ci from DB
-            out["DT_ADDED"] = datetime.now()
-            continue
-        k_orig = provided_ci.get(col_ci)
-        if k_orig is not None:
-            out[k_orig] = row[k_orig]
-
-    if not out:
-        raise ValueError(f"No allowed columns provided for table '{table}'.")
-    return out
-
-def _make_insert_sql(table: str, cols: Iterable[str]) -> str:
-    t = str(table).upper().strip()
-    if t not in _ALLOWED_TABLE_COLUMNS:
-        raise ValueError(f"INSERT not allowed for table '{table}' (not in allowlist).")
-    col_list = list(cols)
-    placeholders = [f":{c}" for c in col_list]
-    cols_sql = ", ".join(col_list)
-    vals_sql = ", ".join(placeholders)
-    return f"INSERT INTO {t} ({cols_sql}) VALUES ({vals_sql})"
-
-def _make_bulk_insert_sql(table: str, cols: Iterable[str]) -> str:
-    """Generate SQL for bulk inserts using ? placeholders for executemany."""
-    t = str(table).upper().strip()
-    if t not in _ALLOWED_TABLE_COLUMNS:
-        raise ValueError(f"INSERT not allowed for table '{table}' (not in allowlist).")
-    col_list = list(cols)
-    placeholders = ["?" for _ in col_list]  # Use ? for executemany
-    cols_sql = ", ".join(col_list)
-    vals_sql = ", ".join(placeholders)
-    return f"INSERT INTO {t} ({cols_sql}) VALUES ({vals_sql})"
-
-# -----------------------------------------------------------------------------
-# fire_and_forget helper
-# -----------------------------------------------------------------------------
-def _fire_and_forget(fn, *args, **kwargs):
-    """Run a synchronous DB function off the event loop ASAP."""
-    try:
-        loop = asyncio.get_running_loop()
-        # ✅ PERFORMANCE OPTIMIZATION: Use asyncio.to_thread instead of creating new threads
-        loop.create_task(asyncio.to_thread(fn, *args, **kwargs))
-    except RuntimeError:
-        # Fallback to thread pool executor for better performance
-        import concurrent.futures
-        if not hasattr(_fire_and_forget, '_executor'):
-            _fire_and_forget._executor = concurrent.futures.ThreadPoolExecutor(
-                max_workers=10,  # Limit concurrent threads
-                thread_name_prefix="db_insert"
-            )
-        _fire_and_forget._executor.submit(fn, *args, **kwargs)
 
 # -----------------------------------------------------------------------------
 # Insert tracing controls (env toggles)
@@ -344,123 +238,43 @@ def _log_insert_timing(table: str, ms: float, fire_and_forget: bool, extra: str 
 # -----------------------------------------------------------------------------
 # Generic insert APIs
 # -----------------------------------------------------------------------------
-def DB_INSERT_TABLE(table: str, row: Mapping[str, Any], *, fire_and_forget: bool = True) -> None:
-    """Insert a single row into an allowlisted table."""
+def ENGINE_DB_LOG_TABLE_INS(table: str, row: Mapping[str, Any]) -> None:
+    """Insert a single row into SQLite table using global column definitions."""
     try:
-        filtered = _filter_insert_payload(table, row)
-        sql = _make_insert_sql(table, filtered.keys())
+        # Get column names from the global variable
+        table_upper = table.upper().strip()
+        if table_upper not in RESULT_SET_P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET_ARRAY:
+            LOGGER.error("Table %s not found in allowlist", table)
+            return
+        
+        # Extract column names for this table
+        columns = []
+        for col_data in RESULT_SET_P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET_ARRAY[table_upper]:
+            columns.append(col_data["COLUMN_NAME"])
+        
+        if not columns:
+            LOGGER.error("No columns found for table %s", table)
+            return
+        
+        # Build SQL dynamically
+        cols_sql = ", ".join(columns)
+        placeholders = ", ".join(["?" for _ in columns])
+        sql = f"INSERT INTO {table_upper} ({cols_sql}) VALUES ({placeholders})"
+        
+        # Extract values in the correct order for positional parameters
+        values = []
+        for col in columns:
+            values.append(row.get(col, None))  # Use None if key doesn't exist
+        
+        # Execute insert into SQLite instead of SQL Server
+        with sqlite3.connect(r"C:\Users\diamo\VIOLIN_MVP_V2\SQLite_VIOLIN_MVP_2.db") as conn:
+            conn.execute(sql, values)
+            conn.commit()
+            
     except Exception as e:
-        LOGGER.exception("DB_INSERT_TABLE precheck failed for %s: %s", table, e)
-        return
+        LOGGER.exception("ENGINE_DB_LOG_TABLE_INS failed for %s: %s", table, e)
 
-    def _do():
-        t0 = _now_ms()
-        try:
-            with get_engine().begin() as CONN:
-                CONN.execute(text(sql), filtered)
-        except Exception as e:
-            LOGGER.exception("DB_INSERT_TABLE insert failed for %s: %s", table, e)
-        finally:
-            _log_insert_timing(table, _now_ms() - t0, fire_and_forget=False)
-
-    if fire_and_forget:
-        sched_t0 = _now_ms()
-        _fire_and_forget(_do)
-        sched_ms = _now_ms() - sched_t0
-        if _TRACE_INSERTS:
-            LOGGER.info("DB_INSERT_TABLE[%s] scheduled in %.1f ms (fof=True)", table, sched_ms)
-    else:
-        _do()
-
-def DB_INSERT_TABLE_BULK(table: str, rows: List[Mapping[str, Any]], *, fire_and_forget: bool = True) -> None:
-    """
-    Insert multiple rows into an allowlisted table efficiently.
-    Injects DT_ADDED=datetime.now() for each row if present in allowlist.
-    Uses a stable column set across all rows; missing keys → NULL (except DT_ADDED).
-    """
-    if not rows:
-        return
-    try:
-        t = str(table).upper().strip()
-        allowed = _ALLOWED_TABLE_COLUMNS.get(t)
-        if not allowed:
-            raise ValueError(f"INSERT not allowed for table '{table}' (not in allowlist).")
-
-        union_cols_ci: set = set()
-        for r in rows:
-            for k in r.keys():
-                k_ci = str(k).upper()
-                if k_ci in allowed and k_ci != "DT_ADDED":
-                    union_cols_ci.add(k_ci)
-        if "DT_ADDED" in allowed:
-            union_cols_ci.add("DT_ADDED")
-
-        if not union_cols_ci:
-            raise ValueError(f"No allowed columns provided for table '{table}' (bulk).")
-
-        name_map: Dict[str, str] = {}
-        for r in rows:
-            for k in r.keys():
-                k_ci = str(k).upper()
-                if k_ci in union_cols_ci and k_ci != "DT_ADDED" and k_ci not in name_map:
-                    name_map[k_ci] = k
-        if "DT_ADDED" in union_cols_ci:
-            name_map["DT_ADDED"] = "DT_ADDED"
-
-        col_names = [name_map[ci] for ci in union_cols_ci]
-        sql = _make_bulk_insert_sql(table, col_names)  # Use ? placeholders for executemany
-
-        now_val = datetime.now
-        payload: List[Dict[str, Any]] = []
-        for r in rows:
-            one: Dict[str, Any] = {}
-            for ci in union_cols_ci:
-                if ci == "DT_ADDED":
-                    one["DT_ADDED"] = now_val()
-                else:
-                    k_orig = name_map[ci]
-                    one[k_orig] = r.get(k_orig, r.get(k_orig.upper(), None))
-            payload.append(one)
-    except Exception as e:
-        LOGGER.exception("DB_INSERT_TABLE_BULK precheck failed for %s: %s", table, e)
-        return
-
-    def _do():
-        t0 = _now_ms()
-        try:
-            # PERFORMANCE OPTIMIZATION: Use raw connection for bulk inserts to avoid ORM overhead
-            engine = get_engine()
-            raw_conn = engine.raw_connection()
-            try:
-                # Set autocommit for bulk operations
-                raw_conn.autocommit = True
-                
-                # Use executemany for better performance than execute with list
-                cursor = raw_conn.cursor()
-                try:
-                    # Convert payload to list of tuples for executemany
-                    values = [[row.get(col) for col in col_names] for row in payload]
-                    cursor.executemany(sql, values)
-                    raw_conn.commit()
-                finally:
-                    cursor.close()
-            finally:
-                raw_conn.close()
-                    
-        except Exception as e:
-            LOGGER.exception("DB_INSERT_TABLE_BULK insert failed for %s: %s", table, e)
-        finally:
-            _log_insert_timing(table + " (BULK)", _now_ms() - t0, fire_and_forget=False, extra=f"rows={len(payload)}")
-
-    if fire_and_forget:
-        sched_t0 = _now_ms()
-        _fire_and_forget(_do)
-        sched_ms = _now_ms() - sched_t0
-        if _TRACE_INSERTS:
-            LOGGER.info("DB_INSERT_TABLE_BULK[%s] scheduled in %.1f ms (fof=True, rows=%d)", table, sched_ms, len(rows))
-    else:
-        _do()
-
+ 
 # -----------------------------------------------------------------------------
 # Logging (ASCII-safe)
 # -----------------------------------------------------------------------------
@@ -581,52 +395,6 @@ VALUES (:DT_FUNCTION_MESSAGE_QUEUED, :DT_ADDED, :PYTHON_FUNCTION_NAME, :PYTHON_F
         :RECORDING_ID, :AUDIO_CHUNK_NO, :FRAME_NO, :START_STOP_OR_ERROR_MSG)
 """)
 
-def _truncate(s: Optional[str], max_len: int) -> Optional[str]:
-    if s is None:
-        return None
-    return s if len(s) <= max_len else s[: max_len - 1] + "…"
-
-def _db_log_event(dt_function_message_queued: datetime,
-                  function_name: str,
-                  file_name: str,
-                  message: str,
-                  recording_id=None,
-                  audio_chunk_no=None,
-                  frame_no=None) -> None:
-    """
-    Single-row insert into ENGINE_DB_LOG_FUNCTIONS via SQLAlchemy.
-    Uses local machine time. Never raises to caller.
-    """
-    dt_added = datetime.now()
-    fn_100 = _truncate(function_name, 100)
-    file_100 = _truncate(file_name, 100)
-
-    try:
-        with get_engine().begin() as CONN:
-            CONN.execute(
-                _LOG_INSERT_SQL_TEXT,
-                {
-                    "DT_FUNCTION_MESSAGE_QUEUED": dt_function_message_queued,
-                    "DT_ADDED": dt_added,
-                    "PYTHON_FUNCTION_NAME": fn_100,
-                    "PYTHON_FILE_NAME": file_100,
-                    "RECORDING_ID": recording_id,
-                    "AUDIO_CHUNK_NO": audio_chunk_no,
-                    "FRAME_NO": frame_no,
-                    "START_STOP_OR_ERROR_MSG": message,
-                },
-            )
-    except Exception as e:
-        LOGGER.exception(
-            "ENGINE_DB_LOG_FUNCTIONS insert failed: %s | fn=%s | file=%s | rid=%s | chunk=%s | frame=%s",
-            e, fn_100, file_100, recording_id, audio_chunk_no, frame_no
-        )
-
-try:
-    from fastapi import WebSocket as _FastAPIWebSocket  # type: ignore
-except Exception:
-    _FastAPIWebSocket = None  # type: ignore
-
 
 # -----------------------------------------------------------------------------
 # Micro benchmarking helpers (for nailing the 1s latency)
@@ -671,82 +439,15 @@ def DB_PING(iterations: int = 50) -> Dict[str, float]:
                 s["min"], s["p50"], s["p90"], s["p95"], s["max"], s["avg"], int(s["count"]))
     return s
 
-def DB_BENCHMARK_INSERT(table: str, row: Mapping[str, Any], n: int = 50, warmup: int = 5) -> Dict[str, float]:
-    """
-    Measure single-row insert latency using the same generic path (no fire_and_forget).
-    Useful to see actual end-to-end timing including SQLAlchemy/pyodbc.
-    """
-    # Warmups (ignored)
-    for _ in range(max(0, warmup)):
-        DB_INSERT_TABLE(table, row, fire_and_forget=False)
-
-    times: List[float] = []
-    for i in range(max(1, n)):
-        t0 = _now_ms()
-        DB_INSERT_TABLE(table, row, fire_and_forget=False)
-        times.append(_now_ms() - t0)
-    s = _stats_ms(times)
-    LOGGER.info("DB_BENCHMARK_INSERT[%s]: min=%.1f p50=%.1f p90=%.1f p95=%.1f max=%.1f avg=%.1f (n=%d)",
-                table, s["min"], s["p50"], s["p90"], s["p95"], s["max"], s["avg"], int(s["count"]))
-    return s
-
-def DB_BENCHMARK_EXEC(sql: str, params_list: Optional[List[Mapping[str, Any]]] = None, warmup: int = 5) -> Dict[str, float]:
-    """
-    Benchmark arbitrary SQL text with a list of param dicts; if params_list is None,
-    we just execute once per iteration without params. Uses a single transaction per run.
-    """
-    params_list = params_list or [{}]
-    with get_engine().begin() as CONN:
-        # warm
-        for _ in range(max(0, warmup)):
-            for p in params_list:
-                CONN.execute(text(sql), p)
-
-    times: List[float] = []
-    with get_engine().begin() as CONN:
-        for p in params_list:
-            t0 = _now_ms()
-            CONN.execute(text(sql), p)
-            times.append(_now_ms() - t0)
-
-    s = _stats_ms(times)
-    LOGGER.info("DB_BENCHMARK_EXEC: %s | min=%.1f p50=%.1f p90=%.1f p95=%.1f max=%.1f avg=%.1f (n=%d)",
-                sql.splitlines()[0][:120], s["min"], s["p50"], s["p90"], s["p95"], s["max"], s["avg"], int(s["count"]))
-    return s
-
 ##################################################################################
 
 _ERROR_TABLE = "ENGINE_DB_LOG_FUNCTION_ERROR"
 
-def _extract_context(fn: Callable, args: tuple, kwargs: dict) -> Dict[str, Any]:
-    """
-    Safely pull useful IDs from function arguments if they exist.
-    Add/adjust keys here as your project evolves.
-    """
-    ctx: Dict[str, Any] = {}
-    try:
-        sig = inspect.signature(fn)
-        bound = sig.bind_partial(*args, **kwargs)
-        bound.apply_defaults()
-        pick = ("RECORDING_ID", "AUDIO_FRAME_NO", "AUDIO_CHUNK_NO", "START_MS", "END_MS")
-        for k in pick:
-            if k in bound.arguments:
-                ctx[k] = bound.arguments[k]
-    except Exception:
-        pass
-    return ctx
-
-def _maybe_log_success(fn: Callable, args: tuple, kwargs: dict, result: Any) -> None:
-    """Optional success logging; off by default to keep noise low."""
-    return
-
 def ENGINE_DB_LOG_FUNCTIONS_INS(level=logging.INFO, *, defer_ws_db_io: bool = True):
     """
-    WS-safe logging decorator.
-
+    WS-safe logging decorator that writes to SQLite.
     • Writes Start/End/Error rows to ENGINE_DB_LOG_FUNCTIONS (timeline).
     • ALSO writes a detailed row to ENGINE_DB_LOG_FUNCTION_ERROR on exceptions
-      (ERROR_MESSAGE_TEXT + TRACEBACK_TEXT + context IDs).
     • Captures DT_FUNCTION_MESSAGE_QUEUED when the log is queued (pre-exec).
     • For WS handlers, DB inserts can be deferred/offloaded so the handshake
       can reach `await ws.accept()` without blocking.
@@ -755,22 +456,30 @@ def ENGINE_DB_LOG_FUNCTIONS_INS(level=logging.INFO, *, defer_ws_db_io: bool = Tr
     def decorate(func):
         is_coro = inspect.iscoroutinefunction(func)
 
+        # Get function info
         module = func.__module__
-        qual   = func.__qualname__
-        src    = inspect.getsourcefile(func) or inspect.getfile(func) or "<?>"
+        qual = func.__qualname__
+        src = inspect.getsourcefile(func) or inspect.getfile(func) or "<?>"
         file_name = Path(src).name
-        func_id   = f"{module}.{qual}"
+        func_id = f"{module}.{qual}"
 
-        def _log_python(kind: str, msg: str):
+        # Helper function to extract context from function arguments
+        def extract_context(args: tuple, kwargs: dict) -> Dict[str, Any]:
+            ctx = {}
             try:
-                if kind == "Error":
-                    LOGGER.exception("[%s | %s] %s", func_id, file_name, msg)
-                else:
-                    LOGGER.log(level, "[%s | %s] %s", func_id, file_name, msg, stacklevel=3)
+                sig = inspect.signature(func)
+                bound = sig.bind_partial(*args, **kwargs)
+                bound.apply_defaults()
+                pick = ("RECORDING_ID", "AUDIO_FRAME_NO", "AUDIO_CHUNK_NO", "START_MS", "END_MS")
+                for k in pick:
+                    if k in bound.arguments:
+                        ctx[k] = bound.arguments[k]
             except Exception:
                 pass
+            return ctx
 
-        def _compose_msg(kind: str, extra_msg: str = None, elapsed: float = None) -> str:
+        # Helper function to compose messages
+        def compose_msg(kind: str, extra_msg: str = None, elapsed: float = None) -> str:
             base = "Start" if kind == "Start" else ("End" if kind == "End" else "Error")
             if kind == "End" and elapsed is not None:
                 base = f"{base} ({elapsed:.3f}s)"
@@ -781,73 +490,79 @@ def ENGINE_DB_LOG_FUNCTIONS_INS(level=logging.INFO, *, defer_ws_db_io: bool = Tr
                 base = f"{base}: {extra}"
             return base
 
-        # --- ENGINE_DB_LOG_FUNCTIONS insert (now uses robust context extractor) ---
-        def _db_insert(kind: str, args: tuple, kwargs: dict, msg: str, queued_at: datetime):
-            ctx = _extract_context(func, args, kwargs)
-            
-            # ADD CONSOLE LOGGING to see function execution
-            try:
-                CONSOLE_LOG("ENGINE_DB_LOG_FUNCTIONS_INS", f"FUNCTION_{kind.upper()}", {
-                    "function": func_id,
-                    "file": file_name,
-                    "message": msg,
-                    "recording_id": ctx.get("RECORDING_ID"),
-                    "audio_frame_no": ctx.get("AUDIO_FRAME_NO"),
-                    "args_count": len(args),
-                    "kwargs_count": len(kwargs),
-                    "queued_at": queued_at.isoformat()
-                })
-                
-                # ADD CONNECTION POOL STATUS LOGGING
-                try:
-                    from SERVER_ENGINE_APP_FUNCTIONS import get_engine
-                    engine = get_engine()
-                    pool = engine.pool
-                    CONSOLE_LOG("ENGINE_DB_LOG_FUNCTIONS_INS", "CONNECTION_POOL_STATUS", {
-                        "function": func_id,
-                        "pool_size": pool.size(),
-                        "checked_in": pool.checkedin(),
-                        "checked_out": pool.checkedout(),
-                        "overflow": pool.overflow()
-                    })
-                except Exception as e:
-                    CONSOLE_LOG("ENGINE_DB_LOG_FUNCTIONS_INS", "CONNECTION_POOL_STATUS_ERROR", {
-                        "function": func_id,
-                        "error": f"{e.__class__.__name__}: {e}"
-                    })
-                    
-            except Exception as e:
-                # Fallback if CONSOLE_LOG fails
-                print(f"[CONSOLE_LOG_ERROR] {func_id}: {kind} - {e}")
-            
-            _db_log_event(
-                dt_function_message_queued=queued_at,
-                function_name=func_id,
-                file_name=file_name,
-                message=msg,
-                recording_id=ctx.get("RECORDING_ID"),
-                audio_chunk_no=ctx.get("AUDIO_CHUNK_NO"),
-                frame_no=ctx.get("AUDIO_FRAME_NO"),
-            )
+        # Helper function to truncate strings
+        def truncate(s: Optional[str], max_len: int) -> Optional[str]:
+            if s is None:
+                return None
+            return s if len(s) <= max_len else s[: max_len - 1] + "…"
 
-        def _schedule_db(kind: str, args: tuple, kwargs: dict, msg: str, queued_at: datetime, prefer_async: bool):
+        # Helper function to check if this is a WebSocket call
+        def is_ws_call(args, kwargs) -> bool:
+            if _FastAPIWebSocket is None:
+                return False
             try:
-                if prefer_async:
-                    try:
-                        loop = asyncio.get_running_loop()
-                        loop.create_task(asyncio.to_thread(_db_insert, kind, args, kwargs, msg, queued_at))
-                        return
-                    except RuntimeError:
-                        pass
-                threading.Thread(target=_db_insert, args=(kind, args, kwargs, msg, queued_at), daemon=True).start()
+                for a in args:
+                    if isinstance(a, _FastAPIWebSocket):
+                        return True
+                for v in (kwargs or {}).values():
+                    if isinstance(v, _FastAPIWebSocket):
+                        return True
             except Exception:
                 pass
+            return False
 
-        # --- error table insert (uses robust context extractor) -------------------
-        def _db_insert_error_row(args: tuple, kwargs: dict, exc: BaseException):
-            ctx = _extract_context(func, args, kwargs)
+        # Helper function to log to ENGINE_DB_LOG_FUNCTIONS table
+        def log_function_event(kind: str, args: tuple, kwargs: dict, msg: str, queued_at: datetime):
+            ctx = extract_context(args, kwargs)
             
-            # ADD CONSOLE LOGGING for errors
+            # Console logging
+            # try:
+            #     CONSOLE_LOG("ENGINE_DB_LOG_FUNCTIONS_INS", f"FUNCTION_{kind.upper()}", {
+            #         "function": func_id,
+            #         "file": file_name,
+            #         "message": msg,
+            #         "recording_id": ctx.get("RECORDING_ID"),
+            #         "audio_frame_no": ctx.get("AUDIO_FRAME_NO"),
+            #         "args_count": len(args),
+            #         "kwargs_count": len(kwargs),
+            #         "queued_at": queued_at.isoformat()
+            #     })
+            # except Exception:
+            #     pass
+            
+            # Insert into SQLite ENGINE_DB_LOG_FUNCTIONS table
+            try:
+                dt_added = datetime.now()
+                fn_100 = truncate(func_id, 100)
+                file_100 = truncate(file_name, 100)
+                
+                sql = """
+                INSERT INTO ENGINE_DB_LOG_FUNCTIONS
+                (DT_FUNCTION_MESSAGE_QUEUED, DT_ADDED, PYTHON_FUNCTION_NAME, PYTHON_FILE_NAME,
+                 RECORDING_ID, AUDIO_CHUNK_NO, FRAME_NO, START_STOP_OR_ERROR_MSG)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                
+                with sqlite3.connect(r"C:\Users\diamo\VIOLIN_MVP_V2\SQLite_VIOLIN_MVP_2.db") as conn:
+                    conn.execute(sql, (
+                        queued_at,
+                        dt_added,
+                        fn_100,
+                        file_100,
+                        ctx.get("RECORDING_ID"),
+                        ctx.get("AUDIO_CHUNK_NO"),
+                        ctx.get("AUDIO_FRAME_NO"),
+                        msg
+                    ))
+                    conn.commit()
+            except Exception as e:
+                LOGGER.exception("ENGINE_DB_LOG_FUNCTIONS insert failed: %s", e)
+
+        # Helper function to log errors to ENGINE_DB_LOG_FUNCTION_ERROR table
+        def log_function_error(args: tuple, kwargs: dict, exc: BaseException):
+            ctx = extract_context(args, kwargs)
+            
+            # Console logging for errors
             try:
                 CONSOLE_LOG("ENGINE_DB_LOG_FUNCTIONS_INS", "FUNCTION_ERROR", {
                     "function": func_id,
@@ -855,304 +570,144 @@ def ENGINE_DB_LOG_FUNCTIONS_INS(level=logging.INFO, *, defer_ws_db_io: bool = Tr
                     "error": f"{exc.__class__.__name__}: {exc}",
                     "recording_id": ctx.get("RECORDING_ID"),
                     "audio_frame_no": ctx.get("AUDIO_FRAME_NO"),
-                    "traceback": traceback.format_exc()[:500]  # First 500 chars of traceback
+                    "traceback": traceback.format_exc()[:500]
                 })
-            except Exception as e:
-                # Fallback if CONSOLE_LOG fails
-                print(f"[CONSOLE_LOG_ERROR] ERROR_LOGGING_FAILED {func_id}: {e}")
+            except Exception:
+                pass
             
-            row = {
-                "DT_ADDED": datetime.now(),
-                "PYTHON_FUNCTION_NAME": func_id,
-                "PYTHON_FILE_NAME": file_name,
-                "ERROR_MESSAGE_TEXT": f"{exc.__class__.__name__}: {exc}",
-                "TRACEBACK_TEXT": traceback.format_exc(),
-                # optional context (schema can ignore if not allowlisted)
-                "RECORDING_ID": ctx.get("RECORDING_ID"),
-                "AUDIO_CHUNK_NO": ctx.get("AUDIO_CHUNK_NO"),
-                "AUDIO_FRAME_NO": ctx.get("AUDIO_FRAME_NO"),
-                "START_MS": ctx.get("START_MS"),
-                "END_MS": ctx.get("END_MS"),
-            }
+            # Insert into SQLite ENGINE_DB_LOG_FUNCTION_ERROR table
             try:
-                DB_INSERT_TABLE(_ERROR_TABLE, row, fire_and_forget=True)  # type: ignore[arg-type]
-            except Exception:
-                try:
-                    CONSOLE_LOG("ENGINE_DB_LOG_FUNCTIONS_INS", "ERROR_TABLE_INSERT_FAILED", {
-                        "fn": func_id, "file": file_name, "err": str(exc)
-                    })
-                except Exception:
-                    pass
-
-        def _is_ws_call(args, kwargs) -> bool:
-            if _FastAPIWebSocket is None:
-                return False
-            try:
-                for a in args:
-                    if isinstance(a, _FastAPIWebSocket):
-                        return True
-                for v in (kwargs or {}).values():
-                    if isinstance(v, _FastAPIWebSocket):
-                        return True
-            except Exception:
-                pass
-            return False
-
-        @functools.wraps(func)
-        async def aw(*args, **kwargs):
-            ws_mode = _is_ws_call(args, kwargs)
-            t0 = time.perf_counter()
-
-            start_msg = _compose_msg("Start")
-            _log_python("Start", start_msg)
-            start_queued_at = datetime.now()
-            try:
-                if ws_mode and defer_ws_db_io:
-                    _schedule_db("Start", args, kwargs, start_msg, start_queued_at, prefer_async=True)
-                else:
-                    _db_insert("Start", args, kwargs, start_msg, start_queued_at)
-
-                result = await func(*args, **kwargs)
-
-                end_msg = _compose_msg("End", elapsed=time.perf_counter() - t0)
-                _log_python("End", end_msg)
-                end_queued_at = datetime.now()
-                if ws_mode and defer_ws_db_io:
-                    _schedule_db("End", args, kwargs, end_msg, end_queued_at, prefer_async=True)
-                else:
-                    _db_insert("End", args, kwargs, end_msg, end_queued_at)
-                return result
+                sql = """
+                INSERT INTO ENGINE_DB_LOG_FUNCTION_ERROR
+                (DT_ADDED, PYTHON_FUNCTION_NAME, PYTHON_FILE_NAME, ERROR_MESSAGE_TEXT, TRACEBACK_TEXT,
+                 RECORDING_ID, AUDIO_CHUNK_NO, AUDIO_FRAME_NO, START_MS, END_MS)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                
+                with sqlite3.connect(r"C:\Users\diamo\VIOLIN_MVP_V2\SQLite_VIOLIN_MVP_2.db") as conn:
+                    conn.execute(sql, (
+                        datetime.now(),
+                        func_id,
+                        file_name,
+                        f"{exc.__class__.__name__}: {exc}",
+                        traceback.format_exc(),
+                        ctx.get("RECORDING_ID"),
+                        ctx.get("AUDIO_CHUNK_NO"),
+                        ctx.get("AUDIO_FRAME_NO"),
+                        ctx.get("START_MS"),
+                        ctx.get("END_MS")
+                    ))
+                    conn.commit()
             except Exception as e:
-                err_msg = _compose_msg("Error", extra_msg=f"{e.__class__.__name__}: {e}")
-                _log_python("Error", err_msg)
-                err_queued_at = datetime.now()
-                if ws_mode and defer_ws_db_io:
-                    _schedule_db("Error", args, kwargs, err_msg, err_queued_at, prefer_async=True)
-                else:
-                    _db_insert("Error", args, kwargs, err_msg, err_queued_at)
+                LOGGER.exception("ENGINE_DB_LOG_FUNCTION_ERROR insert failed: %s", e)
 
-                _db_insert_error_row(args, kwargs, e)
-                raise
-
-        @functools.wraps(func)
-        def sw(*args, **kwargs):
-            ws_mode = _is_ws_call(args, kwargs)
-            t0 = time.perf_counter()
-
-            start_msg = _compose_msg("Start")
-            _log_python("Start", start_msg)
-            start_queued_at = datetime.now()
-            try:
-                if ws_mode and defer_ws_db_io:
-                    _schedule_db("Start", args, kwargs, start_msg, start_queued_at, prefer_async=False)
-                else:
-                    _db_insert("Start", args, kwargs, start_msg, start_queued_at)
-
-                result = func(*args, **kwargs)
-
-                end_msg = _compose_msg("End", elapsed=time.perf_counter() - t0)
-                _log_python("End", end_msg)
-                end_queued_at = datetime.now()
-                if ws_mode and defer_ws_db_io:
-                    _schedule_db("End", args, kwargs, end_msg, end_queued_at, prefer_async=False)
-                else:
-                    _db_insert("End", args, kwargs, end_msg, end_queued_at)
-                return result
-            except Exception as e:
-                err_msg = _compose_msg("Error", extra_msg=f"{e.__class__.__name__}: {e}")
-                _log_python("Error", err_msg)
-                err_queued_at = datetime.now()
-                if ws_mode and defer_ws_db_io:
-                    _schedule_db("Error", args, kwargs, err_msg, err_queued_at, prefer_async=False)
-                else:
-                    _db_insert("Error", args, kwargs, err_msg, err_queued_at)
-
-                _db_insert_error_row(args, kwargs, e)
-                raise
-
-        return aw if is_coro else sw
-
-    return decorate
-
-def ENGINE_DB_LOG_FUNCTIONS_INS_BAK_20250826(level=logging.INFO, *, defer_ws_db_io: bool = True):
-    """
-    WS-safe logging decorator.
-
-    • Writes Start/End/Error rows to ENGINE_DB_LOG_FUNCTIONS (timeline).
-    • ALSO writes a detailed row to ENGINE_DB_LOG_FUNCTION_ERROR on exceptions
-      (ERROR_MESSAGE_TEXT + TRACEBACK_TEXT + context IDs).
-    • Captures DT_FUNCTION_MESSAGE_QUEUED when the log is queued (pre-exec).
-    • For WS handlers, DB inserts can be deferred/offloaded so the handshake
-      can reach `await ws.accept()` without blocking.
-    """
-
-    def decorate(func):
-        is_coro = inspect.iscoroutinefunction(func)
-
-        module = func.__module__
-        qual   = func.__qualname__
-        src    = inspect.getsourcefile(func) or inspect.getfile(func) or "<?>"
-        file_name = Path(src).name
-        func_id   = f"{module}.{qual}"
-
-        def _log_python(kind: str, msg: str):
-            try:
-                if kind == "Error":
-                    LOGGER.exception("[%s | %s] %s", func_id, file_name, msg)
-                else:
-                    LOGGER.log(level, "[%s | %s] %s", func_id, file_name, msg, stacklevel=3)
-            except Exception:
-                pass
-
-        def _compose_msg(kind: str, extra_msg: str = None, elapsed: float = None) -> str:
-            base = "Start" if kind == "Start" else ("End" if kind == "End" else "Error")
-            if kind == "End" and elapsed is not None:
-                base = f"{base} ({elapsed:.3f}s)"
-            if extra_msg:
-                extra = (extra_msg or "").strip()
-                if len(extra) > 4000:
-                    extra = extra[:4000] + "…"
-                base = f"{base}: {extra}"
-            return base
-
-        # --- ENGINE_DB_LOG_FUNCTIONS insert (now uses robust context extractor) ---
-        def _db_insert(kind: str, args: tuple, kwargs: dict, msg: str, queued_at: datetime):
-            ctx = _extract_context(func, args, kwargs)
-            _db_log_event(
-                dt_function_message_queued=queued_at,
-                function_name=func_id,
-                file_name=file_name,
-                message=msg,
-                recording_id=ctx.get("RECORDING_ID"),
-                audio_chunk_no=ctx.get("AUDIO_CHUNK_NO"),
-                frame_no=ctx.get("AUDIO_FRAME_NO"),
-            )
-
-        def _schedule_db(kind: str, args: tuple, kwargs: dict, msg: str, queued_at: datetime, prefer_async: bool):
+        # Helper function to schedule database operations
+        def schedule_db(kind: str, args: tuple, kwargs: dict, msg: str, queued_at: datetime, prefer_async: bool):
             try:
                 if prefer_async:
                     try:
                         loop = asyncio.get_running_loop()
-                        loop.create_task(asyncio.to_thread(_db_insert, kind, args, kwargs, msg, queued_at))
+                        loop.create_task(asyncio.to_thread(log_function_event, kind, args, kwargs, msg, queued_at))
                         return
                     except RuntimeError:
                         pass
-                threading.Thread(target=_db_insert, args=(kind, args, kwargs, msg, queued_at), daemon=True).start()
+                threading.Thread(target=log_function_event, args=(kind, args, kwargs, msg, queued_at), daemon=True).start()
             except Exception:
                 pass
 
-        # --- error table insert (uses robust context extractor) -------------------
-        def _db_insert_error_row(args: tuple, kwargs: dict, exc: BaseException):
-            ctx = _extract_context(func, args, kwargs)
-            row = {
-                "DT_ADDED": datetime.now(),
-                "PYTHON_FUNCTION_NAME": func_id,
-                "PYTHON_FILE_NAME": file_name,
-                "ERROR_MESSAGE_TEXT": f"{exc.__class__.__name__}: {exc}",
-                "TRACEBACK_TEXT": traceback.format_exc(),
-                # optional context (schema can ignore if not allowlisted)
-                "RECORDING_ID": ctx.get("RECORDING_ID"),
-                "AUDIO_CHUNK_NO": ctx.get("AUDIO_CHUNK_NO"),
-                "AUDIO_FRAME_NO": ctx.get("AUDIO_FRAME_NO"),
-                "START_MS": ctx.get("START_MS"),
-                "END_MS": ctx.get("END_MS"),
-            }
+        # Python logging helper
+        def log_python(kind: str, msg: str):
             try:
-                DB_INSERT_TABLE(_ERROR_TABLE, row, fire_and_forget=True)  # type: ignore[arg-type]
-            except Exception:
-                try:
-                    CONSOLE_LOG("ENGINE_DB_LOG_FUNCTIONS_INS", "ERROR_TABLE_INSERT_FAILED", {
-                        "fn": func_id, "file": file_name, "err": str(exc)
-                    })
-                except Exception:
-                    pass
-
-        def _is_ws_call(args, kwargs) -> bool:
-            if _FastAPIWebSocket is None:
-                return False
-            try:
-                for a in args:
-                    if isinstance(a, _FastAPIWebSocket):
-                        return True
-                for v in (kwargs or {}).values():
-                    if isinstance(v, _FastAPIWebSocket):
-                        return True
+                if kind == "Error":
+                    LOGGER.exception("[%s | %s] %s", func_id, file_name, msg)
+                # else:
+                #     LOGGER.log(level, "[%s | %s] %s", func_id, file_name, msg, stacklevel=3)
             except Exception:
                 pass
-            return False
 
+        # Async wrapper
         @functools.wraps(func)
-        async def aw(*args, **kwargs):
-            ws_mode = _is_ws_call(args, kwargs)
+        async def async_wrapper(*args, **kwargs):
+            ws_mode = is_ws_call(args, kwargs)
             t0 = time.perf_counter()
 
-            start_msg = _compose_msg("Start")
-            _log_python("Start", start_msg)
+            start_msg = compose_msg("Start")
+            log_python("Start", start_msg)
             start_queued_at = datetime.now()
+            
             try:
                 if ws_mode and defer_ws_db_io:
-                    _schedule_db("Start", args, kwargs, start_msg, start_queued_at, prefer_async=True)
+                    schedule_db("Start", args, kwargs, start_msg, start_queued_at, prefer_async=True)
                 else:
-                    _db_insert("Start", args, kwargs, start_msg, start_queued_at)
+                    log_function_event("Start", args, kwargs, start_msg, start_queued_at)
 
                 result = await func(*args, **kwargs)
 
-                end_msg = _compose_msg("End", elapsed=time.perf_counter() - t0)
-                _log_python("End", end_msg)
+                end_msg = compose_msg("End", elapsed=time.perf_counter() - t0)
+                log_python("End", end_msg)
                 end_queued_at = datetime.now()
+                
                 if ws_mode and defer_ws_db_io:
-                    _schedule_db("End", args, kwargs, end_msg, end_queued_at, prefer_async=True)
+                    schedule_db("End", args, kwargs, end_msg, end_queued_at, prefer_async=True)
                 else:
-                    _db_insert("End", args, kwargs, end_msg, end_queued_at)
+                    log_function_event("End", args, kwargs, end_msg, end_queued_at)
+                    
                 return result
             except Exception as e:
-                err_msg = _compose_msg("Error", extra_msg=f"{e.__class__.__name__}: {e}")
-                _log_python("Error", err_msg)
+                err_msg = compose_msg("Error", extra_msg=f"{e.__class__.__name__}: {e}")
+                log_python("Error", err_msg)
                 err_queued_at = datetime.now()
+                
                 if ws_mode and defer_ws_db_io:
-                    _schedule_db("Error", args, kwargs, err_msg, err_queued_at, prefer_async=True)
+                    schedule_db("Error", args, kwargs, err_msg, err_queued_at, prefer_async=True)
                 else:
-                    _db_insert("Error", args, kwargs, err_msg, err_queued_at)
+                    log_function_event("Error", args, kwargs, err_msg, err_queued_at)
 
-                _db_insert_error_row(args, kwargs, e)
+                log_function_error(args, kwargs, e)
                 raise
 
+        # Sync wrapper
         @functools.wraps(func)
-        def sw(*args, **kwargs):
-            ws_mode = _is_ws_call(args, kwargs)
+        def sync_wrapper(*args, **kwargs):
+            ws_mode = is_ws_call(args, kwargs)
             t0 = time.perf_counter()
 
-            start_msg = _compose_msg("Start")
-            _log_python("Start", start_msg)
+            start_msg = compose_msg("Start")
+            log_python("Start", start_msg)
             start_queued_at = datetime.now()
+            
             try:
                 if ws_mode and defer_ws_db_io:
-                    _schedule_db("Start", args, kwargs, start_msg, start_queued_at, prefer_async=False)
+                    schedule_db("Start", args, kwargs, start_msg, start_queued_at, prefer_async=False)
                 else:
-                    _db_insert("Start", args, kwargs, start_msg, start_queued_at)
+                    log_function_event("Start", args, kwargs, start_msg, start_queued_at)
 
                 result = func(*args, **kwargs)
 
-                end_msg = _compose_msg("End", elapsed=time.perf_counter() - t0)
-                _log_python("End", end_msg)
+                end_msg = compose_msg("End", elapsed=time.perf_counter() - t0)
+                log_python("End", end_msg)
                 end_queued_at = datetime.now()
+                
                 if ws_mode and defer_ws_db_io:
-                    _schedule_db("End", args, kwargs, end_msg, end_queued_at, prefer_async=False)
+                    schedule_db("End", args, kwargs, end_msg, end_queued_at, prefer_async=False)
                 else:
-                    _db_insert("End", args, kwargs, end_msg, end_queued_at)
+                    log_function_event("End", args, kwargs, end_msg, end_queued_at)
+                    
                 return result
             except Exception as e:
-                err_msg = _compose_msg("Error", extra_msg=f"{e.__class__.__name__}: {e}")
-                _log_python("Error", err_msg)
+                err_msg = compose_msg("Error", extra_msg=f"{e.__class__.__name__}: {e}")
+                log_python("Error", err_msg)
                 err_queued_at = datetime.now()
+                
                 if ws_mode and defer_ws_db_io:
-                    _schedule_db("Error", args, kwargs, err_msg, err_queued_at, prefer_async=False)
+                    schedule_db("Error", args, kwargs, err_msg, err_queued_at, prefer_async=False)
                 else:
-                    _db_insert("Error", args, kwargs, err_msg, err_queued_at)
+                    log_function_event("Error", args, kwargs, err_msg, err_queued_at)
 
-                _db_insert_error_row(args, kwargs, e)
+                log_function_error(args, kwargs, e)
                 raise
 
-        return aw if is_coro else sw
+        return async_wrapper if is_coro else sync_wrapper
 
     return decorate
+

@@ -166,6 +166,11 @@ class ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_DICT(TypedDict):
     CREPE_RECORD_CNT: NotRequired[Optional[int]]
     VOLUME_1_MS_RECORD_CNT: NotRequired[Optional[int]]
     VOLUME_10_MS_RECORD_CNT: NotRequired[Optional[int]]
+    DT_START_PYIN_ENGINE_LOAD_HZ_INS: NotRequired[Optional[datetime.datetime]]
+    DT_END_PYIN_ENGINE_LOAD_HZ_INS: NotRequired[Optional[datetime.datetime]]
+    DT_START_PYIN_RELATIVE_ROWS: NotRequired[Optional[datetime.datetime]]
+    DT_END_PYIN_RELATIVE_ROWS: NotRequired[Optional[datetime.datetime]]
+
 
 
 class ENGINE_DB_LOG_STEPS_DICT(TypedDict):
@@ -179,6 +184,10 @@ class ENGINE_DB_LOG_STEPS_DICT(TypedDict):
     DT_STEP_CALLED: NotRequired[Optional[datetime.datetime]]
     
     
+class RESULT_SET_P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET_DICT(TypedDict):
+    TABLE_NAME: Required[str]
+    COLUMN_NAME: Required[str]
+
 # ─────────────────────────────────────────────────────────────
 # Global in-memory stores
 # ─────────────────────────────────────────────────────────────
@@ -192,4 +201,4 @@ RECORDING_CONFIG_ARRAY: Dict[int, RECORDING_CONFIG_DICT] = {}  #int = RECORDING_
 ENGINE_DB_LOG_STEPS_ARRAY: Dict[int, ENGINE_DB_LOG_STEPS_DICT] = {}  #int = STEP_ID
 ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY: Dict[int, ENGINE_DB_LOG_WEBSOCKET_CONNECTION_DICT] = {}  #int = WEBSOCKET_CONNECTION_ID
 ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY: Dict[int, ENGINE_DB_LOG_WEBSOCKET_MESSAGE_DICT] = {}  #int = MESSAGE_ID
-
+RESULT_SET_P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET_ARRAY: Dict[str, RESULT_SET_P_ENGINE_DB_LOG_COLUMNS_BY_TABLE_NAME_GET_DICT] = {}  #str = TABLE_NAME

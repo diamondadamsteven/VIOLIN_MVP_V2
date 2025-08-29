@@ -46,8 +46,7 @@ from SERVER_ENGINE_APP_VARIABLES import (
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,  # Start/End/Error logger
-    DB_INSERT_TABLE,              # allowlisted insert, fire_and_forget
-    DB_INSERT_TABLE_BULK,         # allowlisted bulk insert, fire_and_forget
+    ENGINE_DB_LOG_TABLE_INS,              # allowlisted insert, fire_and_forget
 )
 
 # ---------------------------------------------------------------------
@@ -181,7 +180,7 @@ def decode_bytes_best_effort(pcm_or_container: Optional[bytes]) -> Tuple[Optiona
 # ---------------------------------------------------------------------
 async def SERVER_ENGINE_LISTEN_3B_FOR_FRAMES() -> None:
     """
-    Find messages where DT_MESSAGE_PROCESS_QUEDED_TO_START is null and MESSAGE_TYPE='FRAME',
+    Find messages where DT_MESSAGE_PROCESS_QUEUED_TO_START is null and MESSAGE_TYPE='FRAME',
     timestamp the queueing, and schedule processing.
     """
     CONSOLE_LOG("SCANNER", "=== 3B_FOR_FRAMES scanner starting ===")
@@ -235,7 +234,7 @@ async def PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID: int) -> None:
     ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["DT_MESSAGE_PROCESS_STARTED"] = datetime.now()
 
     # 2) persist message (allowlisted insert; DB path self-logs failures)
-    DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_MESSAGE", ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD, fire_and_forget=True)
+    ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_WEBSOCKET_MESSAGE", ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD)
 
     # ---- Identify the recording/frame
     RECORDING_ID        = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD["RECORDING_ID"]
@@ -342,14 +341,14 @@ async def PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID: int) -> None:
        # Free the transport bytes
         SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO].pop("AUDIO_FRAME_BYTES", None)
 
-        DB_INSERT_TABLE("ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME", ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO], fire_and_forget=True)
+        ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME", ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO])
     
     # 7) remove the original message row now that we've captured bytes + meta
     del ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[MESSAGE_ID]
 
     ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID]["MAX_PRE_SPLIT_AUDIO_FRAME_NO_SPLIT"] = PRE_SPLIT_AUDIO_FRAME_NO
     ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY[RECORDING_ID][PRE_SPLIT_AUDIO_FRAME_NO]["DT_FRAME_SPLIT_INTO_100_MS_FRAMES"] = datetime.now()
-    DB_INSERT_TABLE("ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME", ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY[RECORDING_ID][PRE_SPLIT_AUDIO_FRAME_NO], fire_and_forget=True)
+    ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME", ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME_ARRAY[RECORDING_ID][PRE_SPLIT_AUDIO_FRAME_NO])
 
     # ✅ PERFORMANCE MONITORING: Log function execution time
     execution_time = time.time() - start_time

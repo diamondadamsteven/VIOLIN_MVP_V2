@@ -11,7 +11,7 @@ from SERVER_ENGINE_APP_VARIABLES import (
     ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY,
 )  # in-memory store
 from SERVER_ENGINE_APP_FUNCTIONS import (
-    DB_INSERT_TABLE,   # generic, allowlisted insert
+    ENGINE_DB_LOG_TABLE_INS,   # generic, allowlisted insert
     CONSOLE_LOG,
     ENGINE_DB_LOG_FUNCTIONS_INS,  # centralized Start/End/Error logging
 )
@@ -98,6 +98,6 @@ async def SERVER_ENGINE_LISTEN_1_FOR_WS_CONNECTIONS(ws: WebSocket) -> int:
     ENGINE_DB_LOG_WEBSOCKET_CONNECTION_ARRAY[conn_id] = row
 
     # --- Persist to DB using the generic allowlisted path (fire-and-forget)
-    DB_INSERT_TABLE("ENGINE_DB_LOG_WEBSOCKET_CONNECTION", row, fire_and_forget=True)
+    ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_WEBSOCKET_CONNECTION", row)
 
     return conn_id
