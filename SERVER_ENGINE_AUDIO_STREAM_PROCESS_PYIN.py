@@ -5,8 +5,6 @@ from __future__ import annotations
 from typing import Iterable, List, Tuple, Optional
 from datetime import datetime
 import numpy as np
-from concurrent.futures import Future
-
 try:
     import librosa  # type: ignore
 except Exception:  # pragma: no cover
@@ -21,7 +19,6 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_BULK_INSERT,
     ENGINE_DB_LOG_FUNCTIONS_INS,  # logging decorator
 )
-from SERVER_ENGINE_AUDIO_PROCESSING_POOL import pyin_relative_rows_parallel, wait_for_futures
 
 PREFIX = "PYIN"
 
@@ -59,6 +56,51 @@ def ENGINE_LOAD_HZ_INS(
             for (start_ms, end_ms, hz, confidence) in rows_abs
         ),
     )
+
+# ─────────────────────────────────────────────────────────────
+# pYIN core: OPTIMIZED version for speed
+# ─────────────────────────────────────────────────────────────
+def _pyin_relative_rows_optimized(audio_22050: np.ndarray, sample_rate: int = 22050) -> List[HZRow]:
+    """
+    Optimized PYIN processing with reduced frame_length for faster processing.
+    Speed vs accuracy trade-off: 20ms hop, smaller frames.
+    """
+    if librosa is None:
+        CONSOLE_LOG(PREFIX, "LIBROSA_NOT_AVAILABLE")
+        return []
+
+    if sample_rate != 22050 or not isinstance(audio_22050, np.ndarray) or audio_22050.size == 0:
+        CONSOLE_LOG(PREFIX, "BAD_INPUT", {"sr": int(sample_rate), "size": int(getattr(audio_22050, "size", 0))})
+        return []
+
+    # Optimized parameters for speed vs accuracy trade-off
+    # 20ms hop = faster processing, slightly less accurate
+    hop_length = max(1, int(round(sample_rate * 0.020)))  # 20ms hop for speed
+    frame_length = max(hop_length * 2, 1024)  # Smaller frame for speed
+
+    # Run PYIN analysis with optimized parameters
+    f0, voiced_flag, voiced_prob = librosa.pyin(
+        y=audio_22050, sr=sample_rate,
+        fmin=180, fmax=4000,
+        frame_length=frame_length, hop_length=hop_length, center=True
+    )
+
+    rows_rel: List[HZRow] = []
+    for i, (hz, voiced_ok, confidence) in enumerate(zip(f0, voiced_flag, voiced_prob)):
+        if not voiced_ok or hz is None:
+            continue
+        if not np.isfinite(hz) or hz <= 0.0:
+            continue
+        if hz < 20.0 or hz > 20000.0:  # Reasonable human hearing range
+            continue
+        if confidence < 0.1:  # Filter out very low confidence
+            continue
+            
+        start_ms_rel = int(round((i * hop_length) * 1000.0 / sample_rate))
+        end_ms_rel = start_ms_rel + 19  # 20ms span to match hop_length
+        rows_rel.append((start_ms_rel, end_ms_rel, float(hz), float(confidence)))
+
+    return rows_rel
 
 # ─────────────────────────────────────────────────────────────
 # pYIN core: relative rows @ ~10 ms on 22.05 kHz audio
@@ -151,14 +193,10 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
     # Compute relative rows then offset to absolute ms using parallel processing
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_PYIN_RELATIVE_ROWS"] = datetime.now()
  
-    # Submit to parallel processing pool
-    future = pyin_relative_rows_parallel(AUDIO_ARRAY_22050.astype(np.float32, copy=False), sample_rate=SAMPLE_RATE)
-    
-    # Wait for result (this will be fast with parallel processing)
-    if isinstance(future, Future):
-        rows_rel = future.result(timeout=30)  # 30 second timeout
-    else:
-        rows_rel = future  # Fallback to direct result
+    # Use optimized synchronous PYIN processing
+    print(f"PYIN_MAIN: Processing frame {AUDIO_FRAME_NO} with optimized synchronous PYIN...")
+    rows_rel = _pyin_relative_rows_optimized(AUDIO_ARRAY_22050.astype(np.float32, copy=False), sample_rate=SAMPLE_RATE)
+    print(f"PYIN_MAIN: Completed, got {len(rows_rel) if rows_rel else 0} rows")
  
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_PYIN_RELATIVE_ROWS"] = datetime.now()
 

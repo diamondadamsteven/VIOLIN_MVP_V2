@@ -15,7 +15,7 @@ from SERVER_ENGINE_CREATE_SQLITE_DB_AND_TABLES import create_database_and_tables
 # Import the resource pre-warmer
 from SERVER_ENGINE_PREWARM_RESOURCES import prewarm_resources, cleanup_resources
 from SERVER_ENGINE_RESOURCE_MONITOR import start_resource_monitoring, stop_resource_monitoring
-from SERVER_ENGINE_AUDIO_PROCESSING_POOL import shutdown_pool
+
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -67,7 +67,6 @@ async def lifespan(app: FastAPI):
 
     yield
     print("🛑 Shutting down backend app...")
-    shutdown_pool()
 
 app = FastAPI(lifespan=lifespan)
 
