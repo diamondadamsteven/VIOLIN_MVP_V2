@@ -29,7 +29,7 @@ PREFIX = "STAGE6_FRAMES"
 # Scanner: queue frames that are ready to analyze
 # ─────────────────────────────────────────────────────────────
 async def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS() -> None:
-    CONSOLE_LOG("SCANNER", "=== 6_FOR_AUDIO_FRAMES_TO_PROCESS scanner starting ===")
+    # CONSOLE_LOG("SCANNER", "=== 6_FOR_AUDIO_FRAMES_TO_PROCESS scanner starting ===")
     while True:
         SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY = [
             (int(RECORDING_ID), int(AUDIO_FRAME_NO))
@@ -40,16 +40,16 @@ async def SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS() -> None:
 
         for RECORDING_ID, AUDIO_FRAME_NO in SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY:
             ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_PROCESSING_QUEUED_TO_START"] = datetime.now()
-            CONSOLE_LOG(PREFIX, "queuing_frame_for_analysis", {
-                "rid": RECORDING_ID,
-                "frame": AUDIO_FRAME_NO,
-                "note": "Audio arrays ready, queuing for analysis"
-            })
+            # CONSOLE_LOG(PREFIX, "queuing_frame_for_analysis", {
+            #     "rid": RECORDING_ID,
+            #     "frame": AUDIO_FRAME_NO,
+            #     "note": "Audio arrays ready, queuing for analysis"
+            # })
             # Create task but don't await it (runs concurrently)
             asyncio.create_task(PROCESS_THE_AUDIO_FRAME(RECORDING_ID=RECORDING_ID, AUDIO_FRAME_NO=AUDIO_FRAME_NO))
         
-        if SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY:
-            CONSOLE_LOG("SCANNER", f"6_FOR_AUDIO_FRAMES: found {len(SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY)} frames ready to analyze")
+        # if SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY:
+        #     CONSOLE_LOG("SCANNER", f"6_FOR_AUDIO_FRAMES: found {len(SPLIT_100_MS_AUDIO_FRAME_NO_ARRAY)} frames ready to analyze")
         
         # Sleep to prevent excessive CPU usage
         await asyncio.sleep(0.1)  # 100ms delay between scans
@@ -68,6 +68,9 @@ async def PROCESS_THE_AUDIO_FRAME(RECORDING_ID: int, AUDIO_FRAME_NO: int) -> Non
     # 2) Get audio arrays from volatile store (SIMPLE - no complex checks)
     SPLIT_100_MS_AUDIO_FRAME_RECORD = SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]
     AUDIO_ARRAY_22050 = SPLIT_100_MS_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]
+    CONSOLE_LOG(PREFIX, "PROCESS_THE_AUDIO_FRAME", {"rid": RECORDING_ID, "frame": AUDIO_FRAME_NO, "size1": SPLIT_100_MS_AUDIO_FRAME_RECORD["AUDIO_ARRAY_22050"]})
+    CONSOLE_LOG(PREFIX, "PROCESS_THE_AUDIO_FRAME", {"rid": RECORDING_ID, "frame": AUDIO_FRAME_NO, "size2": len(AUDIO_ARRAY_22050)})
+
     AUDIO_ARRAY_16000 = SPLIT_100_MS_AUDIO_FRAME_RECORD["AUDIO_ARRAY_16000"]
 
     # Per-frame gating flags (set in Stage-3A/3B depending on mode)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Iterable, List, Tuple, Optional
 from datetime import datetime
 import numpy as np
+from concurrent.futures import Future
 
 try:
     import librosa  # type: ignore
@@ -20,6 +21,7 @@ from SERVER_ENGINE_APP_FUNCTIONS import (
     DB_BULK_INSERT,
     ENGINE_DB_LOG_FUNCTIONS_INS,  # logging decorator
 )
+from SERVER_ENGINE_AUDIO_PROCESSING_POOL import pyin_relative_rows_parallel, wait_for_futures
 
 PREFIX = "PYIN"
 
@@ -78,6 +80,7 @@ def _pyin_relative_rows(audio_22050: np.ndarray, sample_rate: int = 22050) -> Li
     hop_length = max(1, int(round(sample_rate * 0.010)))  # typically 221
     frame_length = max(hop_length * 4, 2048)
 
+    # fmin=180, fmax=4000,
     # Let exceptions bubble to the decorated caller (no local try/except)
     f0, voiced_flag, voiced_prob = librosa.pyin(
         y=audio_22050, sr=sample_rate,
@@ -85,12 +88,18 @@ def _pyin_relative_rows(audio_22050: np.ndarray, sample_rate: int = 22050) -> Li
         frame_length=frame_length, hop_length=hop_length, center=True
     )
 
+#     CONSOLE_LOG(PREFIX, "PYIN_DEBUG", {
+#     "f0_count": len(f0), 
+#     "voiced_count": sum(voiced_flag),
+#     "valid_hz_count": sum(1 for hz in f0 if hz and np.isfinite(hz) and hz > 0)
+#    })
+
     rows_rel: List[HZRow] = []
     for i, (hz, voiced_ok, confidence) in enumerate(zip(f0, voiced_flag, voiced_prob)):
-        if not voiced_ok or hz is None:
-            continue
-        if not np.isfinite(hz) or hz <= 0.0:
-            continue
+        # if not voiced_ok or hz is None:
+        #     continue
+        # if not np.isfinite(hz) or hz <= 0.0:
+        #     continue
         start_ms_rel = int(round((i * hop_length) * 1000.0 / sample_rate))
         end_ms_rel   = start_ms_rel + 9  # nominal 10 ms span
         rows_rel.append((start_ms_rel, end_ms_rel, float(hz), float(confidence)))
@@ -139,15 +148,22 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
         ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_PYIN"] = datetime.now()
         return 0
 
-    # Compute relative rows then offset to absolute ms
+    # Compute relative rows then offset to absolute ms using parallel processing
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_PYIN_RELATIVE_ROWS"] = datetime.now()
  
-    rows_rel = _pyin_relative_rows(AUDIO_ARRAY_22050.astype(np.float32, copy=False), sample_rate=SAMPLE_RATE)
+    # Submit to parallel processing pool
+    future = pyin_relative_rows_parallel(AUDIO_ARRAY_22050.astype(np.float32, copy=False), sample_rate=SAMPLE_RATE)
+    
+    # Wait for result (this will be fast with parallel processing)
+    if isinstance(future, Future):
+        rows_rel = future.result(timeout=30)  # 30 second timeout
+    else:
+        rows_rel = future  # Fallback to direct result
  
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_PYIN_RELATIVE_ROWS"] = datetime.now()
 
     if not rows_rel:
-        CONSOLE_LOG(PREFIX, "NO_ROWS", {"rid": RECORDING_ID, "frame": AUDIO_FRAME_NO})
+        CONSOLE_LOG(PREFIX, "NO_ROWS", {"rid": RECORDING_ID, "frame": AUDIO_FRAME_NO, "size": len(AUDIO_ARRAY_22050)})
         ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["PYIN_RECORD_CNT"] = 0
         ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_END_PYIN"] = datetime.now()
         return 0

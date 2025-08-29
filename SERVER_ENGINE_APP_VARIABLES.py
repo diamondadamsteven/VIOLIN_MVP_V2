@@ -16,6 +16,15 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 import numpy as np
 from numpy.typing import NDArray
 
+# Audio Processing Pool for parallel processing
+try:
+    from concurrent.futures import ProcessPoolExecutor
+    AUDIO_PROCESSING_POOL = ProcessPoolExecutor(max_workers=3)
+    AUDIO_PROCESSING_POOL_AVAILABLE = True
+except Exception:
+    AUDIO_PROCESSING_POOL = None
+    AUDIO_PROCESSING_POOL_AVAILABLE = False
+
 WEBSOCKET_LISTENER = FastAPI(title="VIOLIN_MVP Audio Stream WS Listener", version="1.4.0")
 
 # Paths

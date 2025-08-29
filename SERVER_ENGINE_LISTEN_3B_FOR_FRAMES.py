@@ -46,8 +46,9 @@ from SERVER_ENGINE_APP_VARIABLES import (
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     ENGINE_DB_LOG_FUNCTIONS_INS,  # Start/End/Error logger
-    ENGINE_DB_LOG_TABLE_INS,              # allowlisted insert, fire_and_forget
+    ENGINE_DB_LOG_TABLE_INS,              # allowlisted insert, fireand_forget
 )
+from SERVER_ENGINE_AUDIO_PROCESSING_POOL import resample_parallel, wait_for_futures
 
 # ---------------------------------------------------------------------
 # Constants
@@ -183,7 +184,7 @@ async def SERVER_ENGINE_LISTEN_3B_FOR_FRAMES() -> None:
     Find messages where DT_MESSAGE_PROCESS_QUEUED_TO_START is null and MESSAGE_TYPE='FRAME',
     timestamp the queueing, and schedule processing.
     """
-    CONSOLE_LOG("SCANNER", "=== 3B_FOR_FRAMES scanner starting ===")
+    # CONSOLE_LOG("SCANNER", "=== 3B_FOR_FRAMES scanner starting ===")
     MESSAGE_ID_ARRAY = []
 
     while True:
@@ -204,8 +205,8 @@ async def SERVER_ENGINE_LISTEN_3B_FOR_FRAMES() -> None:
             # Create task but don't await it (runs concurrently)
             asyncio.create_task(PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID=MESSAGE_ID))
         
-        if MESSAGE_ID_ARRAY:
-            CONSOLE_LOG("SCANNER", f"3B_FOR_FRAMES: found {len(MESSAGE_ID_ARRAY)} FRAME messages to process")
+        # if MESSAGE_ID_ARRAY:
+        #     CONSOLE_LOG("SCANNER", f"3B_FOR_FRAMES: found {len(MESSAGE_ID_ARRAY)} FRAME messages to process")
         
         # Sleep to prevent excessive CPU usage
         await asyncio.sleep(0.1)  # 100ms delay between scans
@@ -226,7 +227,7 @@ async def PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID: int) -> None:
       7) Delete the message entry
     """
     # ✅ PERFORMANCE MONITORING: Start timing
-    CONSOLE_LOG("SCANNER", f"PROCESS_WEBSOCKET_FRAME_MESSAGE: {MESSAGE_ID}")
+    # CONSOLE_LOG("SCANNER", f"PROCESS_WEBSOCKET_FRAME_MESSAGE: {MESSAGE_ID}")
     start_time = time.time()
     
     ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY.get(MESSAGE_ID)
@@ -314,8 +315,12 @@ async def PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID: int) -> None:
         ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO]["AUDIO_FRAME_ENCODING"] = enc_label
         ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO]["DT_FRAME_DECODED_FROM_BYTES_INTO_AUDIO_SAMPLES"] = datetime.now()
         
-        # Ensure 44.1k anchor for archival file
-        X_441 = resample_best(X_FLOAT, SRC_SR, 44100)
+        # Ensure 44.1k anchor for archival file using parallel processing
+        X_441_future = resample_parallel(X_FLOAT, SRC_SR, 44100)
+        if hasattr(X_441_future, 'result'):
+            X_441 = X_441_future.result(timeout=30)
+        else:
+            X_441 = X_441_future  # Fallback to direct result
         ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO]["DT_FRAME_RESAMPLED_TO_44100"] = datetime.now()
 
         # 5) Append to single raw file per recording
@@ -328,20 +333,28 @@ async def PROCESS_WEBSOCKET_FRAME_MESSAGE(MESSAGE_ID: int) -> None:
         ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO]["DT_FRAME_APPENDED_TO_RAW_FILE"] = datetime.now()
 
         # 6) Analyzer arrays (float32 mono), stored only in the volatile store
-        # Keep your existing 16k path
-        AUDIO_ARRAY_16000 = resample_best(X_441, 44100, 16000)
+        # Keep your existing 16k path using parallel processing
+        AUDIO_ARRAY_16000_future = resample_parallel(X_441, 44100, 16000)
+        if hasattr(AUDIO_ARRAY_16000_future, 'result'):
+            AUDIO_ARRAY_16000 = AUDIO_ARRAY_16000_future.result(timeout=30)
+        else:
+            AUDIO_ARRAY_16000 = AUDIO_ARRAY_16000_future  # Fallback to direct result
         SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO]["AUDIO_ARRAY_16000"] = AUDIO_ARRAY_16000
         ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO]["DT_FRAME_RESAMPLED_TO_16000"] = datetime.now()
 
-        # NEW: always provide 22.05k for pYIN so later stages don't crash
-        AUDIO_ARRAY_22050 = resample_best(X_441, 44100, 22050)
+        # NEW: always provide 22.05k for pYIN so later stages don't crash using parallel processing
+        AUDIO_ARRAY_22050_future = resample_parallel(X_441, 44100, 22050)
+        if hasattr(AUDIO_ARRAY_22050_future, 'result'):
+            AUDIO_ARRAY_22050 = AUDIO_ARRAY_22050_future.result(timeout=30)
+        else:
+            AUDIO_ARRAY_22050 = AUDIO_ARRAY_22050_future  # Fallback to direct result
         SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO]["AUDIO_ARRAY_22050"] = AUDIO_ARRAY_22050
         ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO]["DT_FRAME_RESAMPLED_22050"] = datetime.now()
 
        # Free the transport bytes
         SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO].pop("AUDIO_FRAME_BYTES", None)
 
-        ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME", ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO])
+        # ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME", ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO])
     
     # 7) remove the original message row now that we've captured bytes + meta
     del ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[MESSAGE_ID]

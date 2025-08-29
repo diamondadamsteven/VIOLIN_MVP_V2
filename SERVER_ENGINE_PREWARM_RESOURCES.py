@@ -17,6 +17,7 @@ import librosa
 
 # Configure logging
 LOGGER = logging.getLogger(__name__)
+logging.getLogger().setLevel(logging.INFO)
 
 class ResourcePrewarmer:
     """Pre-warms system resources to avoid contention during audio processing."""
@@ -31,7 +32,7 @@ class ResourcePrewarmer:
         
     def prewarm_all_resources(self) -> None:
         """Pre-warm all system resources."""
-        LOGGER.info("Starting resource pre-warming...")
+        LOGGER.warning("Starting resource pre-warming...")
         
         try:
             # 1. Pre-allocate memory pools
@@ -44,59 +45,10 @@ class ResourcePrewarmer:
             self._initialize_thread_pools()
             
             # 4. Pre-warm audio processing functions
-            self._prewarm_audio_processing()
-        
-            # 5. Pre-warm audio resampling operations (major bottleneck)
-            LOGGER.info("Pre-warming audio resampling operations...")
-            try:
-                # Create test audio samples at different sample rates
-                test_audio_44100 = np.random.random(44100).astype(np.float32)  # 1 second at 44.1kHz
-                test_audio_22050 = np.random.random(22050).astype(np.float32)  # 1 second at 22.05kHz
-                test_audio_16000 = np.random.random(16000).astype(np.float32)  # 1 second at 16kHz
-                
-                # Warm up 44.1kHz → 22.05kHz resampling (major bottleneck)
-                LOGGER.info("Warming up 44.1kHz → 22.05kHz resampling...")
-                for i in range(5):
-                    start_time = time.time()
-                    resampled = librosa.resample(test_audio_44100, orig_sr=44100, target_sr=22050)
-                    resample_time = time.time() - start_time
-                    LOGGER.info(f"  44.1kHz→22.05kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
-                
-                # Warm up 22.05kHz → 16kHz resampling (another bottleneck)
-                LOGGER.info("Warming up 22.05kHz → 16kHz resampling...")
-                for i in range(5):
-                    start_time = time.time()
-                    resampled = librosa.resample(test_audio_22050, orig_sr=22050, target_sr=16000)
-                    resample_time = time.time() - start_time
-                    LOGGER.info(f"  22.05kHz→16kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
-                
-                # Warm up 44.1kHz → 16kHz resampling (direct conversion)
-                LOGGER.info("Warming up 44.1kHz → 16kHz resampling...")
-                for i in range(3):
-                    start_time = time.time()
-                    resampled = librosa.resample(test_audio_44100, orig_sr=44100, target_sr=16000)
-                    resample_time = time.time() - start_time
-                    LOGGER.info(f"  44.1kHz→16kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
-                
-                # Final verification - should be much faster now
-                LOGGER.info("Final verification of resampling performance...")
-                verify_start = time.time()
-                final_resample = librosa.resample(test_audio_44100, orig_sr=44100, target_sr=22050)
-                verify_time = time.time() - verify_start
-                
-                LOGGER.info(f"Final 44.1kHz→22.05kHz resampling: {verify_time:.3f}s")
-                if verify_time < 0.1:
-                    LOGGER.info("✓ Audio resampling is now cached and ready for fast processing")
-                elif verify_time < 0.3:
-                    LOGGER.info(f"✓ Audio resampling warmed up (acceptable: {verify_time:.3f}s)")
-                else:
-                    LOGGER.warning(f"Audio resampling still slow after warming: {verify_time:.3f}s")
-                    
-            except Exception as e:
-                LOGGER.error(f"Audio resampling pre-warming failed: {e}")
-                # Continue startup even if resampling pre-warming fails
+            prewarm_pyin_engine()
+            prewarm_audio_resampling()
             
-            LOGGER.info("Resource pre-warming completed successfully")
+            LOGGER.warning("Resource pre-warming completed successfully")
             
         except Exception as e:
             LOGGER.error(f"Resource pre-warming failed: {e}")
@@ -104,7 +56,7 @@ class ResourcePrewarmer:
     
     def _preallocate_memory_pools(self) -> None:
         """Pre-allocate memory pools for audio processing."""
-        LOGGER.info("Pre-allocating memory pools...")
+        LOGGER.warning("Pre-allocating memory pools...")
         
         # Audio frame sizes we'll be processing
         frame_sizes = [
@@ -126,7 +78,7 @@ class ResourcePrewarmer:
                 np.zeros(samples, dtype=np.float32),  # Another backup
             ]
             
-            LOGGER.info(f"Pre-allocated {len(self.memory_pools[key])} buffers for {key} ({samples} samples)")
+            LOGGER.warning(f"Pre-allocated {len(self.memory_pools[key])} buffers for {key} ({samples} samples)")
         
         # Pre-allocate larger buffers for FFT processing
         fft_sizes = [1024, 2048, 4096, 8192]
@@ -136,14 +88,14 @@ class ResourcePrewarmer:
                 np.zeros(fft_size, dtype=np.complex64),  # Complex for FFT
                 np.zeros(fft_size, dtype=np.complex64),
             ]
-            LOGGER.info(f"Pre-allocated FFT buffers for size {fft_size}")
+            LOGGER.warning(f"Pre-allocated FFT buffers for size {fft_size}")
         
         self.memory_preallocated = True
-        LOGGER.info("Memory pools pre-allocated successfully")
+        LOGGER.warning("Memory pools pre-allocated successfully")
     
     def _warm_cpu_caches(self) -> None:
         """Warm CPU caches by running sample computations."""
-        LOGGER.info("Warming CPU caches...")
+        LOGGER.warning("Warming CPU caches...")
         
         # Create sample data
         sample_data = np.random.random(10000).astype(np.float32)
@@ -167,19 +119,19 @@ class ResourcePrewarmer:
         gc.collect()
         
         self.cpu_cache_warmed = True
-        LOGGER.info("CPU caches warmed successfully")
+        LOGGER.warning("CPU caches warmed successfully")
     
     def _initialize_thread_pools(self) -> None:
         """Initialize thread and process pools."""
-        LOGGER.info("Initializing thread pools...")
+        LOGGER.warning("Initializing thread pools...")
         
         # Get optimal pool sizes based on system
         cpu_count = multiprocessing.cpu_count()
         optimal_threads = min(cpu_count * 2, 16)  # 2x CPU cores, max 16
         optimal_processes = max(1, cpu_count - 1)  # Leave 1 core for main thread
         
-        LOGGER.info(f"System has {cpu_count} CPU cores")
-        LOGGER.info(f"Initializing {optimal_threads} threads and {optimal_processes} processes")
+        LOGGER.warning(f"System has {cpu_count} CPU cores")
+        LOGGER.warning(f"Initializing {optimal_threads} threads and {optimal_processes} processes")
         
         # Initialize thread pool
         self.thread_pool = ThreadPoolExecutor(
@@ -197,11 +149,11 @@ class ResourcePrewarmer:
         self._warm_thread_pools()
         
         self.thread_pools_initialized = True
-        LOGGER.info("Thread pools initialized and warmed successfully")
+        LOGGER.warning("Thread pools initialized and warmed successfully")
     
     def _warm_thread_pools(self) -> None:
         """Warm up thread pools with dummy tasks."""
-        LOGGER.info("Warming thread pools...")
+        LOGGER.warning("Warming thread pools...")
         
         # Submit dummy tasks to warm up thread pool
         dummy_futures = []
@@ -213,7 +165,7 @@ class ResourcePrewarmer:
         for future in dummy_futures:
             future.result()
         
-        LOGGER.info("Thread pools warmed successfully")
+        LOGGER.warning("Thread pools warmed successfully")
     
     def _dummy_task(self, task_id: int) -> str:
         """Dummy task to warm up thread pools."""
@@ -222,18 +174,18 @@ class ResourcePrewarmer:
     
     def _prewarm_audio_processing(self) -> None:
         """Pre-warm audio processing functions."""
-        LOGGER.info("Pre-warming audio processing functions...")
+        LOGGER.warning("Pre-warming audio processing functions...")
         
         # Import audio processing modules to ensure they're loaded
         try:
             # This will trigger module loading and any initialization
             import librosa
-            LOGGER.info("Librosa module loaded and initialized")
+            LOGGER.warning("Librosa module loaded and initialized")
         except ImportError:
             LOGGER.warning("Librosa not available, skipping audio processing pre-warm")
         
         # CRITICAL: Pre-load PYIN engine to avoid 6+ second delays during first audio frame
-        LOGGER.info("Pre-loading PYIN pitch detection engine...")
+        LOGGER.warning("Pre-loading PYIN pitch detection engine...")
         try:
             # Import librosa for PYIN pitch detection
             import librosa
@@ -255,11 +207,11 @@ class ResourcePrewarmer:
             )
             
             load_time = time.time() - start_time
-            LOGGER.info(f"PYIN engine pre-loaded successfully in {load_time:.2f} seconds")
-            LOGGER.info(f"Generated {len(f0)} pitch estimates from dummy audio")
+            LOGGER.warning(f"PYIN engine pre-loaded successfully in {load_time:.2f} seconds")
+            LOGGER.warning(f"Generated {len(f0)} pitch estimates from dummy audio")
             
             # AGGRESSIVE CACHING: Run multiple times with different audio to warm up all internal caches
-            LOGGER.info("Running aggressive PYIN engine warming with multiple audio samples...")
+            LOGGER.warning("Running aggressive PYIN engine warming with multiple audio samples...")
             warming_samples = [
                 np.random.random(22050).astype(np.float32),  # Different random audio
                 np.random.random(22050).astype(np.float32),  # Another different sample
@@ -274,7 +226,7 @@ class ResourcePrewarmer:
                     frame_length=frame_length, hop_length=hop_length, center=True
                 )
                 warm_time = time.time() - warm_start
-                LOGGER.info(f"Warming sample {i+1}: {warm_time:.3f}s")
+                LOGGER.warning(f"Warming sample {i+1}: {warm_time:.3f}s")
             
             # Final verification with original audio (should be fastest now)
             verify_start = time.time()
@@ -285,11 +237,11 @@ class ResourcePrewarmer:
             )
             verify_time = time.time() - verify_start
             
-            LOGGER.info(f"PYIN engine final verification: {verify_time:.3f}s")
+            LOGGER.warning(f"PYIN engine final verification: {verify_time:.3f}s")
             if verify_time < 0.1:
-                LOGGER.info("✓ PYIN engine is now cached and ready for fast processing")
+                LOGGER.warning("✓ PYIN engine is now cached and ready for fast processing")
             elif verify_time < 0.5:
-                LOGGER.info(f"✓ PYIN engine warmed up (acceptable: {verify_time:.3f}s)")
+                LOGGER.warning(f"✓ PYIN engine warmed up (acceptable: {verify_time:.3f}s)")
             else:
                 LOGGER.warning(f"PYIN engine still slow after warming: {verify_time:.3f}s")
             
@@ -300,7 +252,7 @@ class ResourcePrewarmer:
             # Continue startup even if PYIN pre-loading fails
         
         # Pre-warm audio resampling operations (major bottleneck - 700ms-1.3s delays)
-        LOGGER.info("Pre-warming audio resampling operations...")
+        LOGGER.warning("Pre-warming audio resampling operations...")
         try:
             # Create test audio samples at different sample rates
             test_audio_44100 = np.random.random(44100).astype(np.float32)  # 1 second at 44.1kHz
@@ -308,40 +260,40 @@ class ResourcePrewarmer:
             test_audio_16000 = np.random.random(16000).astype(np.float32)  # 1 second at 16kHz
             
             # Warm up 44.1kHz → 22.05kHz resampling (major bottleneck)
-            LOGGER.info("Warming up 44.1kHz → 22.05kHz resampling...")
+            LOGGER.warning("Warming up 44.1kHz → 22.05kHz resampling...")
             for i in range(5):
                 start_time = time.time()
                 resampled = librosa.resample(test_audio_44100, orig_sr=44100, target_sr=22050)
                 resample_time = time.time() - start_time
-                LOGGER.info(f"  44.1kHz→22.05kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
+                LOGGER.warning(f"  44.1kHz→22.05kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
             
             # Warm up 22.05kHz → 16kHz resampling (another bottleneck)
-            LOGGER.info("Warming up 22.05kHz → 16kHz resampling...")
+            LOGGER.warning("Warming up 22.05kHz → 16kHz resampling...")
             for i in range(5):
                 start_time = time.time()
                 resampled = librosa.resample(test_audio_22050, orig_sr=22050, target_sr=16000)
                 resample_time = time.time() - start_time
-                LOGGER.info(f"  22.05kHz→16kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
+                LOGGER.warning(f"  22.05kHz→16kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
             
             # Warm up 44.1kHz → 16kHz resampling (direct conversion)
-            LOGGER.info("Warming up 44.1kHz → 16kHz resampling...")
+            LOGGER.warning("Warming up 44.1kHz → 16kHz resampling...")
             for i in range(3):
                 start_time = time.time()
                 resampled = librosa.resample(test_audio_44100, orig_sr=44100, target_sr=16000)
                 resample_time = time.time() - start_time
-                LOGGER.info(f"  44.1kHz→16kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
+                LOGGER.warning(f"  44.1kHz→16kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
             
             # Final verification - should be much faster now
-            LOGGER.info("Final verification of resampling performance...")
+            LOGGER.warning("Final verification of resampling performance...")
             verify_start = time.time()
             final_resample = librosa.resample(test_audio_44100, orig_sr=44100, target_sr=22050)
             verify_time = time.time() - verify_start
             
-            LOGGER.info(f"Final 44.1kHz→22.05kHz resampling: {verify_time:.3f}s")
+            LOGGER.warning(f"Final 44.1kHz→22.05kHz resampling: {verify_time:.3f}s")
             if verify_time < 0.1:
-                LOGGER.info("✓ Audio resampling is now cached and ready for fast processing")
+                LOGGER.warning("✓ Audio resampling is now cached and ready for fast processing")
             elif verify_time < 0.3:
-                LOGGER.info(f"✓ Audio resampling warmed up (acceptable: {verify_time:.3f}s)")
+                LOGGER.warning(f"✓ Audio resampling warmed up (acceptable: {verify_time:.3f}s)")
             else:
                 LOGGER.warning(f"Audio resampling still slow after warming: {verify_time:.3f}s")
                 
@@ -357,7 +309,7 @@ class ResourcePrewarmer:
             result = np.abs(result)
             result = np.log10(result + 1e-10)  # Avoid log(0)
         
-        LOGGER.info("Audio processing functions pre-warmed successfully")
+        LOGGER.warning("Audio processing functions pre-warmed successfully")
     
     def get_memory_pool(self, key: str) -> Optional[np.ndarray]:
         """Get a pre-allocated memory buffer."""
@@ -386,7 +338,7 @@ class ResourcePrewarmer:
     
     def cleanup(self) -> None:
         """Clean up resources."""
-        LOGGER.info("Cleaning up resource pre-warmer...")
+        LOGGER.warning("Cleaning up resource pre-warmer...")
         
         if self.thread_pool:
             self.thread_pool.shutdown(wait=True)
@@ -397,7 +349,7 @@ class ResourcePrewarmer:
         # Clear memory pools
         self.memory_pools.clear()
         
-        LOGGER.info("Resource cleanup completed")
+        LOGGER.warning("Resource cleanup completed")
 
 # Global instance
 RESOURCE_PREWARMER = ResourcePrewarmer()
@@ -417,7 +369,7 @@ def prewarm_pyin_engine() -> bool:
         import numpy as np
         import time
         
-        LOGGER.info("Pre-loading PYIN pitch detection engine...")
+        LOGGER.warning("Pre-loading PYIN pitch detection engine...")
         
         # Create dummy audio sample (1 second at 22.05kHz - matching actual usage)
         dummy_audio = np.random.random(22050).astype(np.float32)
@@ -435,11 +387,11 @@ def prewarm_pyin_engine() -> bool:
         )
         
         load_time = time.time() - start_time
-        LOGGER.info(f"PYIN engine pre-loaded successfully in {load_time:.2f} seconds")
-        LOGGER.info(f"Generated {len(f0)} pitch estimates from dummy audio")
+        LOGGER.warning(f"PYIN engine pre-loaded successfully in {load_time:.2f} seconds")
+        LOGGER.warning(f"Generated {len(f0)} pitch estimates from dummy audio")
         
         # AGGRESSIVE CACHING: Run multiple times with different audio to warm up all internal caches
-        LOGGER.info("Running aggressive PYIN engine warming with multiple audio samples...")
+        LOGGER.warning("Running aggressive PYIN engine warming with multiple audio samples...")
         warming_samples = [
             np.random.random(22050).astype(np.float32),  # Different random audio
             np.random.random(22050).astype(np.float32),  # Another different sample
@@ -454,7 +406,7 @@ def prewarm_pyin_engine() -> bool:
                 frame_length=frame_length, hop_length=hop_length, center=True
             )
             warm_time = time.time() - warm_start
-            LOGGER.info(f"Warming sample {i+1}: {warm_time:.3f}s")
+            LOGGER.warning(f"Warming sample {i+1}: {warm_time:.3f}s")
         
         # Final verification with original audio (should be fastest now)
         verify_start = time.time()
@@ -465,11 +417,11 @@ def prewarm_pyin_engine() -> bool:
         )
         verify_time = time.time() - verify_start
         
-        LOGGER.info(f"PYIN engine final verification: {verify_time:.3f}s")
+        LOGGER.warning(f"PYIN engine final verification: {verify_time:.3f}s")
         if verify_time < 0.1:
-            LOGGER.info("✓ PYIN engine is now cached and ready for fast processing")
+            LOGGER.warning("✓ PYIN engine is now cached and ready for fast processing")
         elif verify_time < 0.5:
-            LOGGER.info(f"✓ PYIN engine warmed up (acceptable: {verify_time:.3f}s)")
+            LOGGER.warning(f"✓ PYIN engine warmed up (acceptable: {verify_time:.3f}s)")
         else:
             LOGGER.warning(f"PYIN engine still slow after warming: {verify_time:.3f}s")
         
@@ -489,7 +441,7 @@ def prewarm_audio_resampling() -> bool:
         import numpy as np
         import time
         
-        LOGGER.info("Pre-warming audio resampling operations...")
+        LOGGER.warning("Pre-warming audio resampling operations...")
         
         # Create test audio samples at different sample rates
         test_audio_44100 = np.random.random(44100).astype(np.float32)  # 1 second at 44.1kHz
@@ -497,40 +449,40 @@ def prewarm_audio_resampling() -> bool:
         test_audio_16000 = np.random.random(16000).astype(np.float32)  # 1 second at 16kHz
         
         # Warm up 44.1kHz → 22.05kHz resampling (major bottleneck)
-        LOGGER.info("Warming up 44.1kHz → 22.05kHz resampling...")
+        LOGGER.warning("Warming up 44.1kHz → 22.05kHz resampling...")
         for i in range(5):
             start_time = time.time()
             resampled = librosa.resample(test_audio_44100, orig_sr=44100, target_sr=22050)
             resample_time = time.time() - start_time
-            LOGGER.info(f"  44.1kHz→22.05kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
+            LOGGER.warning(f"  44.1kHz→22.05kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
         
         # Warm up 22.05kHz → 16kHz resampling (another bottleneck)
-        LOGGER.info("Warming up 22.05kHz → 16kHz resampling...")
+        LOGGER.warning("Warming up 22.05kHz → 16kHz resampling...")
         for i in range(5):
             start_time = time.time()
             resampled = librosa.resample(test_audio_22050, orig_sr=22050, target_sr=16000)
             resample_time = time.time() - start_time
-            LOGGER.info(f"  22.05kHz→16kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
+            LOGGER.warning(f"  22.05kHz→16kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
         
         # Warm up 44.1kHz → 16kHz resampling (direct conversion)
-        LOGGER.info("Warming up 44.1kHz → 16kHz resampling...")
+        LOGGER.warning("Warming up 44.1kHz → 16kHz resampling...")
         for i in range(3):
             start_time = time.time()
             resampled = librosa.resample(test_audio_44100, orig_sr=44100, target_sr=16000)
             resample_time = time.time() - start_time
-            LOGGER.info(f"  44.1kHz→16kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
+            LOGGER.warning(f"  44.1kHz→16kHz warm {i+1}: {resample_time:.3f}s ({len(resampled)} samples)")
         
         # Final verification - should be much faster now
-        LOGGER.info("Final verification of resampling performance...")
+        LOGGER.warning("Final verification of resampling performance...")
         verify_start = time.time()
         final_resample = librosa.resample(test_audio_44100, orig_sr=44100, target_sr=22050)
         verify_time = time.time() - verify_start
         
-        LOGGER.info(f"Final 44.1kHz→22.05kHz resampling: {verify_time:.3f}s")
+        LOGGER.warning(f"Final 44.1kHz→22.05kHz resampling: {verify_time:.3f}s")
         if verify_time < 0.1:
-            LOGGER.info("✓ Audio resampling is now cached and ready for fast processing")
+            LOGGER.warning("✓ Audio resampling is now cached and ready for fast processing")
         elif verify_time < 0.3:
-            LOGGER.info(f"✓ Audio resampling warmed up (acceptable: {verify_time:.3f}s)")
+            LOGGER.warning(f"✓ Audio resampling warmed up (acceptable: {verify_time:.3f}s)")
         else:
             LOGGER.warning(f"Audio resampling still slow after warming: {verify_time:.3f}s")
         

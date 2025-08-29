@@ -82,7 +82,7 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(WEBSOCKET_MESSAGE: WebSocket, W
                     "WEBSOCKET_CONNECTION_ID": WEBSOCKET_CONNECTION_ID,
                 }
                 ENGINE_DB_LOG_WEBSOCKET_MESSAGE_ARRAY[L_MESSAGE_ID] = ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD
-                ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_WEBSOCKET_MESSAGE", ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD)
+                # ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_WEBSOCKET_MESSAGE", ENGINE_DB_LOG_WEBSOCKET_MESSAGE_RECORD)
 
                 PRE_SPLIT_AUDIO_FRAME_RECORD = PRE_SPLIT_AUDIO_FRAME_ARRAY.setdefault(RECORDING_ID, {})
                 PRE_SPLIT_AUDIO_FRAME_RECORD[AUDIO_FRAME_NO] = {
@@ -121,12 +121,12 @@ async def SERVER_ENGINE_LISTEN_2_FOR_WS_MESSAGES(WEBSOCKET_MESSAGE: WebSocket, W
                 }
                 
                 # DEBUG: Log what we're trying to insert
-                print(f"DEBUG: Data being sent: {frame_data_for_db}")
-                print(f"DEBUG: Keys: {list(frame_data_for_db.keys())}")
-                print(f"DEBUG: Table: ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME")
+                # print(f"DEBUG: Data being sent: {frame_data_for_db}")
+                # print(f"DEBUG: Keys: {list(frame_data_for_db.keys())}")
+                # print(f"DEBUG: Table: ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME")
                 
                 # Insert the single flat frame record
-                ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME", frame_data_for_db)
+                # ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_PRE_SPLIT_AUDIO_FRAME", frame_data_for_db)
 
             else:  #NON-FRAME
                 L_MESSAGE_ID =  L_MESSAGE_ID + 1

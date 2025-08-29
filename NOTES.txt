@@ -17,6 +17,7 @@
 #### npx expo start --clear ##### 
 
 findstr /n "SERVER_ENGINE_SQLITE_LOGGING" *.py
+Get-Process | Sort-Object WorkingSet -Descending | Select-Object ProcessName, Id, @{Name="Memory(MB)";Expression={[math]::Round($_.WorkingSet/1MB,2)}}, @{Name="Virtual(MB)";Expression={[math]::Round($_.VirtualMemorySize/1MB,2)}} | Format-Table -AutoSize | Out-File -FilePath "C:\Users\diamo\process_memory.txt" -Width 200
 
 
 npx expo start --tunnel --clear

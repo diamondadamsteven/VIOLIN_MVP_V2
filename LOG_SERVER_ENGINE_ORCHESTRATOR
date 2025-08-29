@@ -1,0 +1,726 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\diamo\\VIOLIN_MVP_V2']
+INFO:     Uvicorn running on http://0.0.0.0:7070 (Press CTRL+C to quit)
+INFO:     Started reloader process [28880] using WatchFiles
+INFO:     Started server process [13748]
+INFO:     Waiting for application startup.
+ORCHESTRATOR MODULE IMPORTING - ABOUT TO RUN CLEANUP
+SMART_CLEANUP FUNCTION CALLED
+Smart cleanup starting - current PID: 13748
+Waiting 3 seconds for other servers to start...
+No conflicting processes found on port 7070
+CLEANUP COMPLETED
+Waiting 2 seconds for cleanup to complete...
+STARTUP DELAY COMPLETED
+STARTUP - === _startup() function called ===
+STARTUP - DB_ENGINE_STARTUP: Connection pool configured - size=5, overflow=-4, timeout=30s
+STARTUP - Pool details: checked_in=1, checked_out=0
+STARTUP - DB_ENGINE_STARTUP: Table allowlist initialized successfully
+STARTUP - === Pre-warming system resources ===
+Starting resource pre-warming...
+Pre-allocating memory pools...
+Pre-allocated 3 buffers for 44100_100ms (4410 samples)
+Pre-allocated 3 buffers for 22050_100ms (2205 samples)
+Pre-allocated 3 buffers for 16000_100ms (1600 samples)
+Pre-allocated 3 buffers for 44100_250ms (11025 samples)
+Pre-allocated FFT buffers for size 1024
+Pre-allocated FFT buffers for size 2048
+Pre-allocated FFT buffers for size 4096
+Pre-allocated FFT buffers for size 8192
+Memory pools pre-allocated successfully
+Warming CPU caches...
+CPU caches warmed successfully
+Initializing thread pools...
+System has 12 CPU cores
+Initializing 16 threads and 11 processes
+Warming thread pools...
+Thread pools warmed successfully
+Thread pools initialized and warmed successfully
+Pre-loading PYIN pitch detection engine...
+PYIN engine pre-loaded successfully in 3.95 seconds
+Generated 44 pitch estimates from dummy audio
+Running aggressive PYIN engine warming with multiple audio samples...
+Warming sample 1: 0.620s
+Warming sample 2: 0.640s
+Warming sample 3: 0.628s
+PYIN engine final verification: 0.586s
+PYIN engine still slow after warming: 0.586s
+Pre-warming audio resampling operations...
+Warming up 44.1kHz \u2192 22.05kHz resampling...
+  44.1kHz\u219222.05kHz warm 1: 0.002s (22050 samples)
+  44.1kHz\u219222.05kHz warm 2: 0.001s (22050 samples)
+  44.1kHz\u219222.05kHz warm 3: 0.001s (22050 samples)
+  44.1kHz\u219222.05kHz warm 4: 0.001s (22050 samples)
+  44.1kHz\u219222.05kHz warm 5: 0.001s (22050 samples)
+Warming up 22.05kHz \u2192 16kHz resampling...
+  22.05kHz\u219216kHz warm 1: 0.001s (16000 samples)
+  22.05kHz\u219216kHz warm 2: 0.001s (16000 samples)
+  22.05kHz\u219216kHz warm 3: 0.002s (16000 samples)
+  22.05kHz\u219216kHz warm 4: 0.001s (16000 samples)
+  22.05kHz\u219216kHz warm 5: 0.001s (16000 samples)
+Warming up 44.1kHz \u2192 16kHz resampling...
+  44.1kHz\u219216kHz warm 1: 0.002s (16000 samples)
+  44.1kHz\u219216kHz warm 2: 0.002s (16000 samples)
+  44.1kHz\u219216kHz warm 3: 0.001s (16000 samples)
+Final verification of resampling performance...
+Final 44.1kHz\u219222.05kHz resampling: 0.001s
+\u2713 Audio resampling is now cached and ready for fast processing
+Resource pre-warming completed successfully
+STARTUP - Resource pre-warming completed successfully
+STARTUP - Resource monitoring started
+STARTUP - === Checking for orphaned processes ===
+PROCESS_MONITOR - Checking for orphaned processes...
+PROCESS_MONITOR - Process cleanup check completed
+STARTUP - Registered routes [{'type': 'Route', 'path': '/openapi.json', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/docs', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/docs/oauth2-redirect', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/redoc', 'methods': ['HEAD', 'GET']}, {'type': 'APIRoute', 'path': '/health', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/performance', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/resources', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/routes', 'methods': ['GET']}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/echo', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream_raw', 'methods': []}]
+STARTUP - === Starting to create background scanner tasks ===
+STARTUP - Creating task for PROCESS_MONITOR_HEARTBEAT
+PROCESS_MONITOR - Registered task: heartbeat_monitor
+STARTUP - Creating task for SERVER_ENGINE_LISTEN_3A_FOR_START
+PROCESS_MONITOR - Registered task: scanner_3a
+STARTUP - Creating task for SERVER_ENGINE_LISTEN_3B_FOR_FRAMES
+PROCESS_MONITOR - Registered task: scanner_3b
+STARTUP - Creating task for SERVER_ENGINE_LISTEN_3C_FOR_STOP
+PROCESS_MONITOR - Registered task: scanner_3c
+STARTUP - Creating task for SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS
+PROCESS_MONITOR - Registered task: scanner_6
+STARTUP - Creating task for SERVER_ENGINE_LISTEN_7_FOR_FINISHED_RECORDINGS
+PROCESS_MONITOR - Registered task: scanner_7
+STARTUP - === All background scanner tasks created and registered successfully ===
+PROCESS_MONITOR - === Heartbeat monitor starting ===
+SCANNER - === 3A_FOR_START scanner starting ===
+SCANNER - === 3C_FOR_STOP scanner starting ===
+SCANNER - === 7_FOR_FINISHED_RECORDINGS scanner starting ===
+INFO:     Application startup complete.
+INFO:     192.168.1.4:49537 - "GET /health HTTP/1.1" 200 OK
+WS/ECHO - incoming {'peer': {'host': '192.168.1.4', 'port': 55853}}
+INFO:     192.168.1.4:55853 - "WebSocket /ws/echo" [accepted]
+INFO:     connection open
+WS/ECHO - client disconnected {'peer': {'host': '192.168.1.4', 'port': 55853}}
+INFO:     connection closed
+WS/STREAM - incoming {'peer': {'host': '192.168.1.4', 'port': 55854}}
+INFO:     192.168.1.4:55854 - "WebSocket /ws/stream" [accepted]
+INFO:     connection open
+SCANNER - 3A_FOR_START: found 1 START messages to process
+SCANNER - 3A_FOR_START: processing START message 1
+SCANNER - PROCESS_WEBSOCKET_START_MESSAGE: 1
+STARTUP - Set COMPOSE_PLAY_OR_PRACTICE = Compose
+STARTUP - Set AUDIO_STREAM_FILE_NAME = 202508290514312002.wav
+STARTUP - Set COMPOSE_YN_RUN_FFT = N
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 1
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 1, 'size1': array([ 0.0031822 ,  0.7620992 ,  0.56502163, ..., -0.00869002,
+       -0.01005006, -0.01500588], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 1, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 1, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 2
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 2, 'size1': array([-0.01315107, -0.0231222 , -0.02487458, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 2, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 3
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 3, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.02289072,
+       -0.01727875, -0.01234854], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 3, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 2, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 3, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 4
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 4, 'size1': array([-0.00422045, -0.00090483,  0.00490403, ...,  0.03654326,
+        0.02771157,  0.01132526], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 4, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 5
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 5, 'size1': array([-0.00629315, -0.01904791, -0.02345879, ..., -0.00539929,
+       -0.00579028, -0.00487562], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 5, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 4, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 5, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 6
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 6, 'size1': array([-8.5605198e-04, -2.8004430e-04,  4.4358196e-05, ...,
+       -6.6292115e-02, -7.3337108e-02, -8.9472055e-02],
+      shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 6, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 6, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 7
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 7, 'size1': array([-0.06432112, -0.08669105, -0.07045461, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 7, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 8
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 8, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.08051863,
+       -0.07770461, -0.08480845], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 8, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 7, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 8, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 9
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 9, 'size1': array([-0.05855415, -0.07996559, -0.0662005 , ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 9, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 10
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 10, 'size1': array([ 0.        ,  0.        ,  0.        , ...,  0.05254896,
+        0.02579082, -0.00015798], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 10, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 9, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 10, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 11
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 11, 'size1': array([-0.00835009, -0.00544195,  0.01473922, ...,  0.00586171,
+        0.0090253 ,  0.01471077], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 11, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 12
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 12, 'size1': array([0.01388823, 0.02291953, 0.02287916, ..., 0.00190915, 0.00283319,
+       0.00856838], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 12, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 11, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 12, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 13
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 13, 'size1': array([ 1.0110525e-02,  1.7113969e-02,  1.7923212e-02, ...,
+       -4.8665941e-05, -2.2433496e-03, -3.2497046e-03],
+      shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 13, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 13, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 14
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 14, 'size1': array([-0.00375735, -0.00545975, -0.00622743, ...,  0.00264585,
+       -0.00089755,  0.00049864], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 14, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 15
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 15, 'size1': array([ 0.02415393, -0.03655252,  0.05931216, ...,  0.05045023,
+        0.03175334,  0.01295904], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 15, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 14, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 15, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 16
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 16, 'size1': array([0.00485952, 0.01125547, 0.01916318, ..., 0.        , 0.        ,
+       0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 16, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 17
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 17, 'size1': array([0.        , 0.        , 0.        , ..., 0.07830648, 0.08005548,
+       0.09355408], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 17, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 16, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 17, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 18
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 18, 'size1': array([ 0.06619906,  0.0924634 ,  0.07614153, ...,  0.00113449,
+       -0.01280879, -0.03711442], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 18, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 19
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 19, 'size1': array([-0.03810965, -0.06389542, -0.06651876, ...,  0.0063269 ,
+        0.00410243,  0.0091743 ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 19, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 18, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 19, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 20
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 20, 'size1': array([ 0.01083946,  0.0194341 ,  0.02006067, ..., -0.02581812,
+       -0.02016051, -0.01608571], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 20, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 20, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 21
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 21, 'size1': array([-0.0067576 , -0.00449753,  0.00049059, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 21, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 22
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 22, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.01130322,
+       -0.01395423, -0.01243507], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 22, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 21, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 22, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 23
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 23, 'size1': array([-0.00814957, -0.00866371, -0.00228797, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 23, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 24
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 24, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.01382483,
+       -0.01193256, -0.00932055], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 24, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 23, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 24, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 25
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 25, 'size1': array([-0.00224865,  0.00228175,  0.01072979, ..., -0.00802844,
+       -0.0098766 , -0.01046489], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 25, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 26
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 26, 'size1': array([-7.6762517e-03, -1.1663188e-02, -1.2751636e-02, ...,
+        9.9233119e-05,  6.7043479e-04, -2.8012721e-03],
+      shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 26, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 25, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 26, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 27
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 27, 'size1': array([-0.00480896, -0.01171742, -0.01815433, ...,  0.03522647,
+        0.02959746,  0.03251391], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 27, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 27, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 28
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 28, 'size1': array([0.02404672, 0.03704624, 0.03530945, ..., 0.        , 0.        ,
+       0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 28, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 29
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 29, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.02541967,
+       -0.02527704, -0.03034594], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 29, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 28, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 29, 'row_count': 11}
+Note: Illegal Audio-MPEG-Header 0x00000000 at offset 8816.
+Note: Trying to resync...
+Note: Hit end of (available) data during resync.
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 30
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 30, 'size1': array([-0.02222533, -0.0320313 , -0.03022088, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 30, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 31
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 31, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.00264568,
+       -0.00648374, -0.00545777], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 31, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 30, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 31, 'row_count': 11}
+SCANNER - 3C_FOR_STOP: found 1 STOP messages to process
+SCANNER - 3C_FOR_STOP: processing STOP message 61
+SCANNER - PROCESS_WEBSOCKET_STOP_MESSAGE: 61
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 32
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 32, 'size1': array([ 0.00079303,  0.00722595,  0.0120428 , ...,  0.00814054,
+       -0.00095726, -0.02196644], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 32, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 33
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 33, 'size1': array([-0.03039167, -0.05567303, -0.06256256, ..., -0.00925434,
+       -0.0112437 , -0.01290068], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 33, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 32, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 33, 'row_count': 11}
+INFO:     connection closed
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 34
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 34, 'size1': array([-0.01050454, -0.0135407 , -0.0116701 , ...,  0.04625666,
+        0.03098139,  0.02112124], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 34, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 34, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 35
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 35, 'size1': array([0.01230412, 0.01916892, 0.02528506, ..., 0.        , 0.        ,
+       0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 35, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 36
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 36, 'size1': array([0.        , 0.        , 0.        , ..., 0.01280006, 0.01241922,
+       0.01316435], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 36, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 35, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 36, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 37
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 37, 'size1': array([0.00837631, 0.01098259, 0.0091144 , ..., 0.        , 0.        ,
+       0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 37, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 38
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 38, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.01680429,
+       -0.01580209, -0.00270788], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 38, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 37, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 38, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 39
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 39, 'size1': array([0.00876821, 0.01972515, 0.01513335, ..., 0.01665545, 0.01585404,
+       0.01515729], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 39, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 39, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 40
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 40, 'size1': array([0.00930127, 0.0128473 , 0.01345163, ..., 0.        , 0.        ,
+       0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 40, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 41
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 41, 'size1': array([0.        , 0.        , 0.        , ..., 0.02227107, 0.01650285,
+       0.01725025], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 41, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 40, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 41, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 42
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 42, 'size1': array([0.01294449, 0.02174709, 0.02158573, ..., 0.02322803, 0.02235566,
+       0.02495294], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 42, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 43
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 43, 'size1': array([0.01775339, 0.02495276, 0.02153117, ..., 0.01325362, 0.01502492,
+       0.02001612], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 43, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 42, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 43, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 44
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 44, 'size1': array([0.01430389, 0.01998154, 0.0170865 , ..., 0.0078324 , 0.00459314,
+       0.00099324], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 44, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 44, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 45
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 45, 'size1': array([-0.00244807, -0.00827422, -0.01578138, ...,  0.05375969,
+       -0.00238502,  0.17663531], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 45, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 46
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 46, 'size1': array([-0.09164753,  0.32174084,  0.47450784, ..., -0.02545549,
+       -0.03057288, -0.03455046], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 46, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 45, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 46, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 47
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 47, 'size1': array([-0.02070499, -0.02096222, -0.01050918, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 47, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 48
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 48, 'size1': array([0.        , 0.        , 0.        , ..., 0.02308322, 0.03136969,
+       0.04487305], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 48, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 47, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 48, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 49
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 49, 'size1': array([0.03516616, 0.05276544, 0.04874885, ..., 0.02618847, 0.0273336 ,
+       0.03023104], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 49, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 50
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 50, 'size1': array([0.02223206, 0.0311711 , 0.02789642, ..., 0.00307758, 0.00255387,
+       0.00300773], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 50, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 49, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 50, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 51
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 51, 'size1': array([ 0.00287842,  0.00336774,  0.00154438, ..., -0.0069209 ,
+       -0.00649698, -0.00747579], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 51, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 51, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 52
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 52, 'size1': array([-0.00522443, -0.00682326, -0.0060357 , ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 52, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 53
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 53, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.00323191,
+       -0.00366063, -0.00551434], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 53, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 52, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 53, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 54
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 54, 'size1': array([-0.00458369, -0.00764491, -0.0074304 , ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 54, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 55
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 55, 'size1': array([0.        , 0.        , 0.        , ..., 0.03499138, 0.03413189,
+       0.03274851], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 55, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 54, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 55, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 56
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 56, 'size1': array([0.0187469 , 0.02222482, 0.01688152, ..., 0.00032475, 0.00060633,
+       0.00348714], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 56, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 57
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 57, 'size1': array([ 0.0034016 ,  0.00683912,  0.00924788, ..., -0.00902556,
+       -0.00528808, -0.01044183], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 57, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 56, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 57, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 58
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 58, 'size1': array([-0.00200631, -0.00325966, -0.00741304, ..., -0.0548235 ,
+       -0.03893121, -0.03113453], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 58, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 58, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 59
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 59, 'size1': array([-0.02103165, -0.03937759, -0.05665588, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 59, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 60
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 60, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.05550964,
+       -0.04961603, -0.04740158], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 60, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 59, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 60, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 61
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 61, 'size1': array([-0.02855576, -0.03485367, -0.02887083, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 61, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 62
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 62, 'size1': array([0.        , 0.        , 0.        , ..., 0.01257085, 0.01846531,
+       0.01698425], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 62, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 61, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 62, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 63
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 63, 'size1': array([ 0.00603005,  0.00038713, -0.00767653, ...,  0.04128797,
+        0.03601375,  0.03210305], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 63, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 64
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 64, 'size1': array([ 0.01835888,  0.02393096,  0.0195136 , ..., -0.00772726,
+       -0.00715264, -0.00858113], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 64, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 63, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 64, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 65
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 65, 'size1': array([-0.00786549, -0.01265576, -0.01194718, ...,  0.00102452,
+        0.00021893, -0.00125756], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 65, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 65, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 66
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 66, 'size1': array([-0.00390931, -0.01036316, -0.0135249 , ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 66, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 67
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 67, 'size1': array([0.        , 0.        , 0.        , ..., 0.00024544, 0.00128203,
+       0.00182411], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 67, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 66, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 67, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 68
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 68, 'size1': array([0.00196714, 0.0030393 , 0.00230663, ..., 0.        , 0.        ,
+       0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 68, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 69
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 69, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.00531085,
+       -0.01140551, -0.0135304 ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 69, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 68, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 69, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 70
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 70, 'size1': array([-0.00533922,  0.00195037,  0.01545315, ...,  0.00161923,
+       -0.00065598, -0.00426489], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 70, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 71
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 71, 'size1': array([-0.00617972, -0.01182109, -0.01526288, ..., -0.0137481 ,
+       -0.02324105, -0.03092553], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 71, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 70, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 71, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 72
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 72, 'size1': array([-0.01974593, -0.02201347, -0.01041428, ..., -0.00086758,
+       -0.00091464, -0.00376386], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 72, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 73
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 73, 'size1': array([-0.00623308, -0.00961452, -0.00797116, ...,  0.00460926,
+        0.00476889,  0.00452014], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 73, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 72, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 73, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 74
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 74, 'size1': array([ 0.0032246 ,  0.00591831,  0.01100043, ..., -0.08817282,
+       -0.08289296, -0.08970539], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 74, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 74, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 75
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 75, 'size1': array([-0.06090017, -0.08350306, -0.07267948, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 75, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 76
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 76, 'size1': array([0.        , 0.        , 0.        , ..., 0.01085367, 0.01022901,
+       0.01216492], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 76, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 75, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 76, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 77
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 77, 'size1': array([0.00758994, 0.0097185 , 0.00914316, ..., 0.        , 0.        ,
+       0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 77, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 78
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 78, 'size1': array([0.        , 0.        , 0.        , ..., 0.00133767, 0.00403023,
+       0.00661223], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 78, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 77, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 78, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 79
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 79, 'size1': array([ 0.00431225,  0.00685987,  0.00430866, ..., -0.00971497,
+       -0.0093095 , -0.01185089], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 79, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 79, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 80
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 80, 'size1': array([-9.8847672e-03, -1.8051945e-02, -1.9869890e-02, ...,
+       -2.3706541e-19,  2.0503694e-19,  9.7706786e-04],
+      shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 80, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 81
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 81, 'size1': array([-0.0142453 ,  0.01959004,  0.01263668, ..., -0.03886772,
+       -0.03042868, -0.02415161], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 81, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 80, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 81, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 82
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 82, 'size1': array([-0.01207235, -0.01620301, -0.01388581, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 82, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 83
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 83, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.05540224,
+       -0.05310889, -0.05760636], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 83, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 82, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 83, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 84
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 84, 'size1': array([-0.03819494, -0.05007023, -0.03941395, ...,  0.00106581,
+        0.00056796, -0.0028348 ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 84, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 85
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 85, 'size1': array([-0.00280801, -0.00479166, -0.0038312 , ..., -0.00429961,
+       -0.00801477,  0.00142293], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 85, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 84, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 85, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 86
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 86, 'size1': array([ 0.00339523,  0.00248791, -0.00024879, ..., -0.01124069,
+       -0.00956668, -0.00713164], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 86, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 87
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 87, 'size1': array([-0.00343586, -0.00612242, -0.00651579, ..., -0.03297526,
+       -0.02277915, -0.02098786], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 87, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 86, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 87, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 88
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 88, 'size1': array([-0.01573408, -0.02677394, -0.02745343, ..., -0.0363403 ,
+       -0.03650251, -0.04054543], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 88, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 88, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 89
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 89, 'size1': array([-0.02881873, -0.04295323, -0.04178305, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 89, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 90
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 90, 'size1': array([0.        , 0.        , 0.        , ..., 0.00775319, 0.00973869,
+       0.01361235], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 90, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 89, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 90, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 91
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 91, 'size1': array([ 0.00927401,  0.00873154,  0.00574812, ..., -0.08772618,
+       -0.08773606, -0.10571726], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 91, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 91, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 92
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 92, 'size1': array([-0.07862553, -0.1146561 , -0.10409413, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 92, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 93
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 93, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.03125398,
+       -0.03502634, -0.03442227], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 93, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 92, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 93, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 94
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 94, 'size1': array([-0.01830282, -0.01748481, -0.00470659, ..., -0.04024259,
+       -0.03238095, -0.02740986], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 94, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 94, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 95
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 95, 'size1': array([-0.01286275, -0.01252517, -0.00380051, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 95, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 96
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 96, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.00473892,
+       -0.02003544, -0.05174137], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 96, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 95, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 96, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 97
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 97, 'size1': array([-0.0543989 , -0.09307663, -0.09573548, ...,  0.        ,
+        0.        ,  0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 97, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 98
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 98, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.04457231,
+       -0.03535553, -0.03090151], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 98, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 97, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 98, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 99
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 99, 'size1': array([-0.01903083, -0.02669926, -0.0261956 , ...,  0.02149063,
+        0.02183575,  0.02441989], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 99, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 99, 'row_count': 11}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 100
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 100, 'size1': array([0.01597992, 0.01984117, 0.01440728, ..., 0.        , 0.        ,
+       0.        ], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 100, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290514312002, 101
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 101, 'size1': array([ 0.        ,  0.        ,  0.        , ...,  0.0071923 ,
+        0.00566702, -0.00085875], shape=(2205,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290514312002, 'frame': 101, 'size2': 2205}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 100, 'row_count': 11}
+PYIN - TIMING_SUMMARY {'count': 11, 'first_ms': 0, 'last_ms': 100, 'mods_of_10': [0], 'unique_step_sizes': [np.int64(10)]}
+PYIN - DB_INSERT_OK {'rid': 202508290514312002, 'frame': 101, 'row_count': 11}
+WARNING:  WatchFiles detected changes in 'SERVER_ENGINE_APP_VARIABLES.py'. Reloading...
+ 

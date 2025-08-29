@@ -264,10 +264,12 @@ async def _startup():
     # Pre-warm system resources to avoid initialization delays
     CONSOLE_LOG("STARTUP", "=== Pre-warming system resources ===")
     try:
-        from SERVER_ENGINE_PREWARM_RESOURCES import prewarm_resources
+        from SERVER_ENGINE_PREWARM_RESOURCES import prewarm_resources, prewarm_audio_resampling
         from SERVER_ENGINE_RESOURCE_MONITOR import start_resource_monitoring
         
         prewarm_resources()
+        
+
         CONSOLE_LOG("STARTUP", "Resource pre-warming completed successfully")
         
         # Start resource monitoring
