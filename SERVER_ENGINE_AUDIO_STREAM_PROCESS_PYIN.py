@@ -13,7 +13,8 @@ except Exception:  # pragma: no cover
 from SERVER_ENGINE_APP_VARIABLES import (
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY,  # per-frame metadata (assumed to exist)
     AUDIO_FRAME_MS,
-    PYIN_HOP_IN_MS
+    PYIN_HOP_IN_MS,
+    PYIN_OVERLAP_FOR_ACCURACY_OR_SPEED
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
@@ -79,7 +80,13 @@ def _pyin_relative_rows_optimized(audio_22050: np.ndarray, sample_rate: int = 22
     # 20ms hop = faster processing, slightly less accurate
     hop_length = max(1, int(round(sample_rate * (PYIN_HOP_IN_MS / 1000))))  # 20ms hop for speed
     # frame_length = max(hop_length * 2, 1024)  # Smaller frame for speed
-    frame_length = max(hop_length * 4, 2048) # 75% overlap better Hz accuracy
+    if PYIN_OVERLAP_FOR_ACCURACY_OR_SPEED == "speed":
+        frame_length = max(hop_length * 2, 1024)  # Smaller frame for speed
+    elif PYIN_OVERLAP_FOR_ACCURACY_OR_SPEED == "accuracy":
+        frame_length = max(hop_length * 4, 2048) # 75% overlap better Hz accuracy
+    else:
+        CONSOLE_LOG(PREFIX, "INVALID_PYIN_OVERLAP_FOR_ACCURACY_OR_SPEED", {"overlap": PYIN_OVERLAP_FOR_ACCURACY_OR_SPEED})
+        return []
 
 
     # Run PYIN analysis with optimized parameters

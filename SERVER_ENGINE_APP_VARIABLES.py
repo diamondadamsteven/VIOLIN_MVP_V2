@@ -50,6 +50,7 @@ AUDIO_BYTES_PER_SAMPLE = 2  # PCM16 = 2 bytes per sample
 AUDIO_SAMPLES_PER_FRAME = (AUDIO_FRAME_MS * AUDIO_SAMPLE_RATE) // 1000  # 4410 samples per 100ms frame
 AUDIO_BYTES_PER_FRAME = AUDIO_SAMPLES_PER_FRAME * AUDIO_BYTES_PER_SAMPLE  # 8820 bytes per 100ms frame
 PYIN_HOP_IN_MS = 20
+PYIN_OVERLAP_FOR_ACCURACY_OR_SPEED = "speed"  # Options: "speed", "accuracy"
 CREPE_HOP_IN_MS = 20
 CREPE_MODEL_SIZE = "tiny"  # Options: "tiny", "small", "medium", "full" (tiny is fastest on CPU)
 CREPE_BATCH_SIZE_CPU = 128   # Smaller batches for CPU (was 1024)

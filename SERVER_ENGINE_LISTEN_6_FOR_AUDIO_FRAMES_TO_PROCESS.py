@@ -123,10 +123,10 @@ async def PROCESS_THE_AUDIO_FRAME(RECORDING_ID: int, AUDIO_FRAME_NO: int) -> Non
             )
         ))
 
-    # Wait for all tasks to complete
-    if AUDIO_PROCESSING_TASK_ARRAY:
-        await asyncio.gather(*AUDIO_PROCESSING_TASK_ARRAY, return_exceptions=True)
+    # # Wait for all tasks to complete
+    # if AUDIO_PROCESSING_TASK_ARRAY:
+    #     await asyncio.gather(*AUDIO_PROCESSING_TASK_ARRAY, return_exceptions=True)
 
-    # 4) Mark processing completed
-    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD["DT_PROCESSING_END"] = datetime.now()
+    # # 4) Mark processing completed
+    # ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_RECORD["DT_PROCESSING_END"] = datetime.now()
     ENGINE_DB_LOG_TABLE_INS("ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME", ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO])
