@@ -1,11 +1,11 @@
 INFO:     Will watch for changes in these directories: ['C:\\Users\\diamo\\VIOLIN_MVP_V2']
 INFO:     Uvicorn running on http://0.0.0.0:7070 (Press CTRL+C to quit)
-INFO:     Started reloader process [6980] using WatchFiles
-INFO:     Started server process [38024]
+INFO:     Started reloader process [43684] using WatchFiles
+INFO:     Started server process [38976]
 INFO:     Waiting for application startup.
 ORCHESTRATOR MODULE IMPORTING - ABOUT TO RUN CLEANUP
 SMART_CLEANUP FUNCTION CALLED
-Smart cleanup starting - current PID: 38024
+Smart cleanup starting - current PID: 38976
 Waiting 3 seconds for other servers to start...
 No conflicting processes found on port 7070
 CLEANUP COMPLETED
@@ -37,26 +37,26 @@ Warming thread pools...
 Thread pools warmed successfully
 Thread pools initialized and warmed successfully
 Pre-loading PYIN pitch detection engine...
-PYIN engine pre-loaded successfully in 3.78 seconds
+PYIN engine pre-loaded successfully in 4.65 seconds
 Generated 44 pitch estimates from dummy audio
 Running aggressive PYIN engine warming with multiple audio samples...
-Warming sample 1: 0.587s
-Warming sample 2: 0.623s
-Warming sample 3: 0.615s
-PYIN engine final verification: 0.631s
-PYIN engine still slow after warming: 0.631s
+Warming sample 1: 0.923s
+Warming sample 2: 0.931s
+Warming sample 3: 0.955s
+PYIN engine final verification: 0.978s
+PYIN engine still slow after warming: 0.978s
 Pre-loading CREPE pitch detection engine...
 Using device: cpu
 Using tiny model with batch size 128 for cpu
 Running first CREPE inference to load model...
-CREPE engine pre-loaded successfully in 0.43 seconds
+CREPE engine pre-loaded successfully in 0.59 seconds
 Generated 1 pitch estimates from dummy audio
 Running aggressive CREPE engine warming with multiple audio samples...
-  Warming sample 1: 0.294s
-  Warming sample 2: 0.322s
-  Warming sample 3: 0.234s
-CREPE engine final verification: 0.264s
-\u2713 CREPE engine warmed up (acceptable: 0.264s)
+  Warming sample 1: 0.331s
+  Warming sample 2: 0.345s
+  Warming sample 3: 0.322s
+CREPE engine final verification: 0.335s
+\u2713 CREPE engine warmed up (acceptable: 0.335s)
 Pre-warming audio resampling operations...
 Warming up 44.1kHz \u2192 22.05kHz resampling...
   44.1kHz\u219222.05kHz warm 1: 0.001s (22050 samples)
@@ -71,7 +71,7 @@ Warming up 22.05kHz \u2192 16kHz resampling...
   22.05kHz\u219216kHz warm 4: 0.001s (16000 samples)
   22.05kHz\u219216kHz warm 5: 0.001s (16000 samples)
 Warming up 44.1kHz \u2192 16kHz resampling...
-  44.1kHz\u219216kHz warm 1: 0.002s (16000 samples)
+  44.1kHz\u219216kHz warm 1: 0.001s (16000 samples)
   44.1kHz\u219216kHz warm 2: 0.001s (16000 samples)
   44.1kHz\u219216kHz warm 3: 0.001s (16000 samples)
 Final verification of resampling performance...
@@ -103,200 +103,153 @@ SCANNER - === 3A_FOR_START scanner starting ===
 SCANNER - === 3C_FOR_STOP scanner starting ===
 SCANNER - === 7_FOR_FINISHED_RECORDINGS scanner starting ===
 INFO:     Application startup complete.
-INFO:     192.168.1.4:63569 - "GET /health HTTP/1.1" 200 OK
-WS/ECHO - incoming {'peer': {'host': '192.168.1.4', 'port': 51661}}
-INFO:     192.168.1.4:51661 - "WebSocket /ws/echo" [accepted]
+INFO:     192.168.1.4:53751 - "GET /health HTTP/1.1" 200 OK
+WS/ECHO - incoming {'peer': {'host': '192.168.1.4', 'port': 55447}}
+INFO:     192.168.1.4:55447 - "WebSocket /ws/echo" [accepted]
 INFO:     connection open
-WS/ECHO - client disconnected {'peer': {'host': '192.168.1.4', 'port': 51661}}
+WS/ECHO - client disconnected {'peer': {'host': '192.168.1.4', 'port': 55447}}
 INFO:     connection closed
-WS/STREAM - incoming {'peer': {'host': '192.168.1.4', 'port': 51662}}
-INFO:     192.168.1.4:51662 - "WebSocket /ws/stream" [accepted]
+WS/STREAM - incoming {'peer': {'host': '192.168.1.4', 'port': 55448}}
+INFO:     192.168.1.4:55448 - "WebSocket /ws/stream" [accepted]
 INFO:     connection open
 SCANNER - 3A_FOR_START: found 1 START messages to process
 SCANNER - 3A_FOR_START: processing START message 1
 SCANNER - PROCESS_WEBSOCKET_START_MESSAGE: 1
-STARTUP - Set COMPOSE_PLAY_OR_PRACTICE = Compose
-STARTUP - Set AUDIO_STREAM_FILE_NAME = 202508292255052002.wav
-STARTUP - Set COMPOSE_YN_RUN_FFT = Y
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292255052002, 1
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 1, 'size1': array([0.0031822 , 0.7620992 , 0.56502163, ..., 0.00298369, 0.00309001,
-       0.00273469], shape=(11025,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 1, 'size2': 11025}
-VOLUME_1_MS - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 1, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
-FFT_OPT - DEBUG_FFT {'rid': 202508292255052002, 'frame': 1, 'audio_shape': (8000,), 'audio_size': 8000, 'sample_rate': 16000, 'start_ms': 0}
-FFT_DEBUG: Processing audio - size=8000, window=1600, hop=1600
-FFT_OPT - DEBUG_ROWS {'rid': 202508292255052002, 'frame': 1, 'rows_generated': 1915, 'first_row': (0, 100, 18, 180.0, 190.0, 10.0, 0.14140571653842926)}
-FFT_OPT - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 1, 'rows': 1915, 'sr': 16000, 'samples': 8000}
-PYIN_MAIN: Processing frame 1 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 26 rows
-PYIN - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 1, 'row_count': 26}
-CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 25}
-CREPE - BEGIN {'rid': 202508292255052002, 'frame': 1, 'device': 'cpu', 'frames_approx': 25, 'audio_sha1': 'f736b267e40c', 'decoder': 'viterbi'}
-CREPE - DEBUG_CREPE {'f0_length': 26, 'per_length': 26, 'actual_frames': 26}
-CREPE - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 1, 'row_count': 26, 'audio_sha1': 'f736b267e40c'}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292255052002, 2
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 2, 'size1': array([0.00203215, 0.00323944, 0.00182225, ..., 0.01055769, 0.00964775,
-       0.01058168], shape=(11025,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 2, 'size2': 11025}
-VOLUME_1_MS - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 2, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
-FFT_OPT - DEBUG_FFT {'rid': 202508292255052002, 'frame': 2, 'audio_shape': (8000,), 'audio_size': 8000, 'sample_rate': 16000, 'start_ms': 500}
-FFT_DEBUG: Processing audio - size=8000, window=1600, hop=1600
-FFT_OPT - DEBUG_ROWS {'rid': 202508292255052002, 'frame': 2, 'rows_generated': 1915, 'first_row': (500, 600, 18, 180.0, 190.0, 10.0, 0.11136355251073837)}
-FFT_OPT - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 2, 'rows': 1915, 'sr': 16000, 'samples': 8000}
-PYIN_MAIN: Processing frame 2 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 26 rows
-PYIN - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 2, 'row_count': 26}
-CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 25}
-CREPE - BEGIN {'rid': 202508292255052002, 'frame': 2, 'device': 'cpu', 'frames_approx': 25, 'audio_sha1': '41ec0bae2c0b', 'decoder': 'viterbi'}
-CREPE - DEBUG_CREPE {'f0_length': 26, 'per_length': 26, 'actual_frames': 26}
-CREPE - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 2, 'row_count': 26, 'audio_sha1': '41ec0bae2c0b'}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292255052002, 3
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 3, 'size1': array([ 0.0075646 ,  0.00907948,  0.00696343, ..., -0.01129274,
-       -0.01010123, -0.01146202], shape=(11025,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 3, 'size2': 11025}
-VOLUME_1_MS - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 3, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
-FFT_OPT - DEBUG_FFT {'rid': 202508292255052002, 'frame': 3, 'audio_shape': (8000,), 'audio_size': 8000, 'sample_rate': 16000, 'start_ms': 1000}
-FFT_DEBUG: Processing audio - size=8000, window=1600, hop=1600
-FFT_OPT - DEBUG_ROWS {'rid': 202508292255052002, 'frame': 3, 'rows_generated': 1915, 'first_row': (1000, 1100, 18, 180.0, 190.0, 10.0, 0.4205978214740753)}
-FFT_OPT - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 3, 'rows': 1915, 'sr': 16000, 'samples': 8000}
-PYIN_MAIN: Processing frame 3 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 26 rows
-PYIN - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 3, 'row_count': 26}
-CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 25}
-CREPE - BEGIN {'rid': 202508292255052002, 'frame': 3, 'device': 'cpu', 'frames_approx': 25, 'audio_sha1': '4f4d47c9ffb7', 'decoder': 'viterbi'}
-CREPE - DEBUG_CREPE {'f0_length': 26, 'per_length': 26, 'actual_frames': 26}
-CREPE - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 3, 'row_count': 26, 'audio_sha1': '4f4d47c9ffb7'}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292255052002, 4
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 4, 'size1': array([-0.00793039, -0.01218163, -0.01016299, ...,  0.01213029,
-        0.01155052,  0.01298153], shape=(11025,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 4, 'size2': 11025}
-VOLUME_1_MS - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 4, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
-FFT_OPT - DEBUG_FFT {'rid': 202508292255052002, 'frame': 4, 'audio_shape': (8000,), 'audio_size': 8000, 'sample_rate': 16000, 'start_ms': 1500}
-FFT_DEBUG: Processing audio - size=8000, window=1600, hop=1600
-FFT_OPT - DEBUG_ROWS {'rid': 202508292255052002, 'frame': 4, 'rows_generated': 1915, 'first_row': (1500, 1600, 18, 180.0, 190.0, 10.0, 0.36506134271621704)}
-FFT_OPT - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 4, 'rows': 1915, 'sr': 16000, 'samples': 8000}
-PYIN_MAIN: Processing frame 4 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 26 rows
-PYIN - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 4, 'row_count': 26}
-CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 25}
-CREPE - BEGIN {'rid': 202508292255052002, 'frame': 4, 'device': 'cpu', 'frames_approx': 25, 'audio_sha1': 'ce47966a410b', 'decoder': 'viterbi'}
-CREPE - DEBUG_CREPE {'f0_length': 26, 'per_length': 26, 'actual_frames': 26}
-CREPE - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 4, 'row_count': 26, 'audio_sha1': 'ce47966a410b'}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292255052002, 5
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 5, 'size1': array([0.00940487, 0.01260084, 0.01080603, ..., 0.00850803, 0.00831086,
-       0.00968334], shape=(11025,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 5, 'size2': 11025}
-VOLUME_1_MS - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 5, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
-FFT_OPT - DEBUG_FFT {'rid': 202508292255052002, 'frame': 5, 'audio_shape': (8000,), 'audio_size': 8000, 'sample_rate': 16000, 'start_ms': 2000}
-FFT_DEBUG: Processing audio - size=8000, window=1600, hop=1600
-FFT_OPT - DEBUG_ROWS {'rid': 202508292255052002, 'frame': 5, 'rows_generated': 1915, 'first_row': (2000, 2100, 18, 180.0, 190.0, 10.0, 0.3487803041934967)}
-FFT_OPT - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 5, 'rows': 1915, 'sr': 16000, 'samples': 8000}
-PYIN_MAIN: Processing frame 5 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 26 rows
-PYIN - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 5, 'row_count': 26}
-CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 25}
-CREPE - BEGIN {'rid': 202508292255052002, 'frame': 5, 'device': 'cpu', 'frames_approx': 25, 'audio_sha1': '633784fe3932', 'decoder': 'viterbi'}
-CREPE - DEBUG_CREPE {'f0_length': 26, 'per_length': 26, 'actual_frames': 26}
-CREPE - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 5, 'row_count': 26, 'audio_sha1': '633784fe3932'}
+STARTUP - Set COMPOSE_PLAY_OR_PRACTICE = Play
+STARTUP - Set AUDIO_STREAM_FILE_NAME = 202508300430032002.wav
+STARTUP - Set COMPOSE_YN_RUN_FFT = N
+3A_FOR_START - COMPOSE_PLAY_OR_PRACTICE: PLAY {'RECORDING_ID': 202508300430032002}
+3A_FOR_START - Calling P_ENGINE_SONG_100_MS_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET for RECORDING_ID: 202508300430032002
+3A_FOR_START - Stored procedure returned 360 rows
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 1
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 1, 'size1': array([0.0031822 , 0.7620992 , 0.56502163, ..., 0.00545029, 0.00437155,
+       0.00448538], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 1, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 1, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 2
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 2, 'size1': array([0.00342393, 0.00488329, 0.00360466, ..., 0.00322271, 0.00270115,
+       0.00390503], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 2, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 2, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 3
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 3, 'size1': array([ 0.00356283,  0.00567463,  0.00412315, ..., -0.00534605,
+       -0.00415738, -0.00478724], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 3, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 3, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 4
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 4, 'size1': array([-0.00355588, -0.00463178, -0.00321467, ...,  0.01270756,
+        0.01218562,  0.01291996], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 4, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 4, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 5
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 5, 'size1': array([0.00868477, 0.01292905, 0.01246329, ..., 0.00593163, 0.00615606,
+       0.00583655], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 5, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 5, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 6
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 6, 'size1': array([ 0.00311498,  0.00500328,  0.00466294, ..., -0.00760858,
+       -0.00719591, -0.00785259], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 6, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 6, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 7
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 7, 'size1': array([-0.00532712, -0.0081099 , -0.00680163, ...,  0.00728887,
+        0.00737643,  0.00800233], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 7, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 7, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 8
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 8, 'size1': array([0.00596721, 0.00824426, 0.00798782, ..., 0.00373519, 0.00424829,
+       0.00588545], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 8, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 8, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 9
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 9, 'size1': array([0.00463595, 0.00762686, 0.0078583 , ..., 0.00049412, 0.00122822,
+       0.00186341], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 9, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 9, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 10
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 10, 'size1': array([0.00075093, 0.00139866, 0.00182123, ..., 0.        , 0.        ,
+       0.        ], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 10, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 10, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 11
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 11, 'size1': array([0., 0., 0., ..., 0., 0., 0.], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 11, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 11, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 12
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 12, 'size1': array([0., 0., 0., ..., 0., 0., 0.], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 12, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 12, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 13
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 13, 'size1': array([0.        , 0.        , 0.        , ..., 0.0015109 , 0.00103148,
+       0.00210634], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 13, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 13, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 14
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 14, 'size1': array([0.00170551, 0.00333423, 0.00330538, ..., 0.00538876, 0.00380063,
+       0.00271885], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 14, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 14, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 15
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 15, 'size1': array([-0.00013808, -0.00256238, -0.00180003, ...,  0.01129154,
+        0.00753598,  0.00197592], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 15, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 15, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 16
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 16, 'size1': array([-0.00128008, -0.00194742, -0.0004816 , ..., -0.00185671,
+       -0.00214048, -0.00278306], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 16, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 16, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 17
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 17, 'size1': array([-0.00180708, -0.00257546, -0.00259719, ...,  0.00403194,
+        0.00352889,  0.00346456], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 17, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 17, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 18
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 18, 'size1': array([0.00235759, 0.00142129, 0.00103386, ..., 0.0029298 , 0.00311567,
+       0.00375919], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 18, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 18, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 19
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 19, 'size1': array([0.00255926, 0.004827  , 0.0051148 , ..., 0.        , 0.        ,
+       0.        ], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 19, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 19, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 20
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 20, 'size1': array([ 0.        ,  0.        ,  0.        , ...,  0.00764732,
+       -0.0043747 ,  0.00224236], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 20, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 20, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 21
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 21, 'size1': array([0.        , 0.        , 0.        , ..., 0.00240772, 0.00222209,
+       0.00265863], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 21, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 21, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 22
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 22, 'size1': array([ 0.00204161,  0.0039085 ,  0.00210256, ..., -0.0078552 ,
+       -0.00838978, -0.01116526], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 22, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 22, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 23
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 23, 'size1': array([-0.00863261, -0.01292412, -0.01203187, ...,  0.00836686,
+        0.00848651,  0.01029187], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 23, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 23, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 24
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 24, 'size1': array([ 0.00802901,  0.01368277,  0.0143713 , ..., -0.00076066,
+       -0.00094764, -0.00131557], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 24, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 24, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 25
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 25, 'size1': array([-0.00185185, -0.00286556, -0.00219676, ..., -0.005734  ,
+       -0.00618603, -0.00781935], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 25, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 25, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
 INFO:     connection closed
 SCANNER - 3C_FOR_STOP: found 1 STOP messages to process
-SCANNER - 3C_FOR_STOP: processing STOP message 35
-SCANNER - PROCESS_WEBSOCKET_STOP_MESSAGE: 35
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292255052002, 6
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 6, 'size1': array([ 0.00617386,  0.00690536,  0.00475711, ..., -0.0123443 ,
-       -0.01149151, -0.0138002 ], shape=(11025,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 6, 'size2': 11025}
-VOLUME_1_MS - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 6, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
-FFT_OPT - DEBUG_FFT {'rid': 202508292255052002, 'frame': 6, 'audio_shape': (8000,), 'audio_size': 8000, 'sample_rate': 16000, 'start_ms': 2500}
-FFT_DEBUG: Processing audio - size=8000, window=1600, hop=1600
-FFT_OPT - DEBUG_ROWS {'rid': 202508292255052002, 'frame': 6, 'rows_generated': 1915, 'first_row': (2500, 2600, 18, 180.0, 190.0, 10.0, 0.40168485045433044)}
-FFT_OPT - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 6, 'rows': 1915, 'sr': 16000, 'samples': 8000}
-PYIN_MAIN: Processing frame 6 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 26 rows
-PYIN - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 6, 'row_count': 26}
-CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 25}
-CREPE - BEGIN {'rid': 202508292255052002, 'frame': 6, 'device': 'cpu', 'frames_approx': 25, 'audio_sha1': '62ca8387cb5a', 'decoder': 'viterbi'}
-CREPE - DEBUG_CREPE {'f0_length': 26, 'per_length': 26, 'actual_frames': 26}
-CREPE - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 6, 'row_count': 26, 'audio_sha1': '62ca8387cb5a'}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292255052002, 7
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 7, 'size1': array([-0.01044441, -0.01299603, -0.00866839, ..., -0.01383549,
-       -0.01077226, -0.01172802], shape=(11025,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 7, 'size2': 11025}
-VOLUME_1_MS - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 7, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
-FFT_OPT - DEBUG_FFT {'rid': 202508292255052002, 'frame': 7, 'audio_shape': (8000,), 'audio_size': 8000, 'sample_rate': 16000, 'start_ms': 3000}
-FFT_DEBUG: Processing audio - size=8000, window=1600, hop=1600
-FFT_OPT - DEBUG_ROWS {'rid': 202508292255052002, 'frame': 7, 'rows_generated': 1915, 'first_row': (3000, 3100, 18, 180.0, 190.0, 10.0, 0.21073949337005615)}
-FFT_OPT - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 7, 'rows': 1915, 'sr': 16000, 'samples': 8000}
-PYIN_MAIN: Processing frame 7 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 26 rows
-PYIN - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 7, 'row_count': 26}
-CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 25}
-CREPE - BEGIN {'rid': 202508292255052002, 'frame': 7, 'device': 'cpu', 'frames_approx': 25, 'audio_sha1': '00589b31e4f0', 'decoder': 'viterbi'}
-CREPE - DEBUG_CREPE {'f0_length': 26, 'per_length': 26, 'actual_frames': 26}
-CREPE - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 7, 'row_count': 26, 'audio_sha1': '00589b31e4f0'}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292255052002, 8
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 8, 'size1': array([-0.00833522, -0.01082583, -0.0091152 , ...,  0.0137758 ,
-        0.01252971,  0.01347049], shape=(11025,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 8, 'size2': 11025}
-VOLUME_1_MS - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 8, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
-FFT_OPT - DEBUG_FFT {'rid': 202508292255052002, 'frame': 8, 'audio_shape': (8000,), 'audio_size': 8000, 'sample_rate': 16000, 'start_ms': 3500}
-FFT_DEBUG: Processing audio - size=8000, window=1600, hop=1600
-FFT_OPT - DEBUG_ROWS {'rid': 202508292255052002, 'frame': 8, 'rows_generated': 1915, 'first_row': (3500, 3600, 18, 180.0, 190.0, 10.0, 0.30531904101371765)}
-FFT_OPT - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 8, 'rows': 1915, 'sr': 16000, 'samples': 8000}
-PYIN_MAIN: Processing frame 8 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 26 rows
-PYIN - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 8, 'row_count': 26}
-CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 25}
-CREPE - BEGIN {'rid': 202508292255052002, 'frame': 8, 'device': 'cpu', 'frames_approx': 25, 'audio_sha1': '4bc2f5f3602e', 'decoder': 'viterbi'}
-CREPE - DEBUG_CREPE {'f0_length': 26, 'per_length': 26, 'actual_frames': 26}
-CREPE - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 8, 'row_count': 26, 'audio_sha1': '4bc2f5f3602e'}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292255052002, 9
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 9, 'size1': array([ 0.00956661,  0.01315627,  0.01233338, ...,  0.00197591,
-        0.00026408, -0.00109926], shape=(11025,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 9, 'size2': 11025}
-VOLUME_1_MS - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 9, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
-FFT_OPT - DEBUG_FFT {'rid': 202508292255052002, 'frame': 9, 'audio_shape': (8000,), 'audio_size': 8000, 'sample_rate': 16000, 'start_ms': 4000}
-FFT_DEBUG: Processing audio - size=8000, window=1600, hop=1600
-FFT_OPT - DEBUG_ROWS {'rid': 202508292255052002, 'frame': 9, 'rows_generated': 1915, 'first_row': (4000, 4100, 18, 180.0, 190.0, 10.0, 0.3143659234046936)}
-FFT_OPT - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 9, 'rows': 1915, 'sr': 16000, 'samples': 8000}
-PYIN_MAIN: Processing frame 9 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 26 rows
-PYIN - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 9, 'row_count': 26}
-CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 25}
-CREPE - BEGIN {'rid': 202508292255052002, 'frame': 9, 'device': 'cpu', 'frames_approx': 25, 'audio_sha1': '609a8bb026b6', 'decoder': 'viterbi'}
-CREPE - DEBUG_CREPE {'f0_length': 26, 'per_length': 26, 'actual_frames': 26}
-CREPE - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 9, 'row_count': 26, 'audio_sha1': '609a8bb026b6'}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292255052002, 10
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 10, 'size1': array([-0.00081091, -0.00186166, -0.00070748, ..., -0.02635537,
-       -0.02556934, -0.02779012], shape=(11025,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 10, 'size2': 11025}
-VOLUME_1_MS - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 10, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
-FFT_OPT - DEBUG_FFT {'rid': 202508292255052002, 'frame': 10, 'audio_shape': (8000,), 'audio_size': 8000, 'sample_rate': 16000, 'start_ms': 4500}
-FFT_DEBUG: Processing audio - size=8000, window=1600, hop=1600
-FFT_OPT - DEBUG_ROWS {'rid': 202508292255052002, 'frame': 10, 'rows_generated': 1915, 'first_row': (4500, 4600, 18, 180.0, 190.0, 10.0, 0.25667649507522583)}
-FFT_OPT - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 10, 'rows': 1915, 'sr': 16000, 'samples': 8000}
-PYIN_MAIN: Processing frame 10 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 26 rows
-PYIN - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 10, 'row_count': 26}
-CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 25}
-CREPE - BEGIN {'rid': 202508292255052002, 'frame': 10, 'device': 'cpu', 'frames_approx': 25, 'audio_sha1': '1f414ec70687', 'decoder': 'viterbi'}
-CREPE - DEBUG_CREPE {'f0_length': 26, 'per_length': 26, 'actual_frames': 26}
-CREPE - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 10, 'row_count': 26, 'audio_sha1': '1f414ec70687'}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292255052002, 11
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 11, 'size1': array([-0.01888267, -0.02651425, -0.02271013, ...,  0.00949008,
-        0.01050954,  0.01434963], shape=(11025,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292255052002, 'frame': 11, 'size2': 11025}
-VOLUME_1_MS - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 11, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}
-FFT_OPT - DEBUG_FFT {'rid': 202508292255052002, 'frame': 11, 'audio_shape': (8000,), 'audio_size': 8000, 'sample_rate': 16000, 'start_ms': 5000}
-FFT_DEBUG: Processing audio - size=8000, window=1600, hop=1600
-FFT_OPT - DEBUG_ROWS {'rid': 202508292255052002, 'frame': 11, 'rows_generated': 1915, 'first_row': (5000, 5100, 18, 180.0, 190.0, 10.0, 0.6439822316169739)}
-FFT_OPT - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 11, 'rows': 1915, 'sr': 16000, 'samples': 8000}
-PYIN_MAIN: Processing frame 11 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 26 rows
-PYIN - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 11, 'row_count': 26}
-CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 25}
-CREPE - BEGIN {'rid': 202508292255052002, 'frame': 11, 'device': 'cpu', 'frames_approx': 25, 'audio_sha1': '0ea13fff14d7', 'decoder': 'viterbi'}
-CREPE - DEBUG_CREPE {'f0_length': 26, 'per_length': 26, 'actual_frames': 26}
-CREPE - DB_INSERT_OK {'rid': 202508292255052002, 'frame': 11, 'row_count': 26, 'audio_sha1': '0ea13fff14d7'}
-WARNING:  WatchFiles detected changes in 'SERVER_ENGINE_LISTEN_6_FOR_AUDIO_FRAMES_TO_PROCESS.py'. Reloading...
- 
+SCANNER - 3C_FOR_STOP: processing STOP message 78
+SCANNER - PROCESS_WEBSOCKET_STOP_MESSAGE: 78
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508300430032002, 26
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 26, 'size1': array([-0.00562914, -0.00789574, -0.00884162, ..., -0.00543157,
+       -0.00477701, -0.0052881 ], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508300430032002, 'frame': 26, 'size2': 11025}
+VOLUME_1_MS - DB_INSERT_OK {'rid': 202508300430032002, 'frame': 26, 'rows_1ms': 499, 'hop_len': 16, 'frame_len': 32, 'optimized': True}

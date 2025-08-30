@@ -81,7 +81,8 @@ async def PROCESS_WEBSOCKET_START_MESSAGE(MESSAGE_ID: int) -> None:
     ENGINE_DB_LOG_RECORDING_CONFIG_RECORD.setdefault("LAST_SPLIT_100_MS_FRAME_TIME", None)
       
     SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID] = {}  # ← This was missing
-    PRE_SPLIT_AUDIO_FRAME_ARRAY[RECORDING_ID] = {}      # ← This too if needed
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID] = {}  # Initialize the correct array
+    PRE_SPLIT_AUDIO_FRAME_ARRAY[RECORDING_ID] = {}      # This too if needed
     ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID] = ENGINE_DB_LOG_RECORDING_CONFIG_RECORD
 
     # 4) load base parameters
@@ -113,11 +114,19 @@ async def PROCESS_WEBSOCKET_START_MESSAGE(MESSAGE_ID: int) -> None:
     # CONSOLE_LOG("STARTUP", f"Array COMPOSE_YN_RUN_FFT: {ENGINE_DB_LOG_RECORDING_CONFIG_ARRAY[RECORDING_ID].get('COMPOSE_YN_RUN_FFT', 'MISSING')}")
 
     COMPOSE_PLAY_OR_PRACTICE = str(ENGINE_DB_LOG_RECORDING_CONFIG_RECORD.get("COMPOSE_PLAY_OR_PRACTICE") or "").upper()
+    
+    CONSOLE_LOG("3A_FOR_START", f"COMPOSE_PLAY_OR_PRACTICE: {COMPOSE_PLAY_OR_PRACTICE}", {"RECORDING_ID": RECORDING_ID} )
 
     # 5) play/practice: pre-seed per-frame metadata (no bytes)
     if COMPOSE_PLAY_OR_PRACTICE in ("PLAY", "PRACTICE"):
         with DB_CONNECT_CTX() as CONN:
+            CONSOLE_LOG("3A_FOR_START", f"Calling P_ENGINE_SONG_100_MS_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET for RECORDING_ID: {RECORDING_ID}")
             RES_SET_P_ENGINE_SONG_100_MS_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET = DB_EXEC_SP_MULTIPLE_ROWS(CONN, "P_ENGINE_SONG_100_MS_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET", RECORDING_ID=RECORDING_ID) or []
+            CONSOLE_LOG("3A_FOR_START", f"Stored procedure returned {len(RES_SET_P_ENGINE_SONG_100_MS_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET)} rows")
+            
+            # Error if no frames found for PLAY mode
+            if len(RES_SET_P_ENGINE_SONG_100_MS_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET) == 0:
+                raise ValueError(f"PLAY mode requires pre-recorded frames, but P_ENGINE_SONG_100_MS_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET returned 0 rows for RECORDING_ID: {RECORDING_ID}")
 
             for RR in RES_SET_P_ENGINE_SONG_100_MS_AUDIO_FRAME_FOR_PLAY_AND_PRACTICE_GET:
                 SPLIT_100_MS_AUDIO_FRAME_NO = RR.get("SPLIT_100_MS_AUDIO_FRAME_NO")
@@ -131,6 +140,10 @@ async def PROCESS_WEBSOCKET_START_MESSAGE(MESSAGE_ID: int) -> None:
                     "YN_RUN_PYIN": RR.get("YN_RUN_PYIN"),
                     "YN_RUN_CREPE": RR.get("YN_RUN_CREPE"),
                     # timestamps/size/hash/encoding are filled later when bytes arrive
+                }
+                SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][SPLIT_100_MS_AUDIO_FRAME_NO] = {
+                    "RECORDING_ID": RECORDING_ID,
+                    "AUDIO_FRAME_NO": SPLIT_100_MS_AUDIO_FRAME_NO
                 }
 
     # 6) persist recording config - NON-BLOCKING
