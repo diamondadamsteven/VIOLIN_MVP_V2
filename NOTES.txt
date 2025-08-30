@@ -24,13 +24,9 @@ There are ways for Pyin and Crepe to trade accuracy for speed,
  which is okay except for Vibrato-tracking and maybe Onset-timing-accuracy
 Also, it is not clear than Crepe is needed if we are using Pyin
 
-1) Add app-variables for CREPE_MODEL_SIZE, CREPE_BATCH_SIZE_CPU, 
-    CREPE_BATCH_SIZE_CPU
-
-2) Volume 1ms/10ms
-3) FFT
-4) Onset-only
-5) P_ENGINE_ALL_MASTER
+2) P_ENGINE_ALL_MASTER
+4) FFT
+5) Onset-only
 6) VIBRATO: PYIN+IF?  
 
 7) Real-time (ie, 1st pass) processing: 
@@ -41,7 +37,7 @@ Also, it is not clear than Crepe is needed if we are using Pyin
       and refresh the vibrato and more-accurate-intonation and Onsets  
          as it gets done, several seconds behind
 
-8) Fix client-app bugs:
+3) Fix client-app bugs:
     1) Conductor's batons
     2) Conductor's thought-bubble-text
     3) Displaying notes/colors during recording
