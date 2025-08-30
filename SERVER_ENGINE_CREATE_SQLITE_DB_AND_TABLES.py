@@ -194,7 +194,9 @@ def create_database_and_tables(truncate_on_startup=False):
             DT_START_PYIN_ENGINE_LOAD_HZ_INS DATETIME,
             DT_END_PYIN_ENGINE_LOAD_HZ_INS DATETIME,
             DT_START_PYIN_RELATIVE_ROWS DATETIME,
-            DT_END_PYIN_RELATIVE_ROWS DATETIME
+            DT_END_PYIN_RELATIVE_ROWS DATETIME,
+            DT_START_FFT_ENGINE_LOAD_FFT_INS DATETIME,
+            DT_END_FFT_ENGINE_LOAD_FFT_INS DATETIME
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_log_split_recording_id ON ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME (RECORDING_ID)")

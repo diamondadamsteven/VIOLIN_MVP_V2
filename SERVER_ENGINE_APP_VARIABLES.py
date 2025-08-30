@@ -49,8 +49,8 @@ AUDIO_SAMPLE_RATE = 44100  # Target sample rate
 AUDIO_BYTES_PER_SAMPLE = 2  # PCM16 = 2 bytes per sample
 AUDIO_SAMPLES_PER_FRAME = (AUDIO_FRAME_MS * AUDIO_SAMPLE_RATE) // 1000  # 4410 samples per 100ms frame
 AUDIO_BYTES_PER_FRAME = AUDIO_SAMPLES_PER_FRAME * AUDIO_BYTES_PER_SAMPLE  # 8820 bytes per 100ms frame
-PYIN_HOP_IN_MS = 10
-CREPE_HOP_IN_MS = 10
+PYIN_HOP_IN_MS = 20
+CREPE_HOP_IN_MS = 20
 CREPE_MODEL_SIZE = "tiny"  # Options: "tiny", "small", "medium", "full" (tiny is fastest on CPU)
 CREPE_BATCH_SIZE_CPU = 128   # Smaller batches for CPU (was 1024)
 CREPE_BATCH_SIZE_GPU = 1024  # Larger batches for GPU
@@ -181,6 +181,8 @@ class ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_DICT(TypedDict):
     DT_END_PYIN_ENGINE_LOAD_HZ_INS: NotRequired[Optional[datetime.datetime]]
     DT_START_PYIN_RELATIVE_ROWS: NotRequired[Optional[datetime.datetime]]
     DT_END_PYIN_RELATIVE_ROWS: NotRequired[Optional[datetime.datetime]]
+    DT_START_FFY_ENGINE_LOAD_FFT_INS: NotRequired[Optional[datetime.datetime]]
+    DT_END_FFT_ENGINE_LOAD_FFT_INS: NotRequired[Optional[datetime.datetime]]
 
 
 
