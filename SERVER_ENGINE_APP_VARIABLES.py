@@ -44,11 +44,17 @@ OAF_PORT = int(os.getenv("OAF_PORT", "9077"))
 # ─────────────────────────────────────────────────────────────
 
 # Audio frame alignment constants
-AUDIO_FRAME_MS = 100  # Target frame size in milliseconds
+AUDIO_FRAME_MS = 500  # Target frame size in milliseconds
 AUDIO_SAMPLE_RATE = 44100  # Target sample rate
 AUDIO_BYTES_PER_SAMPLE = 2  # PCM16 = 2 bytes per sample
 AUDIO_SAMPLES_PER_FRAME = (AUDIO_FRAME_MS * AUDIO_SAMPLE_RATE) // 1000  # 4410 samples per 100ms frame
 AUDIO_BYTES_PER_FRAME = AUDIO_SAMPLES_PER_FRAME * AUDIO_BYTES_PER_SAMPLE  # 8820 bytes per 100ms frame
+PYIN_HOP_IN_MS = 10
+CREPE_HOP_IN_MS = 10
+CREPE_MODEL_SIZE = "tiny"  # Options: "tiny", "small", "medium", "full" (tiny is fastest on CPU)
+CREPE_BATCH_SIZE_CPU = 128   # Smaller batches for CPU (was 1024)
+CREPE_BATCH_SIZE_GPU = 1024  # Larger batches for GPU
+
 
 # Audio frame alignment buffers (per recording) - Simple dictionary structure
 # Key: RECORDING_ID, Value: Dictionary with buffer data

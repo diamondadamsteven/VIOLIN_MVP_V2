@@ -14,10 +14,20 @@ from typing import Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import logging
 import librosa
+from SERVER_ENGINE_APP_VARIABLES import (
+    CREPE_MODEL_SIZE,
+    CREPE_BATCH_SIZE_CPU,
+    CREPE_BATCH_SIZE_GPU
+)
 
 # Configure logging
 LOGGER = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
+
+# CREPE Configuration - Optimize for your hardware
+# CREPE_MODEL_SIZE = "tiny"  # Options: "tiny", "small", "medium", "full" (tiny is fastest on CPU)
+# CREPE_BATCH_SIZE_CPU = 128   # Smaller batches for CPU (was 1024)
+# CREPE_BATCH_SIZE_GPU = 1024  # Larger batches for GPU
 
 class ResourcePrewarmer:
     """Pre-warms system resources to avoid contention during audio processing."""
@@ -46,6 +56,7 @@ class ResourcePrewarmer:
             
             # 4. Pre-warm audio processing functions
             prewarm_pyin_engine()
+            prewarm_crepe_engine()
             prewarm_audio_resampling()
             
             LOGGER.warning("Resource pre-warming completed successfully")
@@ -251,6 +262,9 @@ class ResourcePrewarmer:
             LOGGER.error(f"PYIN engine pre-loading failed: {e}")
             # Continue startup even if PYIN pre-loading fails
         
+        # Pre-warm CREPE pitch detection engine (major bottleneck - 5-15s first run delays)
+        prewarm_crepe_engine()
+        
         # Pre-warm audio resampling operations (major bottleneck - 700ms-1.3s delays)
         LOGGER.warning("Pre-warming audio resampling operations...")
         try:
@@ -432,6 +446,144 @@ def prewarm_pyin_engine() -> bool:
         return False
     except Exception as e:
         LOGGER.error(f"PYIN engine pre-loading failed: {e}")
+        return False
+
+def prewarm_crepe_engine() -> bool:
+    """Pre-warm CREPE pitch detection engine to avoid 5-15 second first-run delays."""
+    try:
+        import torchcrepe
+        import torch
+        import numpy as np
+        import time
+        import gc
+        
+        LOGGER.warning("Pre-loading CREPE pitch detection engine...")
+        start_time = time.time()
+        
+        # Generate dummy audio for warming (matching your actual usage)
+        dummy_audio = np.random.randn(16000).astype(np.float32)  # 1 second @ 16kHz
+        
+        # Set device (matching your actual usage)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        LOGGER.warning(f"Using device: {device}")
+        
+        # OPTIMIZATION: Use smaller model and batch size for CPU
+        model_size = CREPE_MODEL_SIZE  # Use global configuration
+        batch_size = CREPE_BATCH_SIZE_CPU if device == "cpu" else CREPE_BATCH_SIZE_GPU
+        
+        LOGGER.warning(f"Using {model_size} model with batch size {batch_size} for {device}")
+        
+        # Convert to torch tensor (matching your actual usage)
+        x = torch.tensor(dummy_audio, dtype=torch.float32, device=device).unsqueeze(0)
+        
+        # First call to torchcrepe.predict() loads and initializes the model (this is the slow part)
+        LOGGER.warning("Running first CREPE inference to load model...")
+        f0, per = torchcrepe.predict(
+            x,
+            sample_rate=16000,
+            hop_length=160,  # 10ms hop (16000 * 0.01)
+            model=model_size,    # Use optimized model size
+            decoder=torchcrepe.decode.viterbi,  # Default decoder
+            batch_size=batch_size, # Optimized batch size
+            device=device,
+            return_periodicity=True,
+        )
+        
+        load_time = time.time() - start_time
+        LOGGER.warning(f"CREPE engine pre-loaded successfully in {load_time:.2f} seconds")
+        LOGGER.warning(f"Generated {len(f0)} pitch estimates from dummy audio")
+        
+        # OPTIMIZATION: Clear GPU memory and force garbage collection
+        if device == "cuda":
+            torch.cuda.empty_cache()
+        gc.collect()
+        
+        # AGGRESSIVE CACHING: Run multiple times with different audio to warm up all internal caches
+        LOGGER.warning("Running aggressive CREPE engine warming with multiple audio samples...")
+        warming_samples = [
+            np.random.randn(16000).astype(np.float32),  # Different random audio
+            np.random.randn(16000).astype(np.float32),  # Another different sample
+            np.random.randn(16000).astype(np.float32),  # Third sample
+        ]
+        
+        for i, sample in enumerate(warming_samples):
+            warm_start = time.time()
+            x_warm = torch.tensor(sample, dtype=torch.float32, device=device).unsqueeze(0)
+            f0_warm, per_warm = torchcrepe.predict(
+                x_warm,
+                sample_rate=16000,
+                hop_length=160,
+                model=model_size,
+                decoder=torchcrepe.decode.viterbi,
+                batch_size=batch_size,
+                device=device,
+                return_periodicity=True,
+            )
+            warm_time = time.time() - warm_start
+            LOGGER.warning(f"  Warming sample {i+1}: {warm_time:.3f}s")
+            
+            # OPTIMIZATION: Clear tensors and memory between runs
+            del x_warm, f0_warm, per_warm
+            if device == "cuda":
+                torch.cuda.empty_cache()
+            gc.collect()
+        
+        # Final verification with original audio (should be fastest now)
+        verify_start = time.time()
+        f0_verify, per_verify = torchcrepe.predict(
+            x,
+            sample_rate=16000,
+            hop_length=160,
+            model=model_size,
+            decoder=torchcrepe.decode.viterbi,
+            batch_size=batch_size,
+            device=device,
+            return_periodicity=True,
+        )
+        verify_time = time.time() - verify_start
+        
+        LOGGER.warning(f"CREPE engine final verification: {verify_time:.3f}s")
+        if verify_time < 0.1:
+            LOGGER.warning("✓ CREPE engine is now cached and ready for fast processing")
+        elif verify_time < 0.5:
+            LOGGER.warning(f"✓ CREPE engine warmed up (acceptable: {verify_time:.3f}s)")
+        else:
+            LOGGER.warning(f"CREPE engine still slow after warming: {verify_time:.3f}s")
+            
+            # ADDITIONAL DIAGNOSTICS: If still slow, try even smaller model
+            if device == "cpu" and verify_time > 2.0:
+                LOGGER.warning("CREPE still slow on CPU - trying minimal model...")
+                try:
+                    # Test with minimal settings
+                    test_start = time.time()
+                    f0_mini, per_mini = torchcrepe.predict(
+                        x,
+                        sample_rate=16000,
+                        hop_length=160,
+                        model="tiny",
+                        decoder=torchcrepe.decode.viterbi,
+                        batch_size=64,  # Very small batch
+                        device=device,
+                        return_periodicity=True,
+                    )
+                    mini_time = time.time() - test_start
+                    LOGGER.warning(f"Minimal model test: {mini_time:.3f}s")
+                    
+                    if mini_time < 1.0:
+                        LOGGER.warning("✓ Minimal model is much faster - consider using 'tiny' model")
+                    else:
+                        LOGGER.warning("⚠ CREPE may be fundamentally slow on this CPU")
+                        
+                except Exception as e:
+                    LOGGER.warning(f"Minimal model test failed: {e}")
+        
+        return True
+        
+    except ImportError as e:
+        LOGGER.warning(f"TorchCREPE not available for pre-loading: {e}")
+        return False
+    except Exception as e:
+        LOGGER.error(f"CREPE engine pre-loading failed: {e}")
         return False
 
 def prewarm_audio_resampling() -> bool:

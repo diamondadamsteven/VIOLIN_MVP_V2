@@ -13,6 +13,7 @@ except Exception:  # pragma: no cover
 
 from SERVER_ENGINE_APP_VARIABLES import (
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY,  # per-frame metadata (assumed to exist)
+    AUDIO_FRAME_MS
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
@@ -79,7 +80,7 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_VOLUME_10_MS(
     FRAME_LENGTH = HOP_LENGTH * 2                        # ≈ 440
 
     # 100 ms per websocket frame
-    START_MS = 100 * (AUDIO_FRAME_NO - 1)
+    START_MS = AUDIO_FRAME_MS * (AUDIO_FRAME_NO - 1)
 
     # Stamp start
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_VOLUME_10_MS"] = datetime.now()

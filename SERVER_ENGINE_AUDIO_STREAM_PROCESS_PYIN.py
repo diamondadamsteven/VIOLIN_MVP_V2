@@ -12,6 +12,8 @@ except Exception:  # pragma: no cover
 
 from SERVER_ENGINE_APP_VARIABLES import (
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY,  # per-frame metadata (assumed to exist)
+    AUDIO_FRAME_MS,
+    PYIN_HOP_IN_MS
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
@@ -75,8 +77,10 @@ def _pyin_relative_rows_optimized(audio_22050: np.ndarray, sample_rate: int = 22
 
     # Optimized parameters for speed vs accuracy trade-off
     # 20ms hop = faster processing, slightly less accurate
-    hop_length = max(1, int(round(sample_rate * 0.020)))  # 20ms hop for speed
-    frame_length = max(hop_length * 2, 1024)  # Smaller frame for speed
+    hop_length = max(1, int(round(sample_rate * (PYIN_HOP_IN_MS / 1000))))  # 20ms hop for speed
+    # frame_length = max(hop_length * 2, 1024)  # Smaller frame for speed
+    frame_length = max(hop_length * 4, 2048) # 75% overlap better Hz accuracy
+
 
     # Run PYIN analysis with optimized parameters
     f0, voiced_flag, voiced_prob = librosa.pyin(
@@ -87,17 +91,8 @@ def _pyin_relative_rows_optimized(audio_22050: np.ndarray, sample_rate: int = 22
 
     rows_rel: List[HZRow] = []
     for i, (hz, voiced_ok, confidence) in enumerate(zip(f0, voiced_flag, voiced_prob)):
-        if not voiced_ok or hz is None:
-            continue
-        if not np.isfinite(hz) or hz <= 0.0:
-            continue
-        if hz < 20.0 or hz > 20000.0:  # Reasonable human hearing range
-            continue
-        if confidence < 0.1:  # Filter out very low confidence
-            continue
-            
         start_ms_rel = int(round((i * hop_length) * 1000.0 / sample_rate))
-        end_ms_rel = start_ms_rel + 19  # 20ms span to match hop_length
+        end_ms_rel = start_ms_rel + (PYIN_HOP_IN_MS - 1)  # 20ms span to match hop_length
         rows_rel.append((start_ms_rel, end_ms_rel, float(hz), float(confidence)))
 
     return rows_rel
@@ -119,8 +114,10 @@ def _pyin_relative_rows(audio_22050: np.ndarray, sample_rate: int = 22050) -> Li
         return []
 
     # ~10 ms hop @ 22.05 kHz
-    hop_length = max(1, int(round(sample_rate * 0.010)))  # typically 221
-    frame_length = max(hop_length * 4, 2048)
+    # 20ms hop = faster processing, slightly less accurate
+    hop_length = max(1, int(round(sample_rate * (PYIN_HOP_IN_MS / 1000))))  # 20ms hop for speed
+    # frame_length = max(hop_length * 2, 1024)  # Smaller frame for speed
+    frame_length = max(hop_length * 4, 2048) # 75% overlap better Hz accuracy
 
     # fmin=180, fmax=4000,
     # Let exceptions bubble to the decorated caller (no local try/except)
@@ -143,7 +140,7 @@ def _pyin_relative_rows(audio_22050: np.ndarray, sample_rate: int = 22050) -> Li
         # if not np.isfinite(hz) or hz <= 0.0:
         #     continue
         start_ms_rel = int(round((i * hop_length) * 1000.0 / sample_rate))
-        end_ms_rel   = start_ms_rel + 9  # nominal 10 ms span
+        end_ms_rel   = start_ms_rel + (PYIN_HOP_IN_MS - 1)  # nominal 10 ms span
         rows_rel.append((start_ms_rel, end_ms_rel, float(hz), float(confidence)))
 
     if rows_rel:
@@ -178,7 +175,7 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
     SAMPLE_RATE = 22050
 
     # 100 ms per websocket frame
-    START_MS = 100 * (AUDIO_FRAME_NO - 1)
+    START_MS = AUDIO_FRAME_MS * (AUDIO_FRAME_NO - 1)
 
     # Stamp start
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_PYIN"] = datetime.now()

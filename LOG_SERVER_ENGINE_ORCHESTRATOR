@@ -1,11 +1,11 @@
 INFO:     Will watch for changes in these directories: ['C:\\Users\\diamo\\VIOLIN_MVP_V2']
 INFO:     Uvicorn running on http://0.0.0.0:7070 (Press CTRL+C to quit)
-INFO:     Started reloader process [33756] using WatchFiles
-INFO:     Started server process [35900]
+INFO:     Started reloader process [32524] using WatchFiles
+INFO:     Started server process [6312]
 INFO:     Waiting for application startup.
 ORCHESTRATOR MODULE IMPORTING - ABOUT TO RUN CLEANUP
 SMART_CLEANUP FUNCTION CALLED
-Smart cleanup starting - current PID: 35900
+Smart cleanup starting - current PID: 6312
 Waiting 3 seconds for other servers to start...
 No conflicting processes found on port 7070
 CLEANUP COMPLETED
@@ -37,21 +37,33 @@ Warming thread pools...
 Thread pools warmed successfully
 Thread pools initialized and warmed successfully
 Pre-loading PYIN pitch detection engine...
-PYIN engine pre-loaded successfully in 3.91 seconds
+PYIN engine pre-loaded successfully in 3.83 seconds
 Generated 44 pitch estimates from dummy audio
 Running aggressive PYIN engine warming with multiple audio samples...
-Warming sample 1: 0.655s
-Warming sample 2: 0.641s
-Warming sample 3: 0.632s
-PYIN engine final verification: 0.669s
-PYIN engine still slow after warming: 0.669s
+Warming sample 1: 0.697s
+Warming sample 2: 0.677s
+Warming sample 3: 0.675s
+PYIN engine final verification: 0.684s
+PYIN engine still slow after warming: 0.684s
+Pre-loading CREPE pitch detection engine...
+Using device: cpu
+Using tiny model with batch size 128 for cpu
+Running first CREPE inference to load model...
+CREPE engine pre-loaded successfully in 0.40 seconds
+Generated 1 pitch estimates from dummy audio
+Running aggressive CREPE engine warming with multiple audio samples...
+  Warming sample 1: 0.302s
+  Warming sample 2: 0.288s
+  Warming sample 3: 0.297s
+CREPE engine final verification: 0.262s
+\u2713 CREPE engine warmed up (acceptable: 0.262s)
 Pre-warming audio resampling operations...
 Warming up 44.1kHz \u2192 22.05kHz resampling...
   44.1kHz\u219222.05kHz warm 1: 0.001s (22050 samples)
   44.1kHz\u219222.05kHz warm 2: 0.001s (22050 samples)
   44.1kHz\u219222.05kHz warm 3: 0.001s (22050 samples)
-  44.1kHz\u219222.05kHz warm 4: 0.000s (22050 samples)
-  44.1kHz\u219222.05kHz warm 5: 0.000s (22050 samples)
+  44.1kHz\u219222.05kHz warm 4: 0.001s (22050 samples)
+  44.1kHz\u219222.05kHz warm 5: 0.001s (22050 samples)
 Warming up 22.05kHz \u2192 16kHz resampling...
   22.05kHz\u219216kHz warm 1: 0.001s (16000 samples)
   22.05kHz\u219216kHz warm 2: 0.001s (16000 samples)
@@ -61,7 +73,7 @@ Warming up 22.05kHz \u2192 16kHz resampling...
 Warming up 44.1kHz \u2192 16kHz resampling...
   44.1kHz\u219216kHz warm 1: 0.001s (16000 samples)
   44.1kHz\u219216kHz warm 2: 0.001s (16000 samples)
-  44.1kHz\u219216kHz warm 3: 0.002s (16000 samples)
+  44.1kHz\u219216kHz warm 3: 0.001s (16000 samples)
 Final verification of resampling performance...
 Final 44.1kHz\u219222.05kHz resampling: 0.001s
 \u2713 Audio resampling is now cached and ready for fast processing
@@ -71,7 +83,7 @@ STARTUP - Resource monitoring started
 STARTUP - === Checking for orphaned processes ===
 PROCESS_MONITOR - Checking for orphaned processes...
 PROCESS_MONITOR - Process cleanup check completed
-STARTUP - Registered routes [{'type': 'Route', 'path': '/openapi.json', 'methods': ['GET', 'HEAD']}, {'type': 'Route', 'path': '/docs', 'methods': ['GET', 'HEAD']}, {'type': 'Route', 'path': '/docs/oauth2-redirect', 'methods': ['GET', 'HEAD']}, {'type': 'Route', 'path': '/redoc', 'methods': ['GET', 'HEAD']}, {'type': 'APIRoute', 'path': '/health', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/performance', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/resources', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/routes', 'methods': ['GET']}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/echo', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream_raw', 'methods': []}]
+STARTUP - Registered routes [{'type': 'Route', 'path': '/openapi.json', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/docs', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/docs/oauth2-redirect', 'methods': ['HEAD', 'GET']}, {'type': 'Route', 'path': '/redoc', 'methods': ['HEAD', 'GET']}, {'type': 'APIRoute', 'path': '/health', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/performance', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/resources', 'methods': ['GET']}, {'type': 'APIRoute', 'path': '/routes', 'methods': ['GET']}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/echo', 'methods': []}, {'type': 'APIWebSocketRoute', 'path': '/ws/stream_raw', 'methods': []}]
 STARTUP - === Starting to create background scanner tasks ===
 STARTUP - Creating task for PROCESS_MONITOR_HEARTBEAT
 PROCESS_MONITOR - Registered task: heartbeat_monitor
@@ -91,267 +103,97 @@ SCANNER - === 3A_FOR_START scanner starting ===
 SCANNER - === 3C_FOR_STOP scanner starting ===
 SCANNER - === 7_FOR_FINISHED_RECORDINGS scanner starting ===
 INFO:     Application startup complete.
-INFO:     192.168.1.4:55609 - "GET /health HTTP/1.1" 200 OK
-WS/ECHO - incoming {'peer': {'host': '192.168.1.4', 'port': 60594}}
-INFO:     192.168.1.4:60594 - "WebSocket /ws/echo" [accepted]
+INFO:     192.168.1.4:62277 - "GET /health HTTP/1.1" 200 OK
+WS/ECHO - incoming {'peer': {'host': '192.168.1.4', 'port': 63582}}
+INFO:     192.168.1.4:63582 - "WebSocket /ws/echo" [accepted]
 INFO:     connection open
-WS/STREAM - incoming {'peer': {'host': '192.168.1.4', 'port': 60595}}
-INFO:     192.168.1.4:60595 - "WebSocket /ws/stream" [accepted]
-WS/ECHO - client disconnected {'peer': {'host': '192.168.1.4', 'port': 60594}}
+WS/STREAM - incoming {'peer': {'host': '192.168.1.4', 'port': 63583}}
+INFO:     192.168.1.4:63583 - "WebSocket /ws/stream" [accepted]
+INFO:     connection open
+WS/ECHO - client disconnected {'peer': {'host': '192.168.1.4', 'port': 63582}}
 INFO:     connection closed
-INFO:     connection open
 SCANNER - 3A_FOR_START: found 1 START messages to process
 SCANNER - 3A_FOR_START: processing START message 1
 SCANNER - PROCESS_WEBSOCKET_START_MESSAGE: 1
 STARTUP - Set COMPOSE_PLAY_OR_PRACTICE = Compose
-STARTUP - Set AUDIO_STREAM_FILE_NAME = 202508290632502002.wav
+STARTUP - Set AUDIO_STREAM_FILE_NAME = 202508292027312002.wav
 STARTUP - Set COMPOSE_YN_RUN_FFT = N
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 1
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 1, 'size1': array([ 0.0031822 ,  0.7620992 ,  0.56502163, ..., -0.13626112,
-       -0.13373043, -0.14889242], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 1, 'size2': 2205}
-PYIN_MAIN: Processing frame 1 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 1, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 2
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 2, 'size1': array([-0.10459002, -0.14364593, -0.11986408, ...,  0.        ,
-        0.        ,  0.        ], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 2, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 3
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 3, 'size1': array([0.        , 0.        , 0.        , ..., 0.02229016, 0.02205805,
-       0.02554392], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 3, 'size2': 2205}
-PYIN_MAIN: Processing frame 2 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 2, 'size': 2205}
-PYIN_MAIN: Processing frame 3 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 3, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 4
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 4, 'size1': array([0.01214525, 0.01667774, 0.01411369, ..., 0.00716159, 0.00715918,
-       0.00679517], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 4, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 5
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 5, 'size1': array([0.00456524, 0.0070879 , 0.00603564, ..., 0.01095459, 0.01598416,
-       0.02749328], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 5, 'size2': 2205}
-PYIN_MAIN: Processing frame 4 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 4, 'size': 2205}
-PYIN_MAIN: Processing frame 5 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 5, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 6
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 6, 'size1': array([0.02289327, 0.03154843, 0.02443217, ..., 0.00120006, 0.00595053,
-       0.00989638], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 6, 'size2': 2205}
-PYIN_MAIN: Processing frame 6 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 6, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 7
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 7, 'size1': array([ 0.00922685,  0.0180944 ,  0.02673994, ..., -0.01242723,
-       -0.00464259,  0.01021576], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 7, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 8
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 8, 'size1': array([0.0168707 , 0.02672086, 0.02512611, ..., 0.02363937, 0.02391379,
-       0.02862214], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 8, 'size2': 2205}
-PYIN_MAIN: Processing frame 7 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 7, 'size': 2205}
-PYIN_MAIN: Processing frame 8 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 8, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 9
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 9, 'size1': array([0.02142084, 0.03171752, 0.02926012, ..., 0.07150471, 0.08395685,
-       0.10016637], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 9, 'size2': 2205}
-PYIN_MAIN: Processing frame 9 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 9, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 10
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 10, 'size1': array([0.06942559, 0.09305998, 0.07359844, ..., 0.        , 0.        ,
-       0.        ], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 10, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 11
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 11, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.04413753,
-       -0.04843285, -0.0581658 ], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 11, 'size2': 2205}
-PYIN_MAIN: Processing frame 10 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 10, 'size': 2205}
-PYIN_MAIN: Processing frame 11 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 11, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 12
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 12, 'size1': array([-0.04454286, -0.06652336, -0.0647821 , ...,  0.01046431,
-        0.00983074,  0.01089458], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 12, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 13
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 13, 'size1': array([ 0.00075483, -0.00554159, -0.00843641, ...,  0.00476336,
-       -0.00290272,  0.01902261], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 13, 'size2': 2205}
-PYIN_MAIN: Processing frame 12 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 12, 'size': 2205}
-PYIN_MAIN: Processing frame 13 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 13, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 14
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 14, 'size1': array([ 0.03433028,  0.07752156,  0.1037671 , ..., -0.08639164,
-       -0.08976418, -0.10166615], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 14, 'size2': 2205}
-PYIN_MAIN: Processing frame 14 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 14, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 15
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 15, 'size1': array([-0.07097681, -0.09451054, -0.07970653, ...,  0.        ,
-        0.        ,  0.        ], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 15, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 16
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 16, 'size1': array([0.        , 0.        , 0.        , ..., 0.08606201, 0.0698025 ,
-       0.05555749], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 16, 'size2': 2205}
-PYIN_MAIN: Processing frame 15 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 15, 'size': 2205}
-PYIN_MAIN: Processing frame 16 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 16, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 17
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 17, 'size1': array([ 0.02994351,  0.03430254,  0.01859982, ..., -0.05063185,
-       -0.04939988, -0.05225829], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 17, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 18
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 18, 'size1': array([-0.03660147, -0.04771002, -0.03810922, ...,  0.05160412,
-        0.01331267, -0.03209184], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 18, 'size2': 2205}
-PYIN_MAIN: Processing frame 17 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 17, 'size': 2205}
-PYIN_MAIN: Processing frame 18 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 18, 'size': 2205}
-SCANNER - 3C_FOR_STOP: found 1 STOP messages to process
-SCANNER - 3C_FOR_STOP: processing STOP message 24
-SCANNER - PROCESS_WEBSOCKET_STOP_MESSAGE: 24
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 19
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 19, 'size1': array([-0.0480176 , -0.07895651, -0.06769031, ...,  0.1275523 ,
-        0.12665632,  0.12146917], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 19, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 20
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 20, 'size1': array([ 0.06265955,  0.0601592 ,  0.01367731, ..., -0.01474532,
-       -0.01787753, -0.0241314 ], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 20, 'size2': 2205}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292027312002, 1
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 1, 'size1': array([ 3.1822000e-03,  7.6209921e-01,  5.6502163e-01, ...,
+        2.0114021e-05, -1.0508919e-03, -3.0497140e-03],
+      shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 1, 'size2': 11025}
+CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 50}
+CREPE - BEGIN {'rid': 202508292027312002, 'frame': 1, 'device': 'cpu', 'frames_approx': 50, 'audio_sha1': '65d016fa3b66', 'decoder': 'viterbi'}
+CREPE - DEBUG_CREPE {'f0_length': 51, 'per_length': 51, 'actual_frames': 51}
+CREPE - DB_INSERT_OK {'rid': 202508292027312002, 'frame': 1, 'row_count': 51, 'audio_sha1': '65d016fa3b66'}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292027312002, 2
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 2, 'size1': array([-0.00205968, -0.00273678, -0.00210339, ..., -0.00726314,
+       -0.00529994, -0.00403985], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 2, 'size2': 11025}
+CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 50}
+CREPE - BEGIN {'rid': 202508292027312002, 'frame': 2, 'device': 'cpu', 'frames_approx': 50, 'audio_sha1': '234c62757236', 'decoder': 'viterbi'}
+CREPE - DEBUG_CREPE {'f0_length': 51, 'per_length': 51, 'actual_frames': 51}
+CREPE - DB_INSERT_OK {'rid': 202508292027312002, 'frame': 2, 'row_count': 51, 'audio_sha1': '234c62757236'}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292027312002, 3
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 3, 'size1': array([-0.00258446, -0.00302578, -0.00359253, ...,  0.01988721,
+        0.01662692,  0.0166239 ], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 3, 'size2': 11025}
+CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 50}
+CREPE - BEGIN {'rid': 202508292027312002, 'frame': 3, 'device': 'cpu', 'frames_approx': 50, 'audio_sha1': '21792176fd7b', 'decoder': 'viterbi'}
+CREPE - DEBUG_CREPE {'f0_length': 51, 'per_length': 51, 'actual_frames': 51}
+CREPE - DB_INSERT_OK {'rid': 202508292027312002, 'frame': 3, 'row_count': 51, 'audio_sha1': '21792176fd7b'}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292027312002, 4
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 4, 'size1': array([ 0.01071249,  0.01460939,  0.01303172, ..., -0.04234578,
+       -0.04114464, -0.04609063], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 4, 'size2': 11025}
+CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 50}
+CREPE - BEGIN {'rid': 202508292027312002, 'frame': 4, 'device': 'cpu', 'frames_approx': 50, 'audio_sha1': '2401035ce615', 'decoder': 'viterbi'}
+CREPE - DEBUG_CREPE {'f0_length': 51, 'per_length': 51, 'actual_frames': 51}
+CREPE - DB_INSERT_OK {'rid': 202508292027312002, 'frame': 4, 'row_count': 51, 'audio_sha1': '2401035ce615'}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292027312002, 5
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 5, 'size1': array([-0.03465252, -0.05195482, -0.05619949, ..., -0.00078538,
+        0.00133957,  0.00128174], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 5, 'size2': 11025}
+CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 50}
+CREPE - BEGIN {'rid': 202508292027312002, 'frame': 5, 'device': 'cpu', 'frames_approx': 50, 'audio_sha1': '93c64c775445', 'decoder': 'viterbi'}
+CREPE - DEBUG_CREPE {'f0_length': 51, 'per_length': 51, 'actual_frames': 51}
+CREPE - DB_INSERT_OK {'rid': 202508292027312002, 'frame': 5, 'row_count': 51, 'audio_sha1': '93c64c775445'}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292027312002, 6
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 6, 'size1': array([ 9.3963405e-04, -1.6838472e-05, -1.8339447e-03, ...,
+        0.0000000e+00,  0.0000000e+00,  0.0000000e+00],
+      shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 6, 'size2': 11025}
+CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 50}
+CREPE - BEGIN {'rid': 202508292027312002, 'frame': 6, 'device': 'cpu', 'frames_approx': 50, 'audio_sha1': 'ed42993e6019', 'decoder': 'viterbi'}
+CREPE - DEBUG_CREPE {'f0_length': 51, 'per_length': 51, 'actual_frames': 51}
+CREPE - DB_INSERT_OK {'rid': 202508292027312002, 'frame': 6, 'row_count': 51, 'audio_sha1': 'ed42993e6019'}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292027312002, 7
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 7, 'size1': array([0.        , 0.        , 0.        , ..., 0.00637448, 0.00765144,
+       0.00744796], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 7, 'size2': 11025}
+CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 50}
+CREPE - BEGIN {'rid': 202508292027312002, 'frame': 7, 'device': 'cpu', 'frames_approx': 50, 'audio_sha1': 'c228ef1c4947', 'decoder': 'viterbi'}
+CREPE - DEBUG_CREPE {'f0_length': 51, 'per_length': 51, 'actual_frames': 51}
+CREPE - DB_INSERT_OK {'rid': 202508292027312002, 'frame': 7, 'row_count': 51, 'audio_sha1': 'c228ef1c4947'}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292027312002, 8
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 8, 'size1': array([ 0.0012727 ,  0.00432065,  0.01220267, ..., -0.01757949,
+       -0.01422883, -0.01351932], shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 8, 'size2': 11025}
+CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 50}
+CREPE - BEGIN {'rid': 202508292027312002, 'frame': 8, 'device': 'cpu', 'frames_approx': 50, 'audio_sha1': '96fd342eb288', 'decoder': 'viterbi'}
+CREPE - DEBUG_CREPE {'f0_length': 51, 'per_length': 51, 'actual_frames': 51}
+CREPE - DB_INSERT_OK {'rid': 202508292027312002, 'frame': 8, 'row_count': 51, 'audio_sha1': '96fd342eb288'}
+SCANNER - PROCESS_THE_AUDIO_FRAME: 202508292027312002, 9
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 9, 'size1': array([-8.5753528e-03, -8.0861654e-03, -5.4925038e-03, ...,
+       -1.6876720e-03, -9.1542082e-05,  2.4143856e-03],
+      shape=(11025,), dtype=float32)}
+STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508292027312002, 'frame': 9, 'size2': 11025}
+CREPE - DEBUG_AUDIO {'audio_shape': (8000,), 'audio_length_ms': 500.0, 'expected_frames': 50}
+CREPE - BEGIN {'rid': 202508292027312002, 'frame': 9, 'device': 'cpu', 'frames_approx': 50, 'audio_sha1': 'b55d9e07a4d3', 'decoder': 'viterbi'}
+CREPE - DEBUG_CREPE {'f0_length': 51, 'per_length': 51, 'actual_frames': 51}
+CREPE - DB_INSERT_OK {'rid': 202508292027312002, 'frame': 9, 'row_count': 51, 'audio_sha1': 'b55d9e07a4d3'}
 INFO:     connection closed
-PYIN_MAIN: Processing frame 19 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 19, 'size': 2205}
-PYIN_MAIN: Processing frame 20 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 20, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 21
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 21, 'size1': array([-0.01882223, -0.02632172, -0.02332748, ...,  0.0783493 ,
-        0.09707687,  0.12551373], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 21, 'size2': 2205}
-PYIN_MAIN: Processing frame 21 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 21, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 22
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 22, 'size1': array([ 0.08801587,  0.10593796,  0.06135202, ..., -0.03476292,
-       -0.03089494, -0.03240386], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 22, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 23
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 23, 'size1': array([-0.02243467, -0.0334491 , -0.03515828, ..., -0.00288498,
-       -0.00599985, -0.01058299], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 23, 'size2': 2205}
-PYIN_MAIN: Processing frame 22 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 22, 'size': 2205}
-PYIN_MAIN: Processing frame 23 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 23, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 24
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 24, 'size1': array([-0.00891074, -0.0146314 , -0.01444462, ..., -0.02181255,
-       -0.02907826, -0.0443013 ], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 24, 'size2': 2205}
-PYIN_MAIN: Processing frame 24 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 24, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 25
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 25, 'size1': array([-0.03772167, -0.05717721, -0.05495305, ...,  0.        ,
-        0.        ,  0.        ], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 25, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 26
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 26, 'size1': array([0.        , 0.        , 0.        , ..., 0.01414174, 0.01322228,
-       0.01242624], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 26, 'size2': 2205}
-PYIN_MAIN: Processing frame 25 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 25, 'size': 2205}
-PYIN_MAIN: Processing frame 26 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 26, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 27
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 27, 'size1': array([0.00977826, 0.0140205 , 0.01292965, ..., 0.03512245, 0.03046301,
-       0.03021139], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 27, 'size2': 2205}
-PYIN_MAIN: Processing frame 27 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 27, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 28
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 28, 'size1': array([0.01698885, 0.02089994, 0.0181681 , ..., 0.        , 0.        ,
-       0.        ], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 28, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 29
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 29, 'size1': array([0.        , 0.        , 0.        , ..., 0.03347534, 0.03317162,
-       0.04092852], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 29, 'size2': 2205}
-PYIN_MAIN: Processing frame 28 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 28, 'size': 2205}
-PYIN_MAIN: Processing frame 29 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 29, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 30
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 30, 'size1': array([0.03173224, 0.04728375, 0.0449825 , ..., 0.        , 0.        ,
-       0.        ], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 30, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 31
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 31, 'size1': array([0.        , 0.        , 0.        , ..., 0.19812706, 0.17778541,
-       0.18273118], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 31, 'size2': 2205}
-PYIN_MAIN: Processing frame 30 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 30, 'size': 2205}
-PYIN_MAIN: Processing frame 31 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 3 rows
-PYIN - DB_INSERT_OK {'rid': 202508290632502002, 'frame': 31, 'row_count': 3}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 32
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 32, 'size1': array([ 0.12242178,  0.16995586,  0.14869174, ...,  0.00295091,
-       -0.0019604 , -0.00679052], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 32, 'size2': 2205}
-PYIN_MAIN: Processing frame 32 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 32, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 33
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 33, 'size1': array([-0.00542683, -0.00535358, -0.00344931, ...,  0.        ,
-        0.        ,  0.        ], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 33, 'size2': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 34
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 34, 'size1': array([ 0.        ,  0.        ,  0.        , ..., -0.01349448,
-       -0.01466729, -0.0161346 ], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 34, 'size2': 2205}
-PYIN_MAIN: Processing frame 33 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 33, 'size': 2205}
-PYIN_MAIN: Processing frame 34 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 34, 'size': 2205}
-SCANNER - PROCESS_THE_AUDIO_FRAME: 202508290632502002, 35
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 35, 'size1': array([-0.01031631, -0.01130796, -0.00485783, ..., -0.03722299,
-       -0.03219146, -0.03192567], shape=(2205,), dtype=float32)}
-STAGE6_FRAMES - PROCESS_THE_AUDIO_FRAME {'rid': 202508290632502002, 'frame': 35, 'size2': 2205}
-PYIN_MAIN: Processing frame 35 with optimized synchronous PYIN...
-PYIN_MAIN: Completed, got 0 rows
-PYIN - NO_ROWS {'rid': 202508290632502002, 'frame': 35, 'size': 2205}
+SCANNER - 3C_FOR_STOP: found 1 STOP messages to process
+SCANNER - 3C_FOR_STOP: processing STOP message 30
+SCANNER - PROCESS_WEBSOCKET_STOP_MESSAGE: 30

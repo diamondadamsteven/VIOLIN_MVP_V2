@@ -20,8 +20,14 @@ except Exception:  # pragma: no cover
 
 from SERVER_ENGINE_APP_VARIABLES import (
     SPLIT_100_MS_AUDIO_FRAME_ARRAY,               # volatile: raw bytes only
-    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY  # durable: metadata only (assumed pre-populated)
+    ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY,  # durable: metadata only (assumed pre-populated)
+    AUDIO_FRAME_MS,
+    CREPE_HOP_IN_MS,
+    CREPE_MODEL_SIZE,
+    CREPE_BATCH_SIZE_CPU,
+    CREPE_BATCH_SIZE_GPU
 )
+
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
     DB_CONNECT_CTX,
@@ -80,11 +86,12 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
     AUDIO_FRAME_NO: int,
     AUDIO_16000: Optional[np.ndarray] = None,
 ) -> int:
+    # CREPE_HOP_IN_MS = 10
     SAMPLE_RATE = 16000
-    HOP = 160                # 10 ms @ 16 kHz for CREPE
-    ANALYSIS_HOP_MS = 10     # CREPE hop size
+    HOP = int(SAMPLE_RATE * CREPE_HOP_IN_MS / 1000)  # 16000 * 10 / 1000 = 160 (int) # 10 ms @ 16 kHz for CREPE
+    #ANALYSIS_HOP_MS = 10     # CREPE hop size
 
-    START_MS = 100 * (AUDIO_FRAME_NO - 1) 
+    START_MS = AUDIO_FRAME_MS * (AUDIO_FRAME_NO - 1) 
 
     # Stamp start
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY[RECORDING_ID][AUDIO_FRAME_NO]["DT_START_CREPE"] = datetime.now()
@@ -112,6 +119,13 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
     else:
         AUDIO_16000 = AUDIO_16000.astype("float32", copy=False)
 
+    CONSOLE_LOG(PREFIX, "DEBUG_AUDIO", {
+        "audio_shape": AUDIO_16000.shape,
+        "audio_length_ms": AUDIO_16000.shape[0] / 16.0,
+        "expected_frames": int(round(AUDIO_16000.shape[0] / float(HOP))),
+    })
+    
+
     # removed local try/except; let errors surface to decorator
     audio_sha1 = hashlib.sha1(AUDIO_16000.tobytes()).hexdigest()[:12]
 
@@ -130,14 +144,16 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
         "decoder": decoder_name,
     })
 
+    batch_size = CREPE_BATCH_SIZE_CPU if device == "cpu" else CREPE_BATCH_SIZE_GPU
+
     with torch.no_grad():
         f0, per = torchcrepe.predict(
             x,
             sample_rate=SAMPLE_RATE,
             hop_length=HOP,
-            model="full",
+            model=CREPE_MODEL_SIZE,
             decoder=decoder_fn,
-            batch_size=1024,
+            batch_size=batch_size,
             device=device,
             return_periodicity=True,
         )
@@ -146,11 +162,18 @@ async def SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
     per = per.squeeze(0).detach().cpu().numpy()
     n = int(min(len(f0), len(per)))
 
+
+    CONSOLE_LOG(PREFIX, "DEBUG_CREPE", {
+        "f0_length": len(f0),
+        "per_length": len(per),
+        "actual_frames": n
+    })
+
     rows: List[Tuple[int, int, float, float]] = []
     if n > 0:
-        rel_starts = np.arange(n, dtype=np.int64) * ANALYSIS_HOP_MS
+        rel_starts = np.arange(n, dtype=np.int64) * CREPE_HOP_IN_MS
         START_MS_ARRAY = START_MS + rel_starts
-        END_MS_ARRAY   = START_MS_ARRAY + (ANALYSIS_HOP_MS - 1)  # inclusive
+        END_MS_ARRAY   = START_MS_ARRAY + (CREPE_HOP_IN_MS - 1)  # inclusive
 
         for i in range(n):
             hz = float(f0[i])

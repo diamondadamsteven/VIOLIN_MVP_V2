@@ -105,23 +105,23 @@ async def PROCESS_THE_AUDIO_FRAME(RECORDING_ID: int, AUDIO_FRAME_NO: int) -> Non
             )
         ))
 
-    if YN_RUN_PYIN == "Y":
-        AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
-            SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
-                int(RECORDING_ID),
-                int(AUDIO_FRAME_NO),
-                AUDIO_ARRAY_22050  # 22.05k
-            )
-        ))
-
-    # if YN_RUN_CREPE == "Y":
+    # if YN_RUN_PYIN == "Y":
     #     AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
-    #         SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
+    #         SERVER_ENGINE_AUDIO_STREAM_PROCESS_PYIN(
     #             int(RECORDING_ID),
     #             int(AUDIO_FRAME_NO),
-    #             AUDIO_ARRAY_16000  # 16k
+    #             AUDIO_ARRAY_22050  # 22.05k
     #         )
     #     ))
+
+    if YN_RUN_CREPE == "Y":
+        AUDIO_PROCESSING_TASK_ARRAY.append(asyncio.create_task(
+            SERVER_ENGINE_AUDIO_STREAM_PROCESS_CREPE(
+                int(RECORDING_ID),
+                int(AUDIO_FRAME_NO),
+                AUDIO_ARRAY_16000  # 16k
+            )
+        ))
 
     # Wait for all tasks to complete
     if AUDIO_PROCESSING_TASK_ARRAY:

@@ -21,6 +21,7 @@ except Exception:  # pragma: no cover
 
 from SERVER_ENGINE_APP_VARIABLES import (
     ENGINE_DB_LOG_SPLIT_100_MS_AUDIO_FRAME_ARRAY,  # per-frame metadata (assumed to exist)
+    AUDIO_FRAME_MS
 )
 from SERVER_ENGINE_APP_FUNCTIONS import (
     CONSOLE_LOG,
@@ -33,7 +34,7 @@ PREFIX = "ONS"
 
 # Constants
 SAMPLE_RATE = 16000               # 16 kHz for O&F
-FRAME_MS = 100                    # 100 ms per websocket audio frame
+FRAME_MS = AUDIO_FRAME_MS                    # 100 ms per websocket audio frame
 SOURCE_METHOD = "ONS"
 
 # ----------------------------------------------------------------------

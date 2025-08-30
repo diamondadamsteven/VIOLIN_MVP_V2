@@ -19,6 +19,35 @@
 findstr /n "SERVER_ENGINE_SQLITE_LOGGING" *.py
 Get-Process | Sort-Object WorkingSet -Descending | Select-Object ProcessName, Id, @{Name="Memory(MB)";Expression={[math]::Round($_.WorkingSet/1MB,2)}}, @{Name="Virtual(MB)";Expression={[math]::Round($_.VirtualMemorySize/1MB,2)}} | Format-Table -AutoSize | Out-File -FilePath "C:\Users\diamo\process_memory.txt" -Width 200
 
+8/29/2025:
+There are ways for Pyin and Crepe to trade accuracy for speed, 
+ which is okay except for Vibrato-tracking and maybe Onset-timing-accuracy
+Also, it is not clear than Crepe is needed if we are using Pyin
+
+1) Add app-variables for CREPE_MODEL_SIZE, CREPE_BATCH_SIZE_CPU, 
+    CREPE_BATCH_SIZE_CPU
+
+2) Volume 1ms/10ms
+3) FFT
+4) Onset-only
+5) P_ENGINE_ALL_MASTER
+6) VIBRATO: PYIN+IF?  
+
+7) Real-time (ie, 1st pass) processing: 
+   Crepe tiny or Pyin 50% 20ms with 500 ms frames
+     for note and rest detection only 
+   Meanwhile, run PYIN+IF or PYIN 75% or CREPE full behind the scenes 
+      (perhaps on longer than 500 ms frames)
+      and refresh the vibrato and more-accurate-intonation and Onsets  
+         as it gets done, several seconds behind
+
+8) Fix client-app bugs:
+    1) Conductor's batons
+    2) Conductor's thought-bubble-text
+    3) Displaying notes/colors during recording
+    4) Play-back the recording
+    5) Practice mode
+    6) Advanced line-charts
 
 npx expo start --tunnel --clear
 npx expo start --lan --clear
